@@ -1,0 +1,2 @@
+-- Structural reference data is seeded by migrations. End-to-end demo records
+-- are created by tests/e2e/global-setup.ts so pgTAP remains deterministic.

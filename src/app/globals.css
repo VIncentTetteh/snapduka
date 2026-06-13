@@ -1,0 +1,278 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --background: #fff8ed;
+  --surface: #ffffff;
+  --ink: #171711;
+  --muted: #626158;
+  --accent: #146b45;
+  --accent-dark: #0b4e31;
+  --border: #ded8ca;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top right, rgb(242 184 76 / 20%), transparent 32rem),
+    var(--background);
+  color: var(--ink);
+  font-family:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+}
+
+main {
+  width: min(100% - 2rem, 72rem);
+  margin-inline: auto;
+  padding-bottom: 4rem;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 4.5rem;
+}
+
+.brand {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  text-decoration: none;
+}
+
+.navLink,
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.navLink {
+  padding-inline: 1rem;
+}
+
+.hero {
+  display: grid;
+  min-height: min(42rem, calc(100svh - 4.5rem));
+  align-content: center;
+  padding-block: 4rem;
+}
+
+.eyebrow,
+.cardLabel {
+  margin: 0 0 0.75rem;
+  color: var(--accent-dark);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 13ch;
+  margin: 0;
+  font-size: clamp(2.75rem, 11vw, 6.5rem);
+  line-height: 0.96;
+  letter-spacing: -0.065em;
+}
+
+.heroCopy {
+  max-width: 38rem;
+  margin: 1.5rem 0 0;
+  color: var(--muted);
+  font-size: clamp(1.05rem, 3vw, 1.3rem);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.primaryAction,
+.secondaryAction {
+  padding: 0.75rem 1.25rem;
+}
+
+.primaryAction {
+  background: var(--accent);
+  color: white;
+}
+
+.primaryAction:hover {
+  background: var(--accent-dark);
+}
+
+.secondaryAction {
+  border: 1px solid var(--border);
+  background: rgb(255 255 255 / 55%);
+}
+
+.valueGrid {
+  display: grid;
+  gap: 1rem;
+}
+
+.valueGrid article {
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: rgb(255 255 255 / 72%);
+  padding: 1.5rem;
+}
+
+.valueGrid h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: -0.03em;
+}
+
+.valueGrid article > p:last-child {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.authShell {
+  width: min(100% - 2rem, 58rem);
+  padding-block: 1rem 4rem;
+}
+
+.authIntro {
+  max-width: 42rem;
+  padding-block: 3rem 2rem;
+}
+
+.authIntro h1 {
+  font-size: clamp(2.75rem, 9vw, 5rem);
+}
+
+.authIntro > p:last-child,
+.authCard p {
+  color: var(--muted);
+}
+
+.authNotice {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  padding: 0.875rem 1rem;
+}
+
+.authError {
+  border-color: #b42318;
+  color: #8a1c13;
+}
+
+.authGrid {
+  display: grid;
+  gap: 1rem;
+}
+
+.authCard {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: rgb(255 255 255 / 82%);
+  padding: 1.5rem;
+}
+
+.authCard h2,
+.authCard p {
+  margin: 0;
+}
+
+.authCard label {
+  margin-top: 0.5rem;
+  font-weight: 700;
+}
+
+.authCard input {
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: white;
+  padding: 0.75rem;
+  color: var(--ink);
+  font: inherit;
+}
+
+.authPrimary,
+.authSecondary {
+  min-height: 48px;
+  margin-top: 0.5rem;
+  border-radius: 999px;
+  padding-inline: 1rem;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.authPrimary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.authSecondary {
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--ink);
+}
+
+.authPrimary:disabled,
+.authSecondary:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+@media (min-width: 40rem) {
+  main {
+    width: min(100% - 4rem, 72rem);
+  }
+
+  .actions {
+    flex-direction: row;
+  }
+
+  .valueGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .valueGrid article {
+    padding: 2rem;
+  }
+
+  .authGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
