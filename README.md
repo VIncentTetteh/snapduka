@@ -39,3 +39,4 @@ pnpm traceability
 - Public guest storefronts and secure unguessable order-tracking URLs.
 
 Production configuration and incident procedures are documented in [`docs/runbooks`](docs/runbooks).
+The hosting checklist is in [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md).
