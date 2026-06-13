@@ -1,0 +1,2 @@
+import {acceptInvitation} from "./actions";
+export default async function InvitationPage({params}:{params:Promise<{token:string}>}){const{token}=await params;return <main className="mx-auto max-w-xl py-16"><h1 className="text-4xl font-black">Team invitation</h1><p>Sign in with the invited email address to accept this time-limited invitation. Invitations cannot be reused.</p><form action={acceptInvitation}><input name="token" type="hidden" value={token}/><button className="primaryAction">Accept invitation</button></form></main>}

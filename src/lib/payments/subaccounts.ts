@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { CountryCode } from "@/lib/countries/types";
 
 export interface PaymentSubaccountProvider {
   create(input: {
@@ -12,7 +13,7 @@ export interface PaymentSubaccountProvider {
 export type PaymentSubaccountRequest = {
   authUserId: string;
   sellerAccountId: string;
-  country: "GH" | "NG" | null;
+  country: CountryCode | null;
   businessName: string;
   bankCode: string;
   bankName: string;
@@ -93,6 +94,9 @@ function blocker(
   if (!request.country) {
     return { status: "blocked", blocker: "country" };
   }
+  if (request.country === "CI") {
+    return { status: "blocked", blocker: "country" };
+  }
 
   if (
     !request.businessName.trim() ||
@@ -139,7 +143,7 @@ export async function createPaymentSubaccount(
 
   const country = request.country;
 
-  if (!country) {
+  if (!country || country === "CI") {
     return { status: "blocked", blocker: "country" };
   }
 

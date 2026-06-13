@@ -9,7 +9,7 @@ import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
 
 type Props = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ q?: string; collection?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; collection?: string; page?: string; campaign?: string }>;
 };
 
 function origin() {
@@ -52,7 +52,7 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
           <input className="min-h-11 min-w-0 flex-1 rounded-xl border border-stone-300 bg-white px-3" defaultValue={filters.q} id="shop-search" name="q" placeholder="Search this shop" />
           <button className="min-h-11 rounded-xl bg-stone-900 px-4 font-bold text-white">Search</button>
         </form>
-        <ProductGrid products={products} slug={slug} />
+        <ProductGrid campaign={filters.campaign} products={products} slug={slug} />
       </section>
     </main>
   );

@@ -1,0 +1,2 @@
+import {describe,expect,test} from "vitest";import {evaluateAutomation} from "./engine";
+describe("automation engine",()=>{test("enforces event, conditions and recursion depth",()=>{const rule={event:"order.completed",conditions:{paymentStatus:"paid"},action:{type:"notify"}};expect(evaluateAutomation(rule,{type:"order.completed",data:{paymentStatus:"paid"},depth:0})).toBe(true);expect(evaluateAutomation(rule,{type:"order.completed",data:{paymentStatus:"paid"},depth:4})).toBe(false)})});

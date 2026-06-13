@@ -5,7 +5,7 @@ const productSchema = z
     name: z.string().trim().min(2, "Enter a product name.").max(120),
     description: z.string().trim().max(5_000).optional().default(""),
     price: z.string().regex(/^\d+$/, "Enter a whole minor-unit amount."),
-    currency: z.enum(["GHS", "NGN"], {
+    currency: z.enum(["GHS", "NGN", "XOF"], {
       message: "Use the shop currency.",
     }),
     inventoryPolicy: z.enum([
@@ -45,7 +45,7 @@ export type ParsedProduct = {
   name: string;
   description: string;
   priceMinor: number;
-  currency: "GHS" | "NGN";
+  currency: "GHS" | "NGN" | "XOF";
   inventoryPolicy:
     | "track"
     | "continue_selling"

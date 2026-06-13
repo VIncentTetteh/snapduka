@@ -14,6 +14,7 @@ import type {
   OnboardingState,
   VerificationState,
 } from "@/lib/auth/onboarding";
+import type { CountryCode } from "@/lib/countries/types";
 
 const initialActionState: OnboardingActionState = {
   status: "idle",
@@ -33,7 +34,7 @@ export type OnboardingFormModel = {
   mode: "bootstrap" | "seller";
   verifiedEmail: string | null;
   account: {
-    country: "GH" | "NG";
+    country: CountryCode;
     contactName: string;
     contactEmail: string;
     contactPhone: string | null;

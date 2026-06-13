@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CheckoutPage({ params, searchParams }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ product?: string }>;
+  searchParams: Promise<{ product?: string; campaign?: string }>;
 }) {
   const [{ slug }, query] = await Promise.all([params, searchParams]);
   const shop = await getPublicShop(slug);
@@ -23,7 +23,7 @@ export default async function CheckoutPage({ params, searchParams }: {
       <Link className="font-bold text-emerald-900" href={`/${slug}/products/${product.id}`}>← Back to product</Link>
       <header><p className="font-bold uppercase tracking-wide text-emerald-900">Secure guest checkout</p><h1 className="m-0 text-4xl font-black">Complete your order</h1><p>No account required. Review delivery and payment before confirming.</p></header>
       {!methods?.length ? <p role="alert">This seller has not enabled delivery or pickup yet.</p> : null}
-      <CheckoutForm country={shop.country} methods={methods ?? []} product={product} shopId={shop.id} />
+      <CheckoutForm campaignToken={query.campaign} country={shop.country} methods={methods ?? []} product={product} shopId={shop.id} />
     </main>
   );
 }

@@ -1,0 +1,1 @@
+import {redirect} from "next/navigation";export default async function CountryDiscovery({params}:{params:Promise<{country:string}>}){const{country}=await params;redirect(`/discover?country=${encodeURIComponent(country.toUpperCase())}`)}

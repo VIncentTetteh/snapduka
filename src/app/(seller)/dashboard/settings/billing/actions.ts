@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function selectPlan(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || actor.status !== "active") return;
+  if (actor.kind !== "seller" || actor.role || actor.status !== "active") return;
   const planCode = String(formData.get("planCode") ?? "");
   const interval = String(formData.get("interval") ?? "monthly");
   if (!["growth", "scale"].includes(planCode) || !["monthly", "yearly"].includes(interval)) return;
@@ -47,7 +47,7 @@ export async function selectPlan(formData: FormData) {
 
 export async function cancelSubscription() {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || actor.role) return;
   const supabase = await createClient();
   await supabase
     .from("seller_subscriptions")

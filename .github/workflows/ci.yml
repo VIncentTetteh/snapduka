@@ -34,7 +34,7 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: P0 traceability
+      - name: Product traceability
         run: pnpm traceability
 
       - name: Build

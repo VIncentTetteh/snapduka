@@ -1,4 +1,5 @@
 import { ShareActions } from "@/components/storefront/share-actions";
+import type { CountryCode } from "@/lib/countries/types";
 
 export function ShopHeader({
   name,
@@ -7,7 +8,7 @@ export function ShopHeader({
   qrDataUrl,
 }: {
   name: string;
-  country: "GH" | "NG";
+  country: CountryCode;
   canonicalUrl: string;
   qrDataUrl: string;
 }) {
@@ -16,7 +17,7 @@ export function ShopHeader({
       <p className="m-0 text-xs font-extrabold uppercase tracking-widest text-emerald-200">SnapDuka verified storefront</p>
       <h1 className="m-0 text-4xl font-black leading-none tracking-tight">{name}</h1>
       <p className="m-0 text-sm text-emerald-100">
-        Seller-managed delivery and pickup · Prices in {country === "GH" ? "Ghana cedis" : "Nigerian naira"}
+        Seller-managed delivery and pickup · Prices in {country === "GH" ? "Ghana cedis" : country === "NG" ? "Nigerian naira" : "West African CFA francs"}
       </p>
       <ShareActions name={name} url={canonicalUrl} qrDataUrl={qrDataUrl} />
     </header>

@@ -346,7 +346,7 @@ set local role anon;
 
 select is(
   (select count(*) from public.country_configs),
-  2::bigint,
+  3::bigint,
   'anonymous users can read supported country configuration'
 );
 select is(
