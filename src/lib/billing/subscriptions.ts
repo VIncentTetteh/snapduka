@@ -44,3 +44,10 @@ export function effectiveSubscriptionState(
   }
   return subscription.state;
 }
+
+export function mapPaystackSubscriptionEvent(event: unknown): SubscriptionState | null {
+  if (event === "subscription.create" || event === "invoice.update") return "active";
+  if (event === "invoice.payment_failed") return "past_due";
+  if (event === "subscription.disable") return "cancelled";
+  return null;
+}

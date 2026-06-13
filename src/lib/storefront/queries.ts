@@ -15,7 +15,7 @@ function publicClient() {
 export async function getPublicShop(slug: string) {
   const { data, error } = await publicClient()
     .from("shops")
-    .select("id, slug, display_name, country, currency, published_at")
+    .select("id, slug, display_name, country, currency, published_at, shop_branding(accent_color,surface_color,font_family,logo_path,banner_path,hide_snapduka_branding)")
     .eq("slug", slug)
     .eq("status", "published")
     .maybeSingle();

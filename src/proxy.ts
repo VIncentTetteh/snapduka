@@ -41,6 +41,18 @@ export async function proxy(request: NextRequest) {
 
   await supabase.auth.getClaims();
 
+  const host = request.headers.get("host")?.toLowerCase().replace(/:\d+$/, "");
+  const appHost = new URL(process.env.NEXT_PUBLIC_APP_URL ?? request.url).hostname;
+  if (host && host !== appHost && !host.endsWith(".vercel.app")) {
+    const { data: domain } = await supabase.from("custom_domains").select("shops(slug)").eq("hostname", host).eq("status", "verified").maybeSingle();
+    const slug = (domain?.shops as unknown as { slug?: string } | null)?.slug;
+    if (slug && request.nextUrl.pathname === "/") {
+      const rewritten = request.nextUrl.clone();
+      rewritten.pathname = `/${slug}`;
+      return NextResponse.rewrite(rewritten, response);
+    }
+  }
+
   return response;
 }
 

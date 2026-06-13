@@ -44,7 +44,7 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
   ]);
 
   return (
-    <main className="mx-auto min-h-svh w-full max-w-5xl bg-stone-50 pb-16">
+    <main className="mx-auto min-h-svh w-full max-w-5xl pb-16" style={{ backgroundColor: shop.shop_branding?.[0]?.surface_color ?? "#fafaf9", ["--accent" as string]: shop.shop_branding?.[0]?.accent_color ?? "#146b45" }}>
       <ShopHeader canonicalUrl={canonicalUrl} country={shop.country} name={shop.display_name} qrDataUrl={qrDataUrl} />
       <section className="grid gap-4 px-3 py-5">
         <form className="flex gap-2" role="search">

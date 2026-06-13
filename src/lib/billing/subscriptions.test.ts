@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   canTransitionSubscription,
   effectiveSubscriptionState,
+  mapPaystackSubscriptionEvent,
 } from "./subscriptions";
 
 describe("subscription state", () => {
@@ -25,5 +26,12 @@ describe("subscription state", () => {
         new Date("2026-06-21T00:00:00.000Z"),
       ),
     ).toBe("expired");
+  });
+
+  test("maps Paystack events without allowing stale events to regress billing", () => {
+    expect(mapPaystackSubscriptionEvent("subscription.create")).toBe("active");
+    expect(mapPaystackSubscriptionEvent("invoice.payment_failed")).toBe("past_due");
+    expect(mapPaystackSubscriptionEvent("subscription.disable")).toBe("cancelled");
+    expect(mapPaystackSubscriptionEvent("charge.success")).toBeNull();
   });
 });
