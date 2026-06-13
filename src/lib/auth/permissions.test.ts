@@ -1,0 +1,2 @@
+import {describe,expect,test} from "vitest";import {hasPermission} from "./permissions";
+describe("team permissions",()=>{test("enforces the role matrix",()=>{expect(hasPermission("owner","billing.manage")).toBe(true);expect(hasPermission("manager","orders.manage")).toBe(true);expect(hasPermission("fulfillment","products.manage")).toBe(false);expect(hasPermission("analyst","analytics.read")).toBe(true);expect(hasPermission("analyst","orders.manage")).toBe(false)})});

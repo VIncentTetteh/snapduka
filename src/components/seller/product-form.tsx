@@ -10,7 +10,7 @@ import { ImageUploader } from "@/components/seller/image-uploader";
 
 const initialState: ProductActionState = { status: "idle", values: {} };
 
-export function ProductForm({ currency }: { currency: "GHS" | "NGN" }) {
+export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
   const [state, action, pending] = useActionState(
     createProductAction,
     initialState,

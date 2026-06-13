@@ -8,7 +8,7 @@ import { deriveAvailability } from "@/lib/catalog/inventory";
 import { getPublicProduct, getPublicShop } from "@/lib/storefront/queries";
 import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
 
-type Props = { params: Promise<{ slug: string; productId: string }> };
+type Props = { params: Promise<{ slug: string; productId: string }>; searchParams: Promise<{campaign?:string}> };
 const origin = () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -21,8 +21,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: `${product.name} | ${shop.display_name}`, description: product.description, alternates: { canonical: url }, openGraph: { title: product.name, url } };
 }
 
-export default async function ProductPage({ params }: Props) {
-  const { slug, productId } = await params;
+export default async function ProductPage({ params, searchParams }: Props) {
+  const [{ slug, productId },query] = await Promise.all([params,searchParams]);
   const shop = await getPublicShop(slug);
   if (!shop) notFound();
   const product = await getPublicProduct(shop.id, productId);
@@ -38,7 +38,7 @@ export default async function ProductPage({ params }: Props) {
       <section className="grid gap-3">
         <p className="m-0 font-bold uppercase tracking-wide text-emerald-900">{availability === "preorder" ? "Available for preorder" : availability.replace("_", " ")}</p>
         <h1 className="m-0 text-4xl font-black tracking-tight">{product.name}</h1>
-        <strong className="text-2xl">{product.currency} {(product.price_minor / 100).toFixed(2)}</strong>
+        <strong className="text-2xl">{product.currency} {product.currency === "XOF" ? product.price_minor : (product.price_minor / 100).toFixed(2)}</strong>
         <p className="m-0 whitespace-pre-wrap text-stone-700">{product.description || "Ask the seller for more product details."}</p>
         {product.product_variants?.length ? (
           <div>
@@ -46,7 +46,7 @@ export default async function ProductPage({ params }: Props) {
             <ul className="grid list-none gap-2 p-0">{product.product_variants.map((variant) => <li className="rounded-xl border border-stone-300 bg-white p-3" key={variant.id}>{variant.name}{variant.price_minor !== null ? ` · ${product.currency} ${(variant.price_minor / 100).toFixed(2)}` : ""}</li>)}</ul>
           </div>
         ) : null}
-        <Link aria-disabled={availability === "sold_out"} className={`grid min-h-12 place-items-center rounded-xl px-4 text-lg font-extrabold text-white ${availability === "sold_out" ? "pointer-events-none bg-stone-400" : "bg-emerald-900"}`} href={`/${slug}/checkout?product=${product.id}`}>Buy now</Link>
+        <Link aria-disabled={availability === "sold_out"} className={`grid min-h-12 place-items-center rounded-xl px-4 text-lg font-extrabold text-white ${availability === "sold_out" ? "pointer-events-none bg-stone-400" : "bg-emerald-900"}`} href={`/${slug}/checkout?product=${product.id}${query.campaign?`&campaign=${encodeURIComponent(query.campaign)}`:""}`}>Buy now</Link>
         <p className="m-0 text-sm text-stone-600">You will see the full price, delivery or pickup options, and payment method before confirming.</p>
         <ShareActions name={product.name} qrDataUrl={qrDataUrl} url={url} />
       </section>

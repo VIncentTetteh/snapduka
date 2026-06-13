@@ -45,4 +45,16 @@ export default async function globalSetup() {
       name:item.method,fee_minor:item.fee,instructions:item.instructions,active:true,
     });
   }
+  await admin.from("promotions").upsert({
+    id:"11111111-1111-4111-8111-111111111116",seller_account_id:fixtures[0].sellerId,shop_id:fixtures[0].shopId,
+    code:"SAVE10",name:"Save ten percent",kind:"percentage",value:10,minimum_minor:0,active:true,
+  });
+  await admin.from("campaign_links").upsert({
+    id:"11111111-1111-4111-8111-111111111117",seller_account_id:fixtures[0].sellerId,shop_id:fixtures[0].shopId,
+    name:"TikTok launch",token:"tiktok-launch",channel:"tiktok",active:true,
+  });
+  await admin.from("discovery_preferences").upsert({
+    shop_id:fixtures[0].shopId,seller_account_id:fixtures[0].sellerId,opted_in:true,category:"Fashion",city:"Accra",description:"Independent Ghanaian goods.",
+  });
+  await admin.rpc("refresh_discovery_listing",{p_shop_id:fixtures[0].shopId});
 }

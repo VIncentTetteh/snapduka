@@ -17,6 +17,7 @@ test-results/
 
 # Supabase
 supabase/.temp/
+supabase/.branches/
 
 # Logs
 *.log

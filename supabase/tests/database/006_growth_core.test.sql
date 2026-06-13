@@ -1,0 +1,16 @@
+begin;
+select plan(12);
+select has_table('public','plan_prices','plan prices exist');
+select has_table('public','seller_subscriptions','seller subscriptions exist');
+select has_table('public','subscription_events','subscription events exist');
+select has_table('public','feature_usage','feature usage exists');
+select col_type_is('public','seller_subscriptions','state','subscription_state','subscription state enum is used');
+select is((select relforcerowsecurity from pg_class where oid='public.seller_subscriptions'::regclass),true,'subscriptions force RLS');
+select is((select relforcerowsecurity from pg_class where oid='public.subscription_events'::regclass),true,'subscription events force RLS');
+select is((select relforcerowsecurity from pg_class where oid='public.feature_usage'::regclass),true,'usage forces RLS');
+select is((select count(*)::integer from public.plans where code='growth' and active),1,'growth plan seeded');
+select is((select count(*)::integer from public.plans where code='scale' and active),1,'scale plan seeded');
+select col_type_is('public','seller_entitlements','read_only_capabilities','text[]','downgrade read-only capabilities are stored');
+select is(has_table_privilege('anon','public.seller_subscriptions','SELECT'),false,'anonymous cannot read subscriptions');
+select * from finish();
+rollback;

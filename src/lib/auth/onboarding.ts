@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CountryCode } from "@/lib/countries/types";
 
 export const onboardingMilestoneKeys = [
   "account",
@@ -20,7 +21,7 @@ export type VerificationState =
 
 export type OnboardingFacts = {
   seller: {
-    country: "GH" | "NG";
+    country: CountryCode;
     contactName: string;
     contactEmail: string;
     contactPhone: string | null;
@@ -132,9 +133,9 @@ export function evaluateOnboarding(
 
 export function normalizePhoneNumber(
   input: string,
-  country: "GH" | "NG",
+  country: CountryCode,
 ): string {
-  const callingCode = country === "GH" ? "233" : "234";
+  const callingCode = country === "GH" ? "233" : country === "NG" ? "234" : "225";
   const stripped = input.trim().replace(/[^\d+]/g, "");
   const digits = stripped.replace(/\D/g, "");
 
@@ -146,7 +147,7 @@ export function normalizePhoneNumber(
     return `+${digits}`;
   }
 
-  return `+${callingCode}${digits.replace(/^0/, "")}`;
+  return `+${callingCode}${country === "CI" ? digits : digits.replace(/^0/, "")}`;
 }
 
 export function normalizeShopSlug(input: string): string {
@@ -158,7 +159,7 @@ export function normalizeShopSlug(input: string): string {
 }
 
 const accountSetupSchema = z.object({
-  country: z.enum(["GH", "NG"]),
+  country: z.enum(["GH", "NG", "CI"]),
   contactName: z.string().trim().min(2, "Enter your contact name."),
   contactEmail: z.email("Use the verified email on your account."),
   contactPhone: z
@@ -229,7 +230,7 @@ export function parseAccountSetup(
       contactName: input.contactName,
       contactEmail: verifiedEmail?.trim().toLowerCase() ?? "",
       contactPhone:
-        input.country === "GH" || input.country === "NG"
+        input.country === "GH" || input.country === "NG" || input.country === "CI"
           ? normalizePhoneNumber(input.contactPhone, input.country)
           : input.contactPhone,
     }),

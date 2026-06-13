@@ -1,0 +1,2 @@
+import {describe,expect,test} from "vitest";import {rankDiscovery} from "./search";
+describe("discovery ranking",()=>{test("is deterministic and excludes stale or suspended listings",()=>{const now=new Date("2026-06-13");const rows=[{id:"b",quality:5,updatedAt:"2026-06-12",active:true},{id:"a",quality:5,updatedAt:"2026-06-12",active:true},{id:"c",quality:10,updatedAt:"2026-01-01",active:true},{id:"d",quality:20,updatedAt:"2026-06-12",active:false}];expect(rankDiscovery(rows,now).map(r=>r.id)).toEqual(["a","b"])})});

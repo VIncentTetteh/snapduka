@@ -1,0 +1,2 @@
+import {describe,expect,test} from "vitest";import {ManualCourierAdapter} from "./manual";
+describe("courier contract",()=>{test("quotes, books and cancels manual shipments",async()=>{const adapter=new ManualCourierAdapter();const[quote]=await adapter.quote({orderId:"12345678-aaaa",currency:"GHS",amountMinor:1200});expect(quote.provider).toBe("manual");const shipment=await adapter.book({orderId:"12345678-aaaa",quoteId:quote.id,trackingNumber:"RIDER-22"});expect(shipment.trackingNumber).toBe("RIDER-22");await expect(adapter.cancel(shipment.id)).resolves.toBeUndefined()})});

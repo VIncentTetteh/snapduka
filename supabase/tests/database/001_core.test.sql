@@ -127,6 +127,7 @@ select results_eq(
   $$,
   $$
     values
+      ('CI'::text, 'XOF'::text, '+225'::text),
       ('GH'::text, 'GHS'::text, '+233'::text),
       ('NG'::text, 'NGN'::text, '+234'::text)
   $$,

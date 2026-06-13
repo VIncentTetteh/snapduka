@@ -18,8 +18,9 @@ export type SellerActor = {
   userId: string;
   email: string | null;
   sellerAccountId: string;
-  country: "GH" | "NG";
+  country: "GH" | "NG" | "CI";
   status: SellerAccountStatus;
+  role?: "manager" | "catalog" | "fulfillment" | "support" | "analyst";
 };
 
 export type OperatorActor = {
@@ -44,7 +45,7 @@ export type VerifiedAuthUser = {
 
 export type SellerAccountIdentity = {
   id: string;
-  country: "GH" | "NG";
+  country: "GH" | "NG" | "CI";
   status: SellerAccountStatus;
 };
 
@@ -53,6 +54,7 @@ export type ActorResolverDependencies = {
   getSellerByAuthUserId: (
     authUserId: string,
   ) => Promise<SellerAccountIdentity | null>;
+  getMembershipByAuthUserId?: (authUserId: string) => Promise<(SellerAccountIdentity & { role: NonNullable<SellerActor["role"]> }) | null>;
 };
 
 export async function resolveActor(
@@ -78,8 +80,9 @@ export async function resolveActor(
   }
 
   const seller = await dependencies.getSellerByAuthUserId(user.id);
+  const membership = seller ? null : await dependencies.getMembershipByAuthUserId?.(user.id);
 
-  if (!seller) {
+  if (!seller && !membership) {
     return {
       kind: "unprovisioned",
       authenticated: true,
@@ -88,14 +91,16 @@ export async function resolveActor(
     };
   }
 
+  const identity = seller ?? membership!;
   return {
     kind: "seller",
     authenticated: true,
     userId: user.id,
     email: user.email,
-    sellerAccountId: seller.id,
-    country: seller.country,
-    status: seller.status,
+    sellerAccountId: identity.id,
+    country: identity.country,
+    status: identity.status,
+    ...(membership ? { role: membership.role } : {}),
   };
 }
 
@@ -131,6 +136,12 @@ async function createSupabaseDependencies(): Promise<ActorResolverDependencies> 
       }
 
       return data as SellerAccountIdentity | null;
+    },
+    async getMembershipByAuthUserId(authUserId) {
+      const { data, error } = await supabase.from("team_memberships").select("role,seller_accounts(id,country,status)").eq("auth_user_id",authUserId).eq("active",true).limit(1).maybeSingle();
+      if (error || !data?.seller_accounts) return null;
+      const seller=data.seller_accounts as unknown as SellerAccountIdentity;
+      return {...seller,role:data.role as NonNullable<SellerActor["role"]>};
     },
   };
 }

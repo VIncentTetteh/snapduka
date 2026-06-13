@@ -1,6 +1,6 @@
 # Deployment
 
-The Foundation release is designed for Vercel with a linked hosted Supabase
+The Growth and Scale release is designed for Vercel with a linked hosted Supabase
 project. Use Paystack test mode until staging acceptance is complete.
 
 ## Vercel
@@ -22,6 +22,8 @@ Configure these values for Preview and Production:
 - `NEXT_PUBLIC_APP_URL`
 - `EMAIL_WEBHOOK_URL`
 - `INTERNAL_JOB_SECRET`
+- `API_KEY_PEPPER`
+- courier webhook secrets using `COURIER_<PROVIDER>_WEBHOOK_SECRET`
 
 After the preview URL is known, set `NEXT_PUBLIC_APP_URL` to that origin and
 redeploy. Keep all variables except the two explicitly prefixed
@@ -36,6 +38,7 @@ In Paystack test mode, register:
 
 ```text
 https://<origin>/api/payments/paystack/webhook
+https://<origin>/api/payments/paystack/subscription-webhook
 ```
 
 The notification processor must be called periodically with:
@@ -48,6 +51,16 @@ Authorization: Bearer $INTERNAL_JOB_SECRET
 Use a scheduler that can send authenticated POST requests. Do not expose the
 job secret in a URL.
 
+Use the same scheduler and authorization header for:
+
+```text
+POST /api/internal/integrations/process
+```
+
+Configure custom-domain DNS and TLS at the hosting provider before marking a
+`custom_domains` record verified. CI/XOF launches default to offline payment
+channels until a compatible online payment provider is configured.
+
 ## Acceptance
 
 1. Create a seller and finish onboarding.
@@ -57,6 +70,8 @@ job secret in a URL.
    notification delivery.
 5. Run Lighthouse against the deployed storefront and verify mobile checkout
    on a throttled connection.
+6. Verify promotion attribution, consent withdrawal, team revocation, manual
+   courier tracking, API scope denial, webhook retries, and discovery opt-out.
 
 Rotate any credential that has been shared through chat or logs before enabling
 live payments.

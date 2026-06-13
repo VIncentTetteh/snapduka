@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
+import { hasPermission } from "@/lib/auth/permissions";
 import { parseProductInput } from "@/lib/catalog/schema";
 import { createClient } from "@/lib/supabase/server";
 
@@ -51,7 +52,7 @@ export async function createProductAction(
   );
   const actor = await resolveServerActor();
 
-  if (actor.kind !== "seller" || !["pending", "active"].includes(actor.status)) {
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner","products.manage") || !["pending", "active"].includes(actor.status)) {
     return {
       status: "error",
       message: "Sign in with an active seller account.",
@@ -167,6 +168,7 @@ export async function setProductStatusAction(formData: FormData): Promise<void> 
 
   if (
     actor.kind !== "seller" ||
+    !hasPermission(actor.role ?? "owner","products.manage") ||
     !["pending", "active"].includes(actor.status) ||
     !["draft", "active", "archived"].includes(status)
   ) {
@@ -185,4 +187,14 @@ export async function setProductStatusAction(formData: FormData): Promise<void> 
 
   revalidatePath("/dashboard/products");
   revalidatePath("/onboarding");
+}
+
+export async function bulkProductStatusAction(formData: FormData): Promise<void> {
+  const actor = await resolveServerActor();
+  const ids = formData.getAll("productIds").map(String).slice(0, 100);
+  const status = value(formData, "status");
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner","products.manage") || !ids.length || !["draft", "active", "archived"].includes(status)) return;
+  const supabase = await createClient();
+  await supabase.from("products").update({ status, published_at: status === "active" ? new Date().toISOString() : null }).eq("seller_account_id", actor.sellerAccountId).in("id", ids);
+  revalidatePath("/dashboard/products");
 }

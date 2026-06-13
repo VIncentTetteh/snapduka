@@ -1,0 +1,3 @@
+import {createHmac,timingSafeEqual} from "node:crypto";
+export function signWebhook(body:string,secret:string,timestamp=Math.floor(Date.now()/1000)){const signature=createHmac("sha256",secret).update(`${timestamp}.${body}`).digest("hex");return`t=${timestamp},v1=${signature}`}
+export function verifyWebhook(body:string,header:string,secret:string,now=Math.floor(Date.now()/1000)){const parts=Object.fromEntries(header.split(",").map(v=>v.split("=")));const timestamp=Number(parts.t);if(!timestamp||Math.abs(now-timestamp)>300)return false;const expected=Buffer.from(signWebhook(body,secret,timestamp).split("v1=")[1],"hex");const received=Buffer.from(parts.v1??"","hex");return expected.length===received.length&&timingSafeEqual(expected,received)}

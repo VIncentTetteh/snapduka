@@ -346,13 +346,13 @@ set local role anon;
 
 select is(
   (select count(*) from public.country_configs),
-  2::bigint,
+  3::bigint,
   'anonymous users can read supported country configuration'
 );
 select is(
   (select count(*) from public.plans),
-  1::bigint,
-  'anonymous users can read only active plans'
+  3::bigint,
+  'anonymous users can read all active plan versions'
 );
 select results_eq(
   $$

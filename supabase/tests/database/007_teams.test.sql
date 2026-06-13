@@ -1,0 +1,13 @@
+begin;
+set local search_path=extensions,public;
+select plan(8);
+select has_table('public','team_memberships','team memberships exist');
+select has_table('public','team_invitations','team invitations exist');
+select has_function('public','team_has_role',array['uuid','team_role[]']::name[],'role helper exists');
+select is((select relforcerowsecurity from pg_class where oid='public.team_memberships'::regclass),true,'memberships force RLS');
+select is((select relforcerowsecurity from pg_class where oid='public.team_invitations'::regclass),true,'invitations force RLS');
+select is(has_table_privilege('anon','public.team_memberships','SELECT'),false,'anonymous users cannot enumerate teams');
+select is(has_table_privilege('authenticated','public.team_memberships','SELECT'),true,'authenticated team actors can resolve membership');
+select is(has_function_privilege('authenticated','public.team_has_role(uuid,team_role[])','EXECUTE'),true,'authenticated actors can evaluate scoped roles');
+select * from finish();
+rollback;

@@ -1,0 +1,2 @@
+import {describe,expect,test} from "vitest";import {dictionary,formatMoney,normalizePhone} from "./index";import {en} from "./en";import {fr} from "./fr";
+describe("localization",()=>{test("keeps dictionary parity and falls back to English",()=>{expect(Object.keys(fr)).toEqual(Object.keys(en));expect(dictionary("de")).toBe(en)});test("formats zero-decimal XOF",()=>{expect(formatMoney(12500,"XOF","fr-CI")).toContain("12 500")});test("normalizes Côte d'Ivoire phones",()=>{expect(normalizePhone("07 08 09 10 11","CI")).toBe("+2250708091011")})});
