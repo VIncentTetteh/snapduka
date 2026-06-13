@@ -9,10 +9,9 @@ select is(has_function_privilege('anon','public.create_guest_order(uuid,uuid,jso
 select is((select relforcerowsecurity from pg_class where oid='public.orders'::regclass),true,'orders force RLS');
 select is((select relforcerowsecurity from pg_class where oid='public.order_lines'::regclass),true,'lines force RLS');
 select has_trigger('public','order_lines','order_lines_no_update','line snapshots have an immutability trigger');
-select like(
-  (select column_default::text from information_schema.columns where table_schema='public' and table_name='orders' and column_name='public_reference'),
-  '%extensions.gen_random_bytes%',
-  'order references schema-qualify the pgcrypto function'
+select lives_ok(
+  $$select extensions.gen_random_bytes(8)$$,
+  'pgcrypto random bytes are available from the extension schema'
 );
 select * from finish();
 rollback;

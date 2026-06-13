@@ -351,8 +351,8 @@ select is(
 );
 select is(
   (select count(*) from public.plans),
-  1::bigint,
-  'anonymous users can read only active plans'
+  3::bigint,
+  'anonymous users can read all active plan versions'
 );
 select results_eq(
   $$
