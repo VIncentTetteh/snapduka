@@ -50,4 +50,21 @@ describe("auth confirmation route", () => {
       "https://snapduka.example/settings",
     );
   });
+
+  it("sends a confirmed first-time user to onboarding by default", async () => {
+    const exchangeCodeForSession = vi.fn().mockResolvedValue({ error: null });
+    createClient.mockResolvedValue({
+      auth: { exchangeCodeForSession },
+    });
+
+    const response = await GET(
+      new NextRequest(
+        "https://snapduka.example/auth/confirm?code=auth-code",
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://snapduka.example/onboarding",
+    );
+  });
 });

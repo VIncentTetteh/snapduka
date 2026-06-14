@@ -24,6 +24,18 @@ function formValue(formData: FormData, name: string): string {
   return typeof value === "string" ? value : "";
 }
 
+function authNextPath(value: string): string {
+  return safeNextPath(value || "/onboarding");
+}
+
+function signUpErrorMessage(error: { code?: string }): string {
+  if (error.code === "user_already_exists") {
+    return "An account already exists for this email. Sign in or continue with Google.";
+  }
+
+  return "We could not create that account.";
+}
+
 function loginRedirect(
   kind: "error" | "message",
   text: string,
@@ -57,7 +69,7 @@ function confirmationUrl(next: string): string {
 }
 
 export async function signIn(formData: FormData): Promise<never> {
-  const next = safeNextPath(formValue(formData, "next"));
+  const next = authNextPath(formValue(formData, "next"));
   const credentials = signInSchema.safeParse({
     email: formValue(formData, "email").trim().toLowerCase(),
     password: formValue(formData, "password"),
@@ -78,7 +90,7 @@ export async function signIn(formData: FormData): Promise<never> {
 }
 
 export async function signUp(formData: FormData): Promise<never> {
-  const next = safeNextPath(formValue(formData, "next"));
+  const next = authNextPath(formValue(formData, "next"));
   const credentials = signUpSchema.safeParse({
     email: formValue(formData, "email").trim().toLowerCase(),
     password: formValue(formData, "password"),
@@ -101,7 +113,7 @@ export async function signUp(formData: FormData): Promise<never> {
   });
 
   if (error) {
-    loginRedirect("error", "We could not create that account.", next);
+    loginRedirect("error", signUpErrorMessage(error), next);
   }
 
   if (data.session) {
@@ -112,7 +124,7 @@ export async function signUp(formData: FormData): Promise<never> {
 }
 
 export async function signInWithSocial(formData: FormData): Promise<never> {
-  const next = safeNextPath(formValue(formData, "next"));
+  const next = authNextPath(formValue(formData, "next"));
   const parsedProvider = socialProviderSchema.safeParse(
     formValue(formData, "provider"),
   );

@@ -111,6 +111,55 @@ describe("login actions", () => {
     );
   });
 
+  it("sends a new account to onboarding when no return path is supplied", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        signUp: vi.fn().mockResolvedValue({
+          data: { session: { access_token: "session" } },
+          error: null,
+        }),
+      },
+    });
+
+    await expect(
+      signUp(
+        formData({
+          email: "new@example.com",
+          password: "long-enough-password",
+        }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.redirect).toHaveBeenCalledWith("/onboarding");
+  });
+
+  it("explains when the email already belongs to an account", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        signUp: vi.fn().mockResolvedValue({
+          data: { session: null },
+          error: Object.assign(new Error("User already registered"), {
+            code: "user_already_exists",
+          }),
+        }),
+      },
+    });
+
+    await expect(
+      signUp(
+        formData({
+          email: "existing@example.com",
+          password: "long-enough-password",
+          next: "/onboarding",
+        }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.redirect).toHaveBeenCalledWith(
+      "/login?error=An+account+already+exists+for+this+email.+Sign+in+or+continue+with+Google.&next=%2Fonboarding",
+    );
+  });
+
   it("starts an enabled social sign-in with a safe callback URL", async () => {
     const signInWithOAuth = vi.fn().mockResolvedValue({
       data: { url: "https://accounts.google.com/oauth" },

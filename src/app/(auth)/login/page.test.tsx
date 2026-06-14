@@ -55,4 +55,14 @@ describe("LoginPage", () => {
       screen.queryByRole("button", { name: /continue with facebook/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("uses onboarding as the default destination after authentication", async () => {
+    render(
+      await LoginPage({
+        searchParams: Promise.resolve({}),
+      }),
+    );
+
+    expect(screen.getAllByDisplayValue("/onboarding")).toHaveLength(2);
+  });
 });

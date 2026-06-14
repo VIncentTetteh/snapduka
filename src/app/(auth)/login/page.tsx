@@ -20,7 +20,7 @@ function first(value: string | string[] | undefined): string | undefined {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
-  const next = safeNextPath(first(params.next));
+  const next = safeNextPath(first(params.next) ?? "/onboarding");
   const error = first(params.error);
   const message = first(params.message);
   const providers = enabledSocialProviders();

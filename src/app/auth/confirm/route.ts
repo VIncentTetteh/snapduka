@@ -18,7 +18,9 @@ function isEmailOtpType(value: string | null): value is EmailOtpType {
 }
 
 export async function GET(request: NextRequest) {
-  const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+  const next = safeNextPath(
+    request.nextUrl.searchParams.get("next") ?? "/onboarding",
+  );
   const code = request.nextUrl.searchParams.get("code");
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
   const type = request.nextUrl.searchParams.get("type");
