@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { safeNextPath } from "@/lib/auth/redirect";
+import { isSocialProviderEnabled } from "@/lib/auth/social";
 import { createClient } from "@/lib/supabase/server";
 
 const signInSchema = z.object({
@@ -15,6 +16,8 @@ const signUpSchema = z.object({
   email: z.email(),
   password: z.string().min(8),
 });
+
+const socialProviderSchema = z.enum(["google", "facebook", "apple"]);
 
 function formValue(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -106,6 +109,42 @@ export async function signUp(formData: FormData): Promise<never> {
   }
 
   loginRedirect("message", "Check your email to confirm your account.", next);
+}
+
+export async function signInWithSocial(formData: FormData): Promise<never> {
+  const next = safeNextPath(formValue(formData, "next"));
+  const parsedProvider = socialProviderSchema.safeParse(
+    formValue(formData, "provider"),
+  );
+
+  if (
+    !parsedProvider.success ||
+    !isSocialProviderEnabled(parsedProvider.data)
+  ) {
+    loginRedirect(
+      "error",
+      "That social sign-in option is not available.",
+      next,
+    );
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: parsedProvider.data,
+    options: {
+      redirectTo: confirmationUrl(next),
+    },
+  });
+
+  if (error || !data.url) {
+    loginRedirect(
+      "error",
+      "We could not start social sign-in. Please try again.",
+      next,
+    );
+  }
+
+  redirect(data.url);
 }
 
 export async function signOut(): Promise<never> {

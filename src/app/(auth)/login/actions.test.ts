@@ -15,7 +15,7 @@ vi.mock("next/navigation", () => ({
   redirect: mocks.redirect,
 }));
 
-import { signIn, signOut, signUp } from "./actions";
+import { signIn, signInWithSocial, signOut, signUp } from "./actions";
 
 function formData(values: Record<string, string>) {
   const data = new FormData();
@@ -29,6 +29,7 @@ describe("login actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.NEXT_PUBLIC_APP_URL = "https://snapduka.example";
+    process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = "true";
   });
 
   it("signs in and rejects an unsafe next redirect", async () => {
@@ -107,6 +108,53 @@ describe("login actions", () => {
     });
     expect(mocks.redirect).toHaveBeenCalledWith(
       "/login?message=Check+your+email+to+confirm+your+account.&next=%2Fdashboard",
+    );
+  });
+
+  it("starts an enabled social sign-in with a safe callback URL", async () => {
+    const signInWithOAuth = vi.fn().mockResolvedValue({
+      data: { url: "https://accounts.google.com/oauth" },
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { signInWithOAuth },
+    });
+
+    await expect(
+      signInWithSocial(
+        formData({
+          provider: "google",
+          next: "//evil.example",
+        }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(signInWithOAuth).toHaveBeenCalledWith({
+      provider: "google",
+      options: {
+        redirectTo: "https://snapduka.example/auth/confirm?next=%2F",
+      },
+    });
+    expect(mocks.redirect).toHaveBeenCalledWith(
+      "https://accounts.google.com/oauth",
+    );
+  });
+
+  it("rejects social providers that are not enabled", async () => {
+    process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = "false";
+
+    await expect(
+      signInWithSocial(
+        formData({
+          provider: "google",
+          next: "/dashboard",
+        }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(mocks.redirect).toHaveBeenCalledWith(
+      "/login?error=That+social+sign-in+option+is+not+available.&next=%2Fdashboard",
     );
   });
 

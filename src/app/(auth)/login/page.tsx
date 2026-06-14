@@ -1,8 +1,9 @@
 import Link from "next/link";
 
 import { safeNextPath } from "@/lib/auth/redirect";
+import { enabledSocialProviders } from "@/lib/auth/social";
 
-import { signIn, signUp } from "./actions";
+import { signIn, signInWithSocial, signUp } from "./actions";
 import { SubmitButton } from "./submit-button";
 
 type LoginPageProps = {
@@ -22,6 +23,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const next = safeNextPath(first(params.next));
   const error = first(params.error);
   const message = first(params.message);
+  const providers = enabledSocialProviders();
 
   return (
     <main className="authShell">
@@ -33,8 +35,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <p className="eyebrow">Seller account</p>
         <h1 id="login-heading">Seller access</h1>
         <p>
-          Sign in to your seller account. New sellers can create an account
-          with an email address they can verify.
+          Sign in or create your seller account in a few taps.
         </p>
       </section>
 
@@ -47,6 +48,31 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <p className="authNotice" role="status">
           {message}
         </p>
+      ) : null}
+
+      {providers.length > 0 ? (
+        <section className="authCard authSocial" aria-labelledby="social-heading">
+          <h2 id="social-heading">Continue with</h2>
+          <p>Use an account you already trust. No new password needed.</p>
+          <div className="authSocialButtons">
+            {providers.map((provider) => (
+              <form action={signInWithSocial} key={provider.id}>
+                <input name="next" type="hidden" value={next} />
+                <button
+                  className="authSocialButton"
+                  name="provider"
+                  type="submit"
+                  value={provider.id}
+                >
+                  Continue with {provider.label}
+                </button>
+              </form>
+            ))}
+          </div>
+          <p className="authDivider">
+            <span>or use email</span>
+          </p>
+        </section>
       ) : null}
 
       <div className="authGrid">
@@ -80,8 +106,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <form action={signUp} className="authCard">
           <h2>Create account</h2>
           <p>
-            Use an email you can verify. Creating an account does not publish a
-            shop.
+            Start with email and a secure password. Creating an account does
+            not publish a shop.
           </p>
           <input name="next" type="hidden" value={next} />
 
