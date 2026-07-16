@@ -22,7 +22,7 @@ export async function shareStorefront(
   url: string,
 ): Promise<"shared" | string> {
   if (navigatorLike.share) {
-    await navigatorLike.share({ title, text: `Shop ${title} on SnapDuka`, url });
+    await navigatorLike.share({ title, url });
     return "shared";
   }
 

@@ -1,2 +1,28 @@
-import {NextResponse} from "next/server";import {signWebhook} from "@/lib/webhooks/signing";import {createAdminClient} from "@/lib/supabase/admin";
-export async function POST(request:Request){if(request.headers.get("authorization")!==`Bearer ${process.env.INTERNAL_JOB_SECRET}`)return NextResponse.json({error:"Unauthorized"},{status:401});const admin=createAdminClient();const{data:jobs}=await admin.from("webhook_deliveries").select("id,payload,attempt_count,outbound_webhooks(url,secret_encrypted)").in("state",["queued","retry"]).lte("next_attempt_at",new Date().toISOString()).limit(25);let delivered=0;for(const job of jobs??[]){const hook=job.outbound_webhooks as unknown as {url:string;secret_encrypted:string};const body=JSON.stringify(job.payload);try{const response=await fetch(hook.url,{method:"POST",headers:{"content-type":"application/json","x-snapduka-signature":signWebhook(body,hook.secret_encrypted)},body,signal:AbortSignal.timeout(10_000)});if(!response.ok)throw new Error(`HTTP ${response.status}`);await admin.from("webhook_deliveries").update({state:"delivered",delivered_at:new Date().toISOString(),attempt_count:job.attempt_count+1}).eq("id",job.id);delivered++}catch(error){const attempts=job.attempt_count+1;await admin.from("webhook_deliveries").update({state:attempts>=8?"dead_letter":"retry",attempt_count:attempts,last_error:error instanceof Error?error.message:"Delivery failed",next_attempt_at:new Date(Date.now()+Math.min(86_400_000,2**attempts*60_000)).toISOString()}).eq("id",job.id)}}return NextResponse.json({processed:jobs?.length??0,delivered})}
+import { NextResponse } from "next/server";
+
+import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { signWebhook } from "@/lib/webhooks/signing";
+
+export async function POST(request: Request) {
+  if (!isInternalJobRequest(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const admin = createAdminClient();
+  const { data: jobs } = await admin.from("webhook_deliveries").select("id,payload,attempt_count,outbound_webhooks(url,secret_encrypted)").in("state", ["queued", "retry"]).lte("next_attempt_at", new Date().toISOString()).limit(25);
+  let delivered = 0;
+  for (const job of jobs ?? []) {
+    const hook = job.outbound_webhooks as unknown as { secret_encrypted: string; url: string };
+    const body = JSON.stringify(job.payload);
+    try {
+      const response = await fetch(hook.url, { body, headers: { "content-type": "application/json", "x-snapduka-signature": signWebhook(body, hook.secret_encrypted) }, method: "POST", signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await admin.from("webhook_deliveries").update({ attempt_count: job.attempt_count + 1, delivered_at: new Date().toISOString(), state: "delivered" }).eq("id", job.id);
+      delivered++;
+    } catch (error) {
+      const attempts = job.attempt_count + 1;
+      await admin.from("webhook_deliveries").update({ attempt_count: attempts, last_error: error instanceof Error ? error.message.slice(0, 500) : "Delivery failed", next_attempt_at: new Date(Date.now() + Math.min(86_400_000, 2 ** attempts * 60_000)).toISOString(), state: attempts >= 8 ? "dead_letter" : "retry" }).eq("id", job.id);
+    }
+  }
+  return NextResponse.json({ delivered, processed: jobs?.length ?? 0 });
+}
+
+export const GET = POST;

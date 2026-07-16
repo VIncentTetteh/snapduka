@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
@@ -8,6 +9,7 @@ import {
   parseSettlementInput,
   parseShopIdentity,
 } from "@/lib/auth/onboarding";
+import { parseFulfillmentMethod } from "@/lib/fulfillment/schema";
 import {
   createPaymentSubaccount,
   type PaymentSubaccountProvider,
@@ -15,6 +17,7 @@ import {
   type SafeSettlementMetadata,
 } from "@/lib/payments/subaccounts";
 import { mapPaymentActionResult } from "@/lib/payments/onboarding-result";
+import { paystackProvider } from "@/lib/payments/paystack";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -300,11 +303,114 @@ export async function saveShopAction(
   );
 }
 
+export async function saveOnboardingFulfillmentAction(
+  _previousState: OnboardingActionState,
+  formData: FormData,
+): Promise<OnboardingActionState> {
+  const actor = await resolveServerActor();
+
+  if (actor.kind !== "seller") {
+    return errorState({}, actorError(actor.kind === "operator" ? "operator" : "anonymous"));
+  }
+
+  if (actor.status === "suspended" || actor.status === "closed") {
+    return errorState({}, actorError("suspended"));
+  }
+
+  const type = formData.get("type");
+  const providedName = String(formData.get("name") ?? "").trim();
+  const name = providedName || (type === "pickup" ? "Pickup" : "Delivery");
+  const feeMinor = String(formData.get("feeMinor") ?? "0");
+  const instructions = String(formData.get("instructions") ?? "");
+
+  const parsed = parseFulfillmentMethod({ type: String(type ?? ""), name, feeMinor, instructions });
+
+  if (!parsed.success) {
+    return errorState(
+      { type: String(type ?? ""), feeMinor },
+      "Check the fulfillment details.",
+      parsed.fieldErrors as Record<string, string[]>,
+    );
+  }
+
+  const supabase = await createClient();
+  const { data: shop } = await supabase
+    .from("shops")
+    .select("id")
+    .eq("seller_account_id", actor.sellerAccountId)
+    .single();
+
+  if (!shop) {
+    return errorState({}, "Complete your shop identity before adding fulfillment.");
+  }
+
+  const { error } = await supabase.from("fulfillment_methods").insert({
+    shop_id: shop.id,
+    seller_account_id: actor.sellerAccountId,
+    type: parsed.data.type,
+    name: parsed.data.name,
+    fee_minor: parsed.data.feeMinor,
+    instructions: parsed.data.instructions,
+    active: true,
+  });
+
+  if (error) {
+    return errorState({}, "We could not save the fulfillment method. Please try again.");
+  }
+
+  revalidatePath("/onboarding");
+  return successState("Fulfillment method saved.");
+}
+
+export async function publishShopAction(
+  _previousState: OnboardingActionState,
+  _formData: FormData,
+): Promise<OnboardingActionState> {
+  void _previousState;
+  void _formData;
+  const actor = await resolveServerActor();
+
+  if (actor.kind !== "seller") {
+    return errorState({}, actorError(actor.kind === "operator" ? "operator" : "anonymous"));
+  }
+
+  if (actor.status === "suspended" || actor.status === "closed") {
+    return errorState({}, actorError("suspended"));
+  }
+
+  // RLS only permits 'active' sellers to write status='published', but sellers
+  // completing onboarding are 'pending'. Use the admin client with explicit
+  // ownership filter — actor.sellerAccountId comes from the server session.
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("shops")
+    .update({ status: "published", published_at: new Date().toISOString() })
+    .eq("seller_account_id", actor.sellerAccountId);
+
+  if (error) {
+    return errorState({}, "We could not publish your shop. Please try again.");
+  }
+
+  redirect("/dashboard");
+}
+
 const unavailableProvider: PaymentSubaccountProvider = {
   async create() {
     throw new Error("Paystack provider is not configured in Foundation.");
   },
 };
+
+/** Real Paystack subaccount creation when a secret key is configured. */
+function settlementProvider(): PaymentSubaccountProvider {
+  if (!process.env.PAYSTACK_SECRET_KEY) {
+    return unavailableProvider;
+  }
+  return {
+    async create(input) {
+      return paystackProvider().createSubaccount(input);
+    },
+  };
+}
 
 function paymentRepository(
   admin: ReturnType<typeof createAdminClient>,
@@ -544,7 +650,7 @@ export async function requestSettlementAction(
       percentageCharge: PAYSTACK_PERCENTAGE_CHARGE,
     },
     {
-      provider: unavailableProvider,
+      provider: settlementProvider(),
       repository: paymentRepository(createAdminClient()),
     },
   );

@@ -35,11 +35,20 @@ export default async function globalSetup() {
       id:item.shopId,seller_account_id:item.sellerId,slug:item.slug,display_name:item.shop,
       legal_name:`${item.shop} Ltd`,country:item.country,currency:item.currency,status:"published",published_at:new Date().toISOString(),
     });
+    // Reservations from previous runs' demo orders would otherwise accumulate
+    // against the freshly re-seeded stock and starve the suite.
+    await admin.from("stock_reservations").delete().eq("seller_account_id", item.sellerId);
     await admin.from("products").upsert({
       id:item.productId,shop_id:item.shopId,seller_account_id:item.sellerId,name:item.product,slug:item.productSlug,
       description:`${item.product} from ${item.shop}.`,currency:item.currency,price_minor:item.price,status:"active",
-      inventory_policy:item.policy,stock_quantity:item.stock,published_at:new Date().toISOString(),
+      inventory_policy:item.policy,stock_quantity:item.stock,reserved_quantity:0,published_at:new Date().toISOString(),
     });
+    if (item.country === "GH") {
+      await admin.from("product_variants").upsert({
+        id:"11111111-1111-4111-8111-111111111118",product_id:item.productId,seller_account_id:item.sellerId,
+        name:"Large",sku:"BAG-LARGE",price_minor:14500,inventory_policy:"track",stock_quantity:5,reserved_quantity:0,active:true,
+      });
+    }
     await admin.from("fulfillment_methods").upsert({
       id:item.methodId,shop_id:item.shopId,seller_account_id:item.sellerId,type:item.methodType,
       name:item.method,fee_minor:item.fee,instructions:item.instructions,active:true,

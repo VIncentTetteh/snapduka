@@ -6,14 +6,14 @@ test("campaign attribution survives storefront navigation",async({page})=>{
   await expect(page).toHaveURL(/campaign=tiktok-launch/);
   await page.getByRole("link",{name:"Buy now"}).click();
   await expect(page).toHaveURL(/campaign=tiktok-launch/);
-  await expect(page.getByPlaceholder("Promotion code (optional)")).toBeVisible();
+  await expect(page.getByPlaceholder("e.g. LAUNCH20")).toBeVisible();
 });
 
 test("promotion is validated and snapshotted on an offline order",async({request})=>{
   const response=await request.post("/api/checkout/orders",{data:{
     shopId:"11111111-1111-4111-8111-111111111113",fulfillmentMethodId:"11111111-1111-4111-8111-111111111115",
     idempotencyKey:`growth-promo-${Date.now()}`,paymentMethod:"cash_on_delivery",promotionCode:"SAVE10",campaignToken:"tiktok-launch",
-    buyer:{name:"Growth Buyer",email:`growth-${Date.now()}@example.com`,phone:"+233241234567",country:"GH",address:{line1:"1 Test Road",area:"Osu",city:"Accra",region:"Greater Accra"},marketingConsent:true},
+    buyer:{name:"Growth Buyer",email:`growth-${Date.now()}@example.com`,phone:`+23324${String(Date.now()).slice(-7)}`,country:"GH",address:{line1:"1 Test Road",area:"Osu",city:"Accra",region:"Greater Accra"},marketingConsent:true},
     lines:[{productId:"11111111-1111-4111-8111-111111111114",quantity:1}],
   }});
   expect(response.status()).toBe(201);

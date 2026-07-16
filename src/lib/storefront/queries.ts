@@ -15,7 +15,7 @@ function publicClient() {
 export async function getPublicShop(slug: string) {
   const { data, error } = await publicClient()
     .from("shops")
-    .select("id, slug, display_name, country, currency, published_at, shop_branding(accent_color,surface_color,font_family,logo_path,banner_path,hide_snapduka_branding)")
+    .select("id, seller_account_id, slug, display_name, country, currency, published_at, shop_branding(accent_color,surface_color,font_family,logo_path,banner_path,hide_snapduka_branding)")
     .eq("slug", slug)
     .eq("status", "published")
     .maybeSingle();
@@ -62,6 +62,18 @@ export async function getPublicProducts(
 
   const { data, error } = await query;
   if (error) throw new Error("Unable to load products.", { cause: error });
+  return data ?? [];
+}
+
+export async function getPublicCollections(shopId: string) {
+  const { data, error } = await publicClient()
+    .from("collections")
+    .select("id, slug, name")
+    .eq("shop_id", shopId)
+    .eq("active", true)
+    .order("name");
+
+  if (error) throw new Error("Unable to load collections.", { cause: error });
   return data ?? [];
 }
 

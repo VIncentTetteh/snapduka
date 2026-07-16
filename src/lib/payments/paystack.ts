@@ -35,6 +35,50 @@ export class PaystackProvider implements PaymentProvider {
     return { authorizationUrl: data.authorization_url, accessCode: data.access_code, reference: data.reference };
   }
 
+  async initializeSubscription(input: { email: string; amountMinor: number; currency: string; reference: string; planCode: string; callbackUrl: string; metadata: Record<string, unknown> }) {
+    const data = await this.request("/transaction/initialize", {
+      method: "POST",
+      body: JSON.stringify({
+        email: input.email,
+        amount: input.amountMinor,
+        currency: input.currency,
+        reference: input.reference,
+        plan: input.planCode,
+        callback_url: input.callbackUrl,
+        metadata: input.metadata,
+      }),
+    });
+    return { authorizationUrl: data.authorization_url as string, reference: data.reference as string };
+  }
+
+  async disableSubscription(code: string, token: string) {
+    await this.request("/subscription/disable", {
+      method: "POST",
+      body: JSON.stringify({ code, token }),
+    });
+  }
+
+  async createSubaccount(input: {
+    businessName: string;
+    bankCode: string;
+    accountNumber: string;
+    percentageCharge: number;
+  }) {
+    const data = await this.request("/subaccount", {
+      method: "POST",
+      body: JSON.stringify({
+        business_name: input.businessName,
+        settlement_bank: input.bankCode,
+        account_number: input.accountNumber,
+        percentage_charge: input.percentageCharge,
+      }),
+    });
+    return {
+      providerId: String(data.id),
+      subaccountCode: data.subaccount_code as string,
+    };
+  }
+
   async verify(reference: string) {
     const data = await this.request(`/transaction/verify/${encodeURIComponent(reference)}`);
     return { status: data.status, amountMinor: data.amount, currency: data.currency, reference: data.reference };

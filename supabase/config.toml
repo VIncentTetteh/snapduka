@@ -39,7 +39,16 @@ file_size_limit = "50MiB"
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:3000"
-additional_redirect_urls = ["http://127.0.0.1:3000"]
+# Post-auth redirect allow-list. Dev servers hop ports (3000 → 3001) and the
+# app may be opened via localhost, 127.0.0.1 or the LAN IP — all must be
+# listed or GoTrue silently falls back to site_url after OAuth.
+additional_redirect_urls = [
+  "http://127.0.0.1:3000/**",
+  "http://127.0.0.1:3001/**",
+  "http://localhost:3000/**",
+  "http://localhost:3001/**",
+  "http://192.168.100.43:3001/**",
+]
 jwt_expiry = 3600
 enable_signup = true
 
@@ -50,3 +59,13 @@ enable_confirmations = false
 [auth.sms]
 enable_signup = false
 enable_confirmations = false
+
+# Google sign-in. Credentials come from the environment running `supabase
+# start` — export GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (or keep them in a
+# shell profile). The Google OAuth client's authorized redirect URI must be:
+#   http://127.0.0.1:54321/auth/v1/callback
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"
+skip_nonce_check = true

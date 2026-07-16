@@ -21,6 +21,158 @@ export async function resolveCaseAction(formData: FormData) {
   revalidatePath(`/admin/cases/${caseId}`); revalidatePath("/admin/cases");
 }
 
+export async function reviewPayoutAction(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator") return;
+  const payoutId = String(formData.get("payoutId"));
+  const decision = String(formData.get("decision"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!reason || !["approved", "rejected", "paid"].includes(decision)) return;
+
+  const admin = createAdminClient();
+  const { data: payout } = await admin
+    .from("payout_requests")
+    .select("id,status,seller_account_id,amount_minor,currency")
+    .eq("id", payoutId)
+    .maybeSingle();
+  if (!payout) return;
+
+  const allowed: Record<string, string[]> = {
+    requested: ["approved", "rejected"],
+    approved: ["paid", "rejected"],
+  };
+  if (!allowed[payout.status]?.includes(decision)) return;
+
+  await admin
+    .from("payout_requests")
+    .update({
+      status: decision,
+      review_reason: reason,
+      reviewed_by: actor.email,
+      reviewed_at: new Date().toISOString(),
+      paid_at: decision === "paid" ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", payoutId);
+
+  await admin.rpc("write_audit_event", {
+    p_actor_type: "admin",
+    p_actor_id: actor.userId,
+    p_action: `payout_${decision}`,
+    p_entity_type: "payout_request",
+    p_entity_id: payoutId,
+    p_before_data: { status: payout.status },
+    p_after_data: { status: decision, reason },
+    p_metadata: {
+      sellerAccountId: payout.seller_account_id,
+      amountMinor: payout.amount_minor,
+      currency: payout.currency,
+    },
+  });
+
+  revalidatePath("/admin/payouts");
+  revalidatePath("/admin");
+}
+
+export async function approveVerificationAction(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator") return;
+  const sellerId = String(formData.get("sellerId"));
+  const decision = String(formData.get("decision"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!sellerId || !reason || !["verified", "rejected"].includes(decision)) return;
+
+  const admin = createAdminClient();
+  const { data: seller } = await admin
+    .from("seller_accounts")
+    .select("id")
+    .eq("id", sellerId)
+    .maybeSingle();
+  if (!seller) return;
+
+  const now = new Date().toISOString();
+  // The verified state requires provider + provider_reference + checked_at
+  // (seller_verifications_verified_fields_check).
+  await admin.from("seller_verifications").upsert(
+    {
+      seller_account_id: sellerId,
+      state: decision,
+      provider: "operator",
+      provider_reference: `op-${crypto.randomUUID()}`,
+      checked_at: now,
+      updated_at: now,
+      metadata: { reviewedBy: actor.email, reason },
+    },
+    { onConflict: "seller_account_id" },
+  );
+
+  await admin.rpc("write_audit_event", {
+    p_actor_type: "admin",
+    p_actor_id: actor.userId,
+    p_action: `verification_${decision}`,
+    p_entity_type: "seller_account",
+    p_entity_id: sellerId,
+    p_before_data: null,
+    p_after_data: { state: decision, reason },
+    p_metadata: {},
+  });
+
+  revalidatePath(`/admin/sellers/${sellerId}`);
+}
+
+export async function addCaseMessageAction(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator") return;
+  const caseId = String(formData.get("caseId"));
+  const body = String(formData.get("body") ?? "").trim();
+  const operatorOnly = formData.get("operatorOnly") === "on";
+  if (!body) return;
+
+  const admin = createAdminClient();
+  await admin.from("case_messages").insert({
+    case_id: caseId,
+    actor_type: "admin",
+    actor_id: actor.userId,
+    body,
+    operator_only: operatorOnly,
+  });
+
+  revalidatePath(`/admin/cases/${caseId}`);
+}
+
+export async function updatePlanPriceAction(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator") return;
+  const priceId = String(formData.get("priceId"));
+  const amountValue = String(formData.get("amountMinor") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const amountMinor = Number.parseInt(amountValue, 10);
+  if (!reason || !Number.isInteger(amountMinor) || amountMinor < 0) return;
+
+  const admin = createAdminClient();
+  const { data: price } = await admin
+    .from("plan_prices")
+    .select("id,plan_id,country,interval,amount_minor,currency")
+    .eq("id", priceId)
+    .maybeSingle();
+  if (!price || price.amount_minor === amountMinor) return;
+
+  await admin.from("plan_prices").update({ amount_minor: amountMinor }).eq("id", priceId);
+
+  await admin.rpc("write_audit_event", {
+    p_actor_type: "admin",
+    p_actor_id: actor.userId,
+    p_action: "plan_price_updated",
+    p_entity_type: "plan_price",
+    p_entity_id: priceId,
+    p_before_data: { amountMinor: price.amount_minor },
+    p_after_data: { amountMinor, reason },
+    p_metadata: { planId: price.plan_id, country: price.country, interval: price.interval },
+  });
+
+  revalidatePath("/admin/plans");
+}
+
 export async function applyRiskAction(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "operator" || formData.get("confirm") !== "yes") return;

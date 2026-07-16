@@ -8,7 +8,7 @@ const schema = z.object({
   id: z.uuid(), shopId: z.uuid(), sessionId: z.uuid(),
   eventType: z.enum(analyticsEventTypes), productId: z.uuid().nullable().optional(),
   source: z.string().max(100).nullable().optional(), campaign: z.string().max(100).nullable().optional(),
-  country: z.enum(["GH","NG"]).nullable().optional(),
+  country: z.enum(["GH","NG","CI"]).nullable().optional(),
 });
 
 export async function POST(request: Request) {

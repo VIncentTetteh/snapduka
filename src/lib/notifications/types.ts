@@ -1,4 +1,4 @@
-export type NotificationChannel = "email" | "whatsapp" | "in_app";
+export type NotificationChannel = "email" | "whatsapp" | "push" | "in_app";
 export type NotificationJob = {
   id: string;
   channel: NotificationChannel;

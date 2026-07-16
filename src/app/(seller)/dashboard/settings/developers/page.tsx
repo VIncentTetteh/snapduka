@@ -1,2 +1,112 @@
-import {resolveServerActor} from "@/lib/auth/actor";import {createClient} from "@/lib/supabase/server";import {addAutomation,addWebhook} from "./actions";import {KeyForm} from "./key-form";
-export default async function DevelopersPage(){const actor=await resolveServerActor();if(actor.kind!=="seller")return null;const supabase=await createClient();const[{data:keys},{data:webhooks},{data:rules}]=await Promise.all([supabase.from("api_keys").select("id,name,key_prefix,scopes,last_used_at,revoked_at").eq("seller_account_id",actor.sellerAccountId),supabase.from("outbound_webhooks").select("id,url,event_types,active").eq("seller_account_id",actor.sellerAccountId),supabase.from("automation_rules").select("id,name,event_type,action,active").eq("seller_account_id",actor.sellerAccountId)]);return <main className="mx-auto grid w-full max-w-4xl gap-4 px-3 py-5 pb-24"><header><h1 className="text-4xl font-black">Developer tools</h1><p>Scoped API keys, signed outbound webhooks, and constrained automations.</p></header><KeyForm/>{keys?.map(k=><p key={k.id}>{k.name} · <code>{k.key_prefix}…</code> · {k.scopes.join(", ")}</p>)}<form action={addWebhook} className="grid gap-3 rounded-3xl border bg-white p-5"><h2 className="m-0">Outbound webhook</h2><input className="min-h-12 rounded-xl border p-3" name="url" placeholder="https://example.com/hooks/snapduka" type="url"/><input className="min-h-12 rounded-xl border p-3" name="secret" placeholder="Signing secret"/><label><input name="event" type="checkbox" value="order.completed"/> order.completed</label><label><input name="event" type="checkbox" value="order.created"/> order.created</label><button className="primaryAction">Add webhook</button></form>{webhooks?.map(w=><p key={w.id}>{w.url} · {w.active?"Active":"Paused"}</p>)}<form action={addAutomation} className="grid gap-3 rounded-3xl border bg-white p-5"><h2 className="m-0">Automation</h2><input className="min-h-12 rounded-xl border p-3" name="name" placeholder="Thank fulfilled buyers"/><select className="min-h-12 rounded-xl border p-3" name="eventType"><option>order.completed</option><option>order.created</option></select><select className="min-h-12 rounded-xl border p-3" name="actionType"><option>notify</option><option>tag_customer</option></select><button className="primaryAction">Create rule</button></form>{rules?.map(r=><p key={r.id}>{r.name} · {r.event_type}</p>)}</main>}
+import { resolveServerActor } from "@/lib/auth/actor";
+import { createClient } from "@/lib/supabase/server";
+
+import { addAutomation, addWebhook } from "./actions";
+import { KeyForm } from "./key-form";
+
+export default async function DevelopersPage() {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "seller") return null;
+  const supabase = await createClient();
+  const [{ data: keys }, { data: webhooks }, { data: rules }] = await Promise.all([
+    supabase.from("api_keys").select("id,name,key_prefix,scopes,last_used_at,revoked_at").eq("seller_account_id", actor.sellerAccountId),
+    supabase.from("outbound_webhooks").select("id,url,event_types,active").eq("seller_account_id", actor.sellerAccountId),
+    supabase.from("automation_rules").select("id,name,event_type,action,active").eq("seller_account_id", actor.sellerAccountId),
+  ]);
+
+  return (
+    <main className="mx-auto grid w-full max-w-4xl gap-5 px-3 py-5 pb-16">
+      <header>
+        <p className="page-eyebrow m-0">Seller settings</p>
+        <h1 className="page-title mt-1">Developer tools</h1>
+        <p className="page-sub">Scoped API keys, signed outbound webhooks, and constrained automations.</p>
+      </header>
+
+      <KeyForm />
+
+      {keys?.map((k) => (
+        <article
+          className="rounded-xl px-4 py-3 text-sm"
+          key={k.id}
+          style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        >
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>{k.name}</span>
+          <span style={{ color: "var(--ink-2)" }}> · <code>{k.key_prefix}…</code> · {k.scopes.join(", ")}</span>
+        </article>
+      ))}
+
+      <form action={addWebhook} className="card grid gap-3">
+        <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Outbound webhook</h2>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="webhook-url">Endpoint URL</label>
+          <input className="field-input" id="webhook-url" name="url" placeholder="https://example.com/hooks/snapduka" type="url" />
+        </div>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="webhook-secret">Signing secret</label>
+          <input className="field-input" id="webhook-secret" name="secret" placeholder="Signing secret" />
+        </div>
+        <fieldset className="grid gap-2 rounded-xl p-3" style={{ border: "1.5px dashed var(--border)" }}>
+          <legend className="field-label px-1">Events</legend>
+          <label className="flex items-center gap-2 text-sm" style={{ color: "var(--ink)" }}>
+            <input name="event" type="checkbox" value="order.completed" /> order.completed
+          </label>
+          <label className="flex items-center gap-2 text-sm" style={{ color: "var(--ink)" }}>
+            <input name="event" type="checkbox" value="order.created" /> order.created
+          </label>
+        </fieldset>
+        <button className="btn-primary w-full" type="submit">Add webhook</button>
+      </form>
+
+      {webhooks?.map((w) => (
+        <article
+          className="rounded-xl px-4 py-3 text-sm"
+          key={w.id}
+          style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        >
+          <span style={{ color: "var(--ink)" }}>{w.url}</span>
+          <span className={`ml-2 badge ${w.active ? "badge-green" : "badge-stone"}`}>
+            {w.active ? "Active" : "Paused"}
+          </span>
+        </article>
+      ))}
+
+      <form action={addAutomation} className="card grid gap-3">
+        <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Automation rule</h2>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="auto-name">Rule name</label>
+          <input className="field-input" id="auto-name" name="name" placeholder="Thank fulfilled buyers" />
+        </div>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="auto-event">Trigger event</label>
+          <select className="field-input" id="auto-event" name="eventType">
+            <option>order.completed</option>
+            <option>order.created</option>
+          </select>
+        </div>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="auto-action">Action</label>
+          <select className="field-input" id="auto-action" name="actionType">
+            <option>notify</option>
+            <option>tag_customer</option>
+          </select>
+        </div>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="auto-value">Notification text or customer tag</label>
+          <input className="field-input" id="auto-value" name="actionValue" placeholder="Thank you / repeat-buyer" />
+        </div>
+        <button className="btn-primary w-full" type="submit">Create rule</button>
+      </form>
+
+      {rules?.map((r) => (
+        <article
+          className="rounded-xl px-4 py-3 text-sm"
+          key={r.id}
+          style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        >
+          <span className="font-semibold" style={{ color: "var(--ink)" }}>{r.name}</span>
+          <span style={{ color: "var(--ink-2)" }}> · {r.event_type}</span>
+        </article>
+      ))}
+    </main>
+  );
+}

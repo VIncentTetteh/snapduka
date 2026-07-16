@@ -14,6 +14,7 @@ export type ProductActionState = {
   message?: string;
   fieldErrors?: Record<string, string[]>;
   values: Record<string, string>;
+  productId?: string;
 };
 
 function value(formData: FormData, name: string): string {
@@ -155,9 +156,10 @@ export async function createProductAction(
     status: "success",
     message:
       parsed.data.status === "active"
-        ? "Product published."
-        : "Product saved as a draft.",
+        ? "Product published. Add an image below."
+        : "Product saved as a draft. Add an image below.",
     values: {},
+    productId: product.id,
   };
 }
 
@@ -189,6 +191,142 @@ export async function setProductStatusAction(formData: FormData): Promise<void> 
   revalidatePath("/onboarding");
 }
 
+export async function uploadProductImageAction(
+  productId: string,
+  dataUrl: string,
+  dimensions: { height: number; width: number },
+): Promise<{ success: boolean; message: string }> {
+  const actor = await resolveServerActor();
+
+  if (actor.kind !== "seller" || !["pending", "active"].includes(actor.status)) {
+    return { success: false, message: "Sign in with an active seller account." };
+  }
+
+  const supabase = await createClient();
+  const { data: product } = await supabase
+    .from("products")
+    .select("id")
+    .eq("id", productId)
+    .eq("seller_account_id", actor.sellerAccountId)
+    .single();
+
+  if (!product) {
+    return { success: false, message: "Product not found." };
+  }
+
+  const base64 = dataUrl.split(",")[1];
+  if (!base64 || dimensions.width < 1 || dimensions.height < 1 || dimensions.width > 1000 || dimensions.height > 1000) {
+    return { success: false, message: "Invalid image data." };
+  }
+
+  const buffer = Buffer.from(base64, "base64");
+  const objectPath = `${actor.sellerAccountId}/${productId}/${crypto.randomUUID()}.jpg`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("product-images")
+    .upload(objectPath, buffer, {
+      contentType: "image/jpeg",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    return { success: false, message: "Image upload failed. Please try again." };
+  }
+
+  const { data: existing } = await supabase
+    .from("product_media")
+    .select("position")
+    .eq("product_id", productId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { error: mediaError } = await supabase.from("product_media").insert({
+    alt_text: "",
+    height: dimensions.height,
+    object_path: objectPath,
+    position: existing ? existing.position + 1 : 0,
+    product_id: productId,
+    seller_account_id: actor.sellerAccountId,
+    width: dimensions.width,
+  });
+
+  if (mediaError) {
+    await supabase.storage.from("product-images").remove([objectPath]);
+    return { success: false, message: "Image could not be saved. Please try again." };
+  }
+
+  revalidatePath("/dashboard/products");
+  revalidatePath(`/dashboard/products/${productId}`);
+  return { success: true, message: "Image saved." };
+}
+
+/** Moves the chosen image to position 0 — the main image customers see first. */
+export async function setMainImageAction(formData: FormData): Promise<void> {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage")) return;
+  const productId = value(formData, "productId");
+  const mediaId = value(formData, "mediaId");
+  if (!productId || !mediaId) return;
+
+  const supabase = await createClient();
+  const { data: media } = await supabase
+    .from("product_media")
+    .select("id,position")
+    .eq("product_id", productId)
+    .eq("seller_account_id", actor.sellerAccountId)
+    .order("position");
+  if (!media?.some((item) => item.id === mediaId)) return;
+
+  const reordered = [
+    mediaId,
+    ...media.map((item) => item.id).filter((id) => id !== mediaId),
+  ];
+  // Two passes keep positions unique at every step (object_path stays fixed,
+  // but positions must never collide mid-update for deterministic ordering).
+  for (const [index, id] of reordered.entries()) {
+    await supabase
+      .from("product_media")
+      .update({ position: index + media.length })
+      .eq("id", id)
+      .eq("seller_account_id", actor.sellerAccountId);
+  }
+  for (const [index, id] of reordered.entries()) {
+    await supabase
+      .from("product_media")
+      .update({ position: index })
+      .eq("id", id)
+      .eq("seller_account_id", actor.sellerAccountId);
+  }
+
+  revalidatePath("/dashboard/products");
+  revalidatePath(`/dashboard/products/${productId}`);
+}
+
+export async function deleteProductImageAction(formData: FormData): Promise<void> {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage")) return;
+  const productId = value(formData, "productId");
+  const mediaId = value(formData, "mediaId");
+  if (!productId || !mediaId) return;
+
+  const supabase = await createClient();
+  const { data: media } = await supabase
+    .from("product_media")
+    .select("id,object_path")
+    .eq("id", mediaId)
+    .eq("product_id", productId)
+    .eq("seller_account_id", actor.sellerAccountId)
+    .maybeSingle();
+  if (!media) return;
+
+  await supabase.from("product_media").delete().eq("id", media.id);
+  await supabase.storage.from("product-images").remove([media.object_path]);
+
+  revalidatePath("/dashboard/products");
+  revalidatePath(`/dashboard/products/${productId}`);
+}
+
 export async function bulkProductStatusAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
   const ids = formData.getAll("productIds").map(String).slice(0, 100);
@@ -197,4 +335,78 @@ export async function bulkProductStatusAction(formData: FormData): Promise<void>
   const supabase = await createClient();
   await supabase.from("products").update({ status, published_at: status === "active" ? new Date().toISOString() : null }).eq("seller_account_id", actor.sellerAccountId).in("id", ids);
   revalidatePath("/dashboard/products");
+}
+
+export async function updateProductAction(formData: FormData): Promise<void> {
+  const actor = await resolveServerActor();
+  const productId = value(formData, "productId");
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !productId) return;
+  const parsed = parseProductInput({
+    currency: value(formData, "currency"),
+    description: value(formData, "description"),
+    inventoryPolicy: value(formData, "inventoryPolicy"),
+    name: value(formData, "name"),
+    price: value(formData, "price"),
+    sku: value(formData, "sku"),
+    status: value(formData, "status"),
+    stockQuantity: value(formData, "stockQuantity"),
+  });
+  if (!parsed.success) return;
+  const supabase = await createClient();
+  await supabase.from("products").update({
+    currency: parsed.data.currency,
+    description: parsed.data.description,
+    inventory_policy: parsed.data.inventoryPolicy,
+    name: parsed.data.name,
+    price_minor: parsed.data.priceMinor,
+    published_at: parsed.data.status === "active" ? new Date().toISOString() : null,
+    sku: parsed.data.sku || null,
+    status: parsed.data.status,
+    stock_quantity: parsed.data.stockQuantity,
+  }).eq("id", productId).eq("seller_account_id", actor.sellerAccountId);
+  revalidatePath(`/dashboard/products/${productId}`);
+  revalidatePath("/dashboard/products");
+}
+
+function variantInput(formData: FormData) {
+  const inventoryPolicy = value(formData, "inventoryPolicy");
+  const name = value(formData, "name").trim();
+  const price = value(formData, "price");
+  const stock = value(formData, "stock");
+  if (!name || !["track", "continue_selling", "deny_when_out_of_stock"].includes(inventoryPolicy)) return null;
+  if (price && !/^\d+$/.test(price)) return null;
+  if (inventoryPolicy === "track" && !/^\d+$/.test(stock)) return null;
+  return { active: value(formData, "active") !== "false", inventory_policy: inventoryPolicy as "track" | "continue_selling" | "deny_when_out_of_stock", name, price_minor: price ? Number(price) : null, sku: value(formData, "sku").trim() || null, stock_quantity: inventoryPolicy === "track" ? Number(stock) : null };
+}
+
+export async function addVariantAction(formData: FormData): Promise<void> {
+  const actor = await resolveServerActor();
+  const productId = value(formData, "productId");
+  const input = variantInput(formData);
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !productId || !input) return;
+  const supabase = await createClient();
+  const { data: product } = await supabase.from("products").select("id").eq("id", productId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
+  if (!product) return;
+  await supabase.from("product_variants").insert({ ...input, product_id: productId, seller_account_id: actor.sellerAccountId });
+  revalidatePath(`/dashboard/products/${productId}`);
+}
+
+export async function updateVariantAction(formData: FormData): Promise<void> {
+  const actor = await resolveServerActor();
+  const productId = value(formData, "productId");
+  const variantId = value(formData, "variantId");
+  const input = variantInput(formData);
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !productId || !variantId || !input) return;
+  const supabase = await createClient();
+  await supabase.from("product_variants").update(input).eq("id", variantId).eq("product_id", productId).eq("seller_account_id", actor.sellerAccountId);
+  revalidatePath(`/dashboard/products/${productId}`);
+}
+
+export async function archiveVariantAction(formData: FormData): Promise<void> {
+  const actor = await resolveServerActor();
+  const productId = value(formData, "productId");
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage")) return;
+  const supabase = await createClient();
+  await supabase.from("product_variants").update({ active: false }).eq("id", value(formData, "variantId")).eq("product_id", productId).eq("seller_account_id", actor.sellerAccountId);
+  revalidatePath(`/dashboard/products/${productId}`);
 }

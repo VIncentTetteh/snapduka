@@ -16,8 +16,8 @@ vi.mock("@/lib/auth/actor", () => ({
   resolveServerActor: mocks.resolveServerActor,
 }));
 
-vi.mock("@/components/seller/onboarding-form", () => ({
-  OnboardingForm: () => <div>Seller onboarding form</div>,
+vi.mock("@/components/seller/onboarding-wizard", () => ({
+  OnboardingWizard: () => <div>Seller onboarding wizard</div>,
 }));
 
 import OnboardingPage from "./page";

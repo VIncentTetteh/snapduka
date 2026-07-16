@@ -1,2 +1,66 @@
-import {resolveServerActor} from "@/lib/auth/actor";import {createClient} from "@/lib/supabase/server";import {saveDiscovery} from "./actions";
-export default async function DiscoverySettings(){const actor=await resolveServerActor();if(actor.kind!=="seller")return null;const supabase=await createClient();const{data}=await supabase.from("discovery_preferences").select("*").eq("seller_account_id",actor.sellerAccountId).maybeSingle();return <main className="mx-auto grid w-full max-w-2xl gap-4 px-3 py-5 pb-24"><header><h1 className="text-4xl font-black">Buyer discovery</h1><p>Discovery is optional. Buyers still check out directly with your shop and carts never mix sellers.</p></header><form action={saveDiscovery} className="grid gap-3 rounded-3xl border bg-white p-5"><label><input defaultChecked={data?.opted_in??false} name="optedIn" type="checkbox"/> List my published shop</label><input className="min-h-12 rounded-xl border p-3" defaultValue={data?.category??""} name="category" placeholder="Fashion, beauty, home…"/><input className="min-h-12 rounded-xl border p-3" defaultValue={data?.city??""} name="city" placeholder="City"/><textarea className="min-h-28 rounded-xl border p-3" defaultValue={data?.description??""} name="description" placeholder="What makes your shop useful?"/><button className="primaryAction">Save discovery settings</button></form></main>}
+import { resolveServerActor } from "@/lib/auth/actor";
+import { createClient } from "@/lib/supabase/server";
+
+import { saveDiscovery } from "./actions";
+
+export default async function DiscoverySettings() {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "seller") return null;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("discovery_preferences")
+    .select("*")
+    .eq("seller_account_id", actor.sellerAccountId)
+    .maybeSingle();
+
+  return (
+    <main className="mx-auto grid w-full max-w-2xl gap-5 px-3 py-5 pb-16">
+      <header>
+        <p className="page-eyebrow m-0">Seller settings</p>
+        <h1 className="page-title mt-1">Buyer discovery</h1>
+        <p className="page-sub">
+          Discovery is optional. Buyers still check out directly with your shop and carts never mix sellers.
+        </p>
+      </header>
+
+      <form action={saveDiscovery} className="card grid gap-3">
+        <label className="flex items-center gap-3 text-sm font-semibold" style={{ color: "var(--ink)" }}>
+          <input defaultChecked={data?.opted_in ?? false} name="optedIn" type="checkbox" />
+          List my published shop in discovery
+        </label>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="category">Category</label>
+          <input
+            className="field-input"
+            defaultValue={data?.category ?? ""}
+            id="category"
+            name="category"
+            placeholder="Fashion, beauty, home…"
+          />
+        </div>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="city">City</label>
+          <input
+            className="field-input"
+            defaultValue={data?.city ?? ""}
+            id="city"
+            name="city"
+            placeholder="City"
+          />
+        </div>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="description">Shop description</label>
+          <textarea
+            className="field-input"
+            defaultValue={data?.description ?? ""}
+            id="description"
+            name="description"
+            placeholder="What makes your shop useful?"
+            rows={4}
+          />
+        </div>
+        <button className="btn-primary w-full" type="submit">Save discovery settings</button>
+      </form>
+    </main>
+  );
+}

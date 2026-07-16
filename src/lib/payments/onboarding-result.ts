@@ -10,7 +10,7 @@ export function mapPaymentActionResult(
 ): PaymentActionResult {
   if (paymentResult.status === "blocked") {
     const messages = {
-      country: "Choose a supported seller country.",
+      country: "Online payment setup is not yet available in Côte d'Ivoire. You can accept offline payments from customers.",
       settlement: "Complete the shop identity and settlement details.",
       seller: "This seller account is not eligible for payment setup.",
       policy: "Accept the current seller policy before enabling online payments.",

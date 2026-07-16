@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import QRCode from "qrcode";
 
+import { AnalyticsTracker } from "@/components/storefront/analytics-tracker";
 import { ProductGrid } from "@/components/storefront/product-grid";
-import { ShopHeader } from "@/components/storefront/shop-header";
-import { getPublicProducts, getPublicShop } from "@/lib/storefront/queries";
+import { StoreHeader } from "@/components/storefront/store-header";
+import {
+  getPublicCollections,
+  getPublicProducts,
+  getPublicShop,
+} from "@/lib/storefront/queries";
+import { appOrigin } from "@/lib/app-url";
+import { publicMediaUrl } from "@/lib/storefront/media";
 import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
 
 type Props = {
@@ -12,15 +19,11 @@ type Props = {
   searchParams: Promise<{ q?: string; collection?: string; page?: string; campaign?: string }>;
 };
 
-function origin() {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const shop = await getPublicShop(slug);
   if (!shop) return {};
-  const url = canonicalStorefrontUrl(origin(), slug);
+  const url = canonicalStorefrontUrl(await appOrigin(), slug);
   return {
     title: `${shop.display_name} | SnapDuka`,
     description: `Shop ${shop.display_name} securely on SnapDuka.`,
@@ -33,27 +36,108 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
   const [{ slug }, filters] = await Promise.all([params, searchParams]);
   const shop = await getPublicShop(slug);
   if (!shop) notFound();
-  const canonicalUrl = canonicalStorefrontUrl(origin(), slug);
-  const [products, qrDataUrl] = await Promise.all([
+  const canonicalUrl = canonicalStorefrontUrl(await appOrigin(), slug);
+
+  const [products, collections] = await Promise.all([
     getPublicProducts(shop.id, {
       search: filters.q,
       collection: filters.collection,
       page: Number(filters.page || 1),
     }),
-    QRCode.toDataURL(canonicalUrl, { width: 640, margin: 2 }),
+    getPublicCollections(shop.id),
   ]);
 
+  const collectionHref = (collectionSlug?: string) => {
+    const qs = new URLSearchParams();
+    if (filters.q) qs.set("q", filters.q);
+    if (filters.campaign) qs.set("campaign", filters.campaign);
+    if (collectionSlug) qs.set("collection", collectionSlug);
+    const query = qs.toString();
+    return `/${slug}${query ? `?${query}` : ""}`;
+  };
+
   return (
-    <main className="mx-auto min-h-svh w-full max-w-5xl pb-16" style={{ backgroundColor: shop.shop_branding?.[0]?.surface_color ?? "#fafaf9", ["--accent" as string]: shop.shop_branding?.[0]?.accent_color ?? "#146b45" }}>
-      <ShopHeader canonicalUrl={canonicalUrl} country={shop.country} name={shop.display_name} qrDataUrl={qrDataUrl} />
-      <section className="grid gap-4 px-3 py-5">
-        <form className="flex gap-2" role="search">
-          <label className="sr-only" htmlFor="shop-search">Search products</label>
-          <input className="min-h-11 min-w-0 flex-1 rounded-xl border border-stone-300 bg-white px-3" defaultValue={filters.q} id="shop-search" name="q" placeholder="Search this shop" />
-          <button className="min-h-11 rounded-xl bg-stone-900 px-4 font-bold text-white">Search</button>
+    <main className="sd-main min-h-svh bg-paper text-ink">
+      <AnalyticsTracker campaign={filters.campaign} country={shop.country} eventType="visit" shopId={shop.id} />
+      <StoreHeader
+        canonicalUrl={canonicalUrl}
+        country={shop.country}
+        logoUrl={publicMediaUrl(shop.shop_branding?.[0]?.logo_path, "shop-logos")}
+        name={shop.display_name}
+        slug={slug}
+        titleAsH1
+      />
+
+      <div className="mx-auto max-w-[1040px] px-4 pb-16 pt-5">
+        {/* Search */}
+        <form role="search" className="relative mb-3.5">
+          {filters.collection ? (
+            <input name="collection" type="hidden" value={filters.collection} />
+          ) : null}
+          {filters.campaign ? (
+            <input name="campaign" type="hidden" value={filters.campaign} />
+          ) : null}
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-faint"
+          >
+            <circle cx="7" cy="7" r="4.6" stroke="currentColor" strokeWidth="1.4" />
+            <path d="m10.5 10.5 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+          <input
+            type="search"
+            name="q"
+            defaultValue={filters.q}
+            aria-label="Search products"
+            placeholder={`Search ${shop.display_name}…`}
+            className="h-11 w-full rounded-xl border border-line-input bg-white pl-9.5 pr-3.5 text-[14px] text-ink outline-none transition-[border-color,box-shadow] placeholder:text-ink-faint focus:border-accent focus:shadow-[0_0_0_3px_rgba(168,67,26,0.12)]"
+          />
         </form>
+
+        {/* Collection pills */}
+        {collections.length > 0 ? (
+          <div className="mb-4.5 flex gap-2 overflow-x-auto pb-1">
+            <Link
+              href={collectionHref()}
+              aria-current={!filters.collection ? "page" : undefined}
+              className={`flex h-10 flex-none items-center whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold no-underline transition-colors ${
+                !filters.collection
+                  ? "border-ink bg-ink text-paper"
+                  : "border-line-input bg-white text-ink-soft hover:border-[#B9AC98]"
+              }`}
+            >
+              All
+            </Link>
+            {collections.map((collection) => {
+              const active = filters.collection === collection.slug;
+              return (
+                <Link
+                  key={collection.id}
+                  href={collectionHref(collection.slug)}
+                  aria-current={active ? "page" : undefined}
+                  className={`flex h-10 flex-none items-center whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold no-underline transition-colors ${
+                    active
+                      ? "border-ink bg-ink text-paper"
+                      : "border-line-input bg-white text-ink-soft hover:border-[#B9AC98]"
+                  }`}
+                >
+                  {collection.name}
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
+
         <ProductGrid campaign={filters.campaign} products={products} slug={slug} />
-      </section>
+
+        <p className="mt-7 text-center text-[11.5px] text-ink-faint">
+          Powered by SnapDuka · Secure Paystack checkout · Guest checkout
+        </p>
+      </div>
     </main>
   );
 }

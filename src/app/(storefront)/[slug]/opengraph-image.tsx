@@ -10,11 +10,39 @@ export default async function OpenGraphImage({ params }: { params: Promise<{ slu
   const shop = await getPublicShop(slug);
 
   return new ImageResponse(
-    <div style={{ alignItems: "center", background: "#022c22", color: "white", display: "flex", flexDirection: "column", height: "100%", justifyContent: "center", padding: 70, width: "100%" }}>
-      <div style={{ color: "#a7f3d0", fontSize: 30, letterSpacing: 5 }}>SHOP ON SNAPDUKA</div>
-      <div style={{ fontSize: 82, fontWeight: 900, marginTop: 30, textAlign: "center" }}>{shop?.display_name ?? "Store unavailable"}</div>
-      <div style={{ fontSize: 30, marginTop: 32 }}>Simple, transparent social commerce</div>
-    </div>,
+    (
+      <div
+        style={{
+          alignItems: "center",
+          background: "#211B14",
+          color: "#FAF7F2",
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          justifyContent: "center",
+          padding: 70,
+          width: "100%",
+        }}
+      >
+        <div style={{ color: "#D9986F", fontSize: 28, letterSpacing: 6, fontWeight: 600 }}>
+          SHOP ON SNAPDUKA
+        </div>
+        <div
+          style={{
+            fontSize: 82,
+            fontWeight: 500,
+            marginTop: 30,
+            textAlign: "center",
+            fontFamily: "Georgia, serif",
+          }}
+        >
+          {shop?.display_name ?? "Store unavailable"}
+        </div>
+        <div style={{ fontSize: 28, marginTop: 32, color: "#B8AEA1" }}>
+          Secure Paystack checkout · Guest checkout · Order tracking
+        </div>
+      </div>
+    ),
     size,
   );
 }

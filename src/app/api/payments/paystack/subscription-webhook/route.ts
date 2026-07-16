@@ -19,7 +19,24 @@ export async function POST(request: Request) {
   if (typeof providerCode !== "string") return NextResponse.json({ error: "Invalid event." }, { status: 400 });
 
   const admin = createAdminClient();
-  const { data: subscription } = await admin.from("seller_subscriptions").select("id,seller_account_id,state").eq("provider_subscription_code", providerCode).maybeSingle();
+  let { data: subscription } = await admin.from("seller_subscriptions").select("id,seller_account_id,state").eq("provider_subscription_code", providerCode).maybeSingle();
+  if (!subscription && payload.event === "subscription.create") {
+    const email = payload.data?.customer?.email;
+    const planCode = payload.data?.plan?.plan_code;
+    if (typeof email === "string" && typeof planCode === "string") {
+      const [{ data: seller }, { data: price }] = await Promise.all([
+        admin.from("seller_accounts").select("id").eq("contact_email", email.toLowerCase()).maybeSingle(),
+        admin.from("plan_prices").select("id").eq("provider_plan_code", planCode).maybeSingle(),
+      ]);
+      if (seller && price) {
+        const { data: matched } = await admin.from("seller_subscriptions").select("id,seller_account_id,state").eq("seller_account_id", seller.id).eq("price_id", price.id).maybeSingle();
+        subscription = matched;
+        if (subscription) {
+          await admin.from("seller_subscriptions").update({ provider_subscription_code: providerCode, provider_customer_code: payload.data?.customer?.customer_code ?? null, provider_email_token: payload.data?.email_token ?? null }).eq("id", subscription.id);
+        }
+      }
+    }
+  }
   if (!subscription) return NextResponse.json({ received: true, applied: false });
   const eventKey = String(payload.data?.id ?? createHash("sha256").update(raw).digest("hex"));
   const { error } = await admin.from("subscription_events").insert({

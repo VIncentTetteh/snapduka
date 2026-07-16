@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 
-import { OnboardingForm, type OnboardingFormModel } from "@/components/seller/onboarding-form";
+import {
+  OnboardingWizard,
+  type OnboardingWizardModel,
+} from "@/components/seller/onboarding-wizard";
 import { resolveServerActor, type SellerActor } from "@/lib/auth/actor";
 import {
   evaluateOnboarding,
@@ -16,19 +19,21 @@ export const dynamic = "force-dynamic";
 
 function statePage(title: string, message: string) {
   return (
-    <main className="mx-auto grid min-h-svh w-full max-w-2xl content-center gap-4 px-3 py-10">
-      <p className="m-0 text-xs font-extrabold uppercase tracking-widest text-emerald-900">
-        Seller setup
-      </p>
-      <h1 className="m-0 text-4xl font-black leading-none tracking-tight sm:text-6xl">
-        {title}
-      </h1>
-      <p className="m-0 text-stone-600">{message}</p>
+    <main className="sd-main grid min-h-svh place-items-center bg-paper px-5 py-10 text-ink">
+      <div className="w-full max-w-[520px]">
+        <p className="mb-3 text-[13px] font-semibold uppercase tracking-[0.08em] text-accent">
+          Seller setup
+        </p>
+        <h1 className="mb-3 max-w-none font-serif text-[clamp(28px,4.4vw,40px)] font-medium leading-[1.12] tracking-[-0.015em]">
+          {title}
+        </h1>
+        <p className="text-[15px] leading-[1.65] text-ink-soft">{message}</p>
+      </div>
     </main>
   );
 }
 
-async function sellerModel(actor: SellerActor): Promise<OnboardingFormModel> {
+async function sellerModel(actor: SellerActor): Promise<OnboardingWizardModel> {
   const supabase = await createClient();
   const [
     sellerResult,
@@ -39,6 +44,7 @@ async function sellerModel(actor: SellerActor): Promise<OnboardingFormModel> {
     settlementResult,
     productResult,
     fulfillmentResult,
+    productCountResult,
   ] = await Promise.all([
     supabase
       .from("seller_accounts")
@@ -91,6 +97,11 @@ async function sellerModel(actor: SellerActor): Promise<OnboardingFormModel> {
       .eq("active", true)
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .eq("seller_account_id", actor.sellerAccountId)
+      .neq("status", "archived"),
   ]);
   const loadError =
     sellerResult.error ??
@@ -100,7 +111,8 @@ async function sellerModel(actor: SellerActor): Promise<OnboardingFormModel> {
     paymentResult.error ??
     settlementResult.error ??
     productResult.error ??
-    fulfillmentResult.error;
+    fulfillmentResult.error ??
+    productCountResult.error;
 
   if (loadError) {
     throw new Error("Unable to load seller onboarding.", {
@@ -161,6 +173,7 @@ async function sellerModel(actor: SellerActor): Promise<OnboardingFormModel> {
       : null,
     policyAccepted: facts.policyAccepted,
     verificationState,
+    productCount: productCountResult.count ?? 0,
     onboarding: evaluateOnboarding(facts, {
       firstProduct: { available: true, complete: Boolean(productResult.data) },
       fulfillment: {
@@ -200,6 +213,15 @@ export default async function OnboardingPage() {
   }
 
   if (actor.kind === "unprovisioned") {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email_confirmed_at) {
+      return statePage(
+        "Verify your email",
+        "We sent a confirmation link to your email address. Click it to continue setting up your shop.",
+      );
+    }
+
     const facts: OnboardingFacts = {
       seller: null,
       shop: null,
@@ -209,7 +231,7 @@ export default async function OnboardingPage() {
     };
 
     return (
-      <OnboardingForm
+      <OnboardingWizard
         model={{
           mode: "bootstrap",
           verifiedEmail: actor.email,
@@ -218,6 +240,7 @@ export default async function OnboardingPage() {
           settlement: null,
           policyAccepted: false,
           verificationState: "not_started",
+          productCount: 0,
           onboarding: evaluateOnboarding(facts, {
             firstProduct: { available: false, complete: false },
             fulfillment: { available: false, complete: false },
@@ -227,5 +250,5 @@ export default async function OnboardingPage() {
     );
   }
 
-  return <OnboardingForm model={await sellerModel(actor)} />;
+  return <OnboardingWizard model={await sellerModel(actor)} />;
 }

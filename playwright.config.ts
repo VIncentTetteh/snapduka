@@ -6,6 +6,9 @@ function requiredEnv(name: string) {
   return value;
 }
 
+const e2ePort = Number(process.env.E2E_PORT ?? 3100);
+const e2eUrl = `http://127.0.0.1:${e2ePort}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   globalSetup: "./tests/e2e/global-setup.ts",
@@ -16,7 +19,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: "html",
   use: {
-    baseURL: "http://127.0.0.1:3100",
+    baseURL: e2eUrl,
     trace: "on-first-retry",
   },
   projects: [
@@ -26,8 +29,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm build && pnpm start --port 3100",
-    url: "http://127.0.0.1:3100",
+    command: `pnpm build && pnpm start --port ${e2ePort}`,
+    url: e2eUrl,
     reuseExistingServer: false,
     timeout: 180_000,
     env: {
@@ -36,7 +39,7 @@ export default defineConfig({
         "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
       ),
       SUPABASE_SECRET_KEY: requiredEnv("SUPABASE_SECRET_KEY"),
-      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3100",
+      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL ?? e2eUrl,
     },
   },
 });

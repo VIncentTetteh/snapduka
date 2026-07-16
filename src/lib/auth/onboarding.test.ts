@@ -92,10 +92,12 @@ describe("evaluateOnboarding", () => {
     expect(state.milestones.find(({ key }) => key === "payment")?.complete).toBe(
       false,
     );
+    // payment is optional for publishing — preview_publish is available once
+    // account, shop, product and fulfillment are complete
     expect(
       state.milestones.find(({ key }) => key === "preview_publish")?.available,
-    ).toBe(false);
-    expect(state.previewEnabled).toBe(false);
+    ).toBe(true);
+    expect(state.previewEnabled).toBe(true);
   });
 
   it("does not mark preview and publish complete for a draft shop", () => {

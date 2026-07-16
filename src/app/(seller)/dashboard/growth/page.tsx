@@ -1,23 +1,141 @@
-import { MetricCard } from "@/components/seller/metric-card";
+import Link from "next/link";
+
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { calculateCommerceMetrics } from "@/lib/analytics/metrics";
 import { createClient } from "@/lib/supabase/server";
-import Link from "next/link";
+
+const TOOLS = [
+  {
+    href: "/dashboard/growth/promotions",
+    label: "Promotions",
+    body: "Discount codes and launch campaigns for your storefront.",
+  },
+  {
+    href: "/dashboard/growth/campaigns",
+    label: "Campaigns",
+    body: "Tracked links per channel so you know what converts.",
+  },
+  {
+    href: "/dashboard/growth/segments",
+    label: "Segments",
+    body: "Group customers by behaviour for targeted outreach.",
+  },
+  {
+    href: "/dashboard/growth/broadcasts",
+    label: "Broadcasts",
+    body: "Send updates to customers who opted in.",
+  },
+  {
+    href: "/dashboard/growth/insights",
+    label: "Insights",
+    body: "Deeper analytics across products, channels and repeat buyers.",
+  },
+  {
+    href: "/dashboard/share",
+    label: "Share Studio",
+    body: "Short links, captions and story cards for every channel.",
+  },
+] as const;
 
 export default async function GrowthPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
+
   const [{ data: events }, { data: orders }] = await Promise.all([
-    supabase.from("analytics_events").select("event_type").eq("seller_account_id", actor.sellerAccountId),
-    supabase.from("orders").select("status,payment_status,fulfillment_status").eq("seller_account_id", actor.sellerAccountId),
+    supabase
+      .from("analytics_events")
+      .select("event_type")
+      .eq("seller_account_id", actor.sellerAccountId),
+    supabase
+      .from("orders")
+      .select("status,payment_status,fulfillment_status")
+      .eq("seller_account_id", actor.sellerAccountId),
   ]);
+
   const metrics = calculateCommerceMetrics({
-    visits: events?.filter((event) => event.event_type === "visit").length ?? 0,
-    productViews: events?.filter((event) => event.event_type === "product_view").length ?? 0,
-    checkoutStarts: events?.filter((event) => event.event_type === "checkout_start").length ?? 0,
-    orders: (orders ?? []).map((order) => ({ status: order.status, paymentStatus: order.payment_status, fulfillmentStatus: order.fulfillment_status })),
+    visits: events?.filter((e) => e.event_type === "visit").length ?? 0,
+    productViews: events?.filter((e) => e.event_type === "product_view").length ?? 0,
+    checkoutStarts: events?.filter((e) => e.event_type === "checkout_start").length ?? 0,
+    orders: (orders ?? []).map((o) => ({
+      status: o.status,
+      paymentStatus: o.payment_status,
+      fulfillmentStatus: o.fulfillment_status,
+    })),
   });
-  const tools=[["/dashboard/growth/promotions","Promotions"],["/dashboard/growth/campaigns","Campaign links"],["/dashboard/growth/segments","Customer segments"],["/dashboard/growth/broadcasts","Broadcasts"],["/dashboard/growth/insights","Advanced insights"],["/dashboard/customers","Customers"],["/dashboard/settings/branding","Branding"],["/dashboard/settings/billing","Billing"],["/dashboard/settings/team","Team"],["/dashboard/settings/developers","Developer tools"],["/dashboard/settings/discovery","Discovery"],["/dashboard/settings/notifications","Notifications"]] as const;
-  return <main className="mx-auto grid w-full max-w-5xl gap-4 px-3 py-5 pb-24"><header><p className="font-bold uppercase tracking-wide text-emerald-900">All time</p><h1 className="m-0 text-4xl font-black">Growth</h1><p>Completed orders are the north-star metric. Rates use authoritative commerce states.</p></header><section className="grid grid-cols-2 gap-3"><MetricCard label="Visits" value={String(metrics.visits)} /><MetricCard label="Product views" value={String(metrics.productViews)} /><MetricCard label="Checkout starts" value={String(metrics.checkoutStarts)} /><MetricCard label="Orders placed" value={String(metrics.placedOrders)} /><MetricCard label="Completed orders" value={String(metrics.completedOrders)} /><MetricCard label="Conversion" value={`${(metrics.conversionRate*100).toFixed(1)}%`} /><MetricCard label="Payment success" value={`${(metrics.paymentSuccessRate*100).toFixed(1)}%`} /><MetricCard label="Fulfillment completion" value={`${(metrics.fulfillmentCompletionRate*100).toFixed(1)}%`} /></section><section className="grid grid-cols-2 gap-2 sm:grid-cols-3">{tools.map(([href,label])=><Link className="grid min-h-16 place-items-center rounded-2xl border bg-white p-3 text-center font-bold no-underline" href={href} key={href}>{label}</Link>)}</section></main>;
+
+  const paidOrders = (orders ?? []).filter((o) => o.payment_status === "paid").length;
+  const hasData = metrics.visits > 0 || paidOrders > 0;
+
+  const funnel = [
+    { label: "Store visits", value: metrics.visits, pct: 100 },
+    {
+      label: "Checkout starts",
+      value: metrics.checkoutStarts,
+      pct: metrics.visits > 0 ? Math.round((metrics.checkoutStarts / metrics.visits) * 100) : 0,
+    },
+    {
+      label: "Paid orders",
+      value: paidOrders,
+      pct: metrics.visits > 0 ? Math.round((paidOrders / metrics.visits) * 100) : 0,
+    },
+  ];
+
+  return (
+    <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
+      <PageHeader
+        title="Growth"
+        sub="See what converts, then use the tools that move the numbers."
+      />
+
+      {/* Conversion funnel */}
+      <Panel className="mb-5 p-4.5">
+        <h2 className="mb-1 text-[14px] font-bold">Conversion funnel</h2>
+        <p className="mb-4 text-[12.5px] text-ink-muted">All time</p>
+        {!hasData ? (
+          <EmptyState
+            title="Not enough data yet"
+            body="Share your storefront to start collecting visits — your funnel builds itself from there."
+          />
+        ) : (
+          <div className="grid gap-3">
+            {funnel.map((step, index) => (
+              <div key={step.label}>
+                <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                  <span className="text-[13px] font-semibold text-ink">{step.label}</span>
+                  <span className="text-[13px] text-ink-soft">
+                    <strong className="font-bold text-ink">{step.value.toLocaleString()}</strong>
+                    {index > 0 ? ` · ${step.pct}%` : ""}
+                  </span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-line-soft">
+                  <div
+                    className={`h-full rounded-full ${index === funnel.length - 1 ? "bg-success" : "bg-accent-soft"}`}
+                    style={{ width: `${Math.max(step.pct, step.value > 0 ? 4 : 0)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {/* Growth tools */}
+      <h2 className="mb-3 text-[14px] font-bold">Growth tools</h2>
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+        {TOOLS.map((tool) => (
+          <Link
+            key={tool.href}
+            href={tool.href}
+            className="rounded-2xl border border-line bg-white p-4.5 no-underline transition-colors hover:border-[#B9AC98]"
+          >
+            <h3 className="mb-1 text-[14.5px] font-bold text-ink">{tool.label}</h3>
+            <p className="text-[12.5px] leading-[1.55] text-ink-soft">{tool.body}</p>
+          </Link>
+        ))}
+      </div>
+    </main>
+  );
 }

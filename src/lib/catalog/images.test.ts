@@ -18,9 +18,9 @@ describe("catalog images", () => {
     });
   });
 
-  it("builds seller-scoped WebP object paths", () => {
+  it("builds seller-scoped JPEG object paths", () => {
     expect(imageObjectPath("seller-1", "product-2", "image-3")).toBe(
-      "seller-1/product-2/image-3.webp",
+      "seller-1/product-2/image-3.jpg",
     );
   });
 

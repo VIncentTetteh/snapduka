@@ -6,9 +6,12 @@ test("checkout preserves entered values after a network failure", async ({ page 
   await page.getByPlaceholder("Full name").fill("Kojo Buyer");
   await page.getByPlaceholder("Email").fill("kojo@example.com");
   await page.getByPlaceholder("024 123 4567").fill("0241234567");
-  await page.getByRole("radio").check();
+  await page.getByRole("radio", { name: /Accra delivery/ }).check();
+  await page.getByPlaceholder("Street, area, landmark…").fill("1 Test Road");
+  await page.getByPlaceholder("City *").fill("Accra");
+  await page.getByRole("radio", { name: /Pay on delivery/ }).check();
   await page.route("**/api/checkout/orders", (route) => route.abort());
-  await page.getByRole("button", { name: "Place order" }).click();
+  await page.getByRole("button", { name: /Place order/ }).click();
   await expect(page.locator("[aria-live='polite']")).not.toHaveText("");
   await expect(page.getByPlaceholder("Full name")).toHaveValue("Kojo Buyer");
 });

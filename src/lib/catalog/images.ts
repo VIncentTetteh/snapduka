@@ -19,7 +19,7 @@ export function imageObjectPath(
   productId: string,
   imageId: string,
 ): string {
-  return `${sellerId}/${productId}/${imageId}.webp`;
+  return `${sellerId}/${productId}/${imageId}.jpg`;
 }
 
 export function validateProductImage(file: {
@@ -63,6 +63,10 @@ export async function compressProductImage(
     throw new Error("Image processing is unavailable.");
   }
 
+  // JPEG has no alpha channel — matte transparent sources onto white so
+  // logos/PNGs don't come out black.
+  context.fillStyle = "#FFFFFF";
+  context.fillRect(0, 0, dimensions.width, dimensions.height);
   context.drawImage(bitmap, 0, 0, dimensions.width, dimensions.height);
   bitmap.close();
 
@@ -70,8 +74,8 @@ export async function compressProductImage(
     canvas.toBlob(
       (blob) =>
         blob ? resolve(blob) : reject(new Error("Could not process the image.")),
-      "image/webp",
-      0.82,
+      "image/jpeg",
+      0.85,
     );
   });
 }

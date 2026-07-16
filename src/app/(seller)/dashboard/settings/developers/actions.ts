@@ -35,6 +35,9 @@ export async function addAutomation(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller" || actor.role) return;
   const supabase = await createClient();
-  await supabase.from("automation_rules").insert({ seller_account_id: actor.sellerAccountId, name: String(formData.get("name")), event_type: String(formData.get("eventType")), conditions: {}, action: { type: String(formData.get("actionType")) } });
+  const eventType = String(formData.get("eventType"));
+  const actionType = String(formData.get("actionType"));
+  if (!["order.created", "order.completed"].includes(eventType) || !["notify", "tag_customer"].includes(actionType)) return;
+  await supabase.from("automation_rules").insert({ seller_account_id: actor.sellerAccountId, name: String(formData.get("name")).trim() || "Automation", event_type: eventType, conditions: {}, action: { type: actionType, value: String(formData.get("actionValue") ?? "").trim() } });
   revalidatePath("/dashboard/settings/developers");
 }

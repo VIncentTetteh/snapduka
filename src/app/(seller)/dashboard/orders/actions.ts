@@ -6,6 +6,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { canTransitionOrder, type OrderState } from "@/lib/commerce/transitions";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enqueueIntegrationEvent } from "@/lib/integrations/events";
 
 export async function updateOrderAction(formData: FormData) {
   const actor = await resolveServerActor();
@@ -14,7 +15,7 @@ export async function updateOrderAction(formData: FormData) {
   const next = String(formData.get("status") ?? "") as OrderState;
   const version = Number(formData.get("version"));
   const admin = createAdminClient();
-  const { data: order } = await admin.from("orders").select("id,status,event_version,payment_status")
+  const { data: order } = await admin.from("orders").select("id,status,event_version,payment_status,customer_id,public_reference,total_minor,currency")
     .eq("id", orderId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
   if (!order || order.event_version !== version || !canTransitionOrder(order.status, next)) return;
   if (next === "completed" && order.payment_status === "offline_due" && formData.get("offlinePaid") !== "yes") return;
@@ -30,6 +31,7 @@ export async function updateOrderAction(formData: FormData) {
   if (!changed) return;
   await admin.from("order_events").insert({ order_id: orderId, seller_account_id: actor.sellerAccountId, event_type: `order_${next}`, actor_type: "seller", actor_id: actor.sellerAccountId, data: { from: order.status, to: next } });
   await admin.rpc("enqueue_order_notification", { p_order_id: orderId, p_event: next });
+  if (next === "completed") await enqueueIntegrationEvent({ data: { currency: order.currency, customerId: order.customer_id, orderId, reference: order.public_reference, totalMinor: order.total_minor }, eventId: `${orderId}:${version + 1}:completed`, eventType: "order.completed", sellerAccountId: actor.sellerAccountId });
   revalidatePath("/dashboard"); revalidatePath("/dashboard/orders"); revalidatePath(`/dashboard/orders/${orderId}`);
 }
 

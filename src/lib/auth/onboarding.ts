@@ -82,6 +82,11 @@ export function evaluateOnboarding(
     hasText(facts.shop.legalName) &&
     facts.policyAccepted;
 
+  const isCI = facts.seller?.country === "CI";
+  const paymentComplete = isCI || facts.paymentSubaccountActive;
+  const firstProductComplete = dependencies.firstProduct.complete;
+  const fulfillmentComplete = dependencies.fulfillment.complete;
+
   const milestones: OnboardingMilestone[] = [
     { key: "account", complete: accountComplete, available: true },
     {
@@ -91,20 +96,19 @@ export function evaluateOnboarding(
     },
     {
       key: "first_product",
-      complete: dependencies.firstProduct.complete,
+      complete: firstProductComplete,
       available: dependencies.firstProduct.available && shopIdentityComplete,
     },
     {
       key: "fulfillment",
-      complete: dependencies.fulfillment.complete,
+      complete: fulfillmentComplete,
       available:
-        dependencies.fulfillment.available &&
-        dependencies.firstProduct.complete,
+        dependencies.fulfillment.available && firstProductComplete,
     },
     {
       key: "payment",
-      complete: facts.paymentSubaccountActive,
-      available: facts.verificationState === "verified",
+      complete: paymentComplete,
+      available: isCI || facts.verificationState === "verified",
     },
     {
       key: "preview_publish",
@@ -112,9 +116,8 @@ export function evaluateOnboarding(
       available:
         accountComplete &&
         shopIdentityComplete &&
-        dependencies.firstProduct.complete &&
-        dependencies.fulfillment.complete &&
-        facts.paymentSubaccountActive,
+        firstProductComplete &&
+        fulfillmentComplete,
     },
   ];
 
@@ -125,9 +128,8 @@ export function evaluateOnboarding(
     previewEnabled:
       accountComplete &&
       shopIdentityComplete &&
-      dependencies.firstProduct.complete &&
-      dependencies.fulfillment.complete &&
-      facts.paymentSubaccountActive,
+      firstProductComplete &&
+      fulfillmentComplete,
   };
 }
 
