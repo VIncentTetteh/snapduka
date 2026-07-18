@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { addVariantAction, archiveVariantAction, updateProductAction, updateVariantAction } from "@/app/(seller)/dashboard/products/actions";
+import { addVariantAction, archiveVariantAction, setProductVideoAction, updateProductAction, updateVariantAction } from "@/app/(seller)/dashboard/products/actions";
 import { ProductMediaManager } from "@/components/seller/product-media-manager";
 import { Req } from "@/components/ui/required-mark";
 import { resolveServerActor } from "@/lib/auth/actor";
@@ -12,7 +12,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
   if (actor.kind !== "seller") redirect("/login?next=/dashboard/products");
   const { productId } = await params;
   const supabase = await createClient();
-  const { data: product } = await supabase.from("products").select("id,name,description,currency,price_minor,sku,status,inventory_policy,stock_quantity,reserved_quantity,product_media(id,object_path,position),product_variants(id,name,sku,price_minor,inventory_policy,stock_quantity,reserved_quantity,active)").eq("id", productId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
+  const { data: product } = await supabase.from("products").select("id,name,description,currency,price_minor,sku,status,inventory_policy,stock_quantity,reserved_quantity,video_url,product_media(id,object_path,position),product_variants(id,name,sku,price_minor,inventory_policy,stock_quantity,reserved_quantity,active)").eq("id", productId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
   if (!product) notFound();
 
   return (
@@ -48,6 +48,32 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
           Add up to a few photos — the main image is what customers see first on your storefront.
         </p>
         <ProductMediaManager media={product.product_media ?? []} productId={product.id} />
+      </section>
+
+      <section className="card grid gap-3">
+        <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Product video</h2>
+        <p className="m-0 text-sm" style={{ color: "var(--ink-2)" }}>
+          Paste a link to a video you&apos;ve already posted — YouTube, TikTok, Instagram Reels, or
+          anywhere else. It shows as the first slide in your product gallery.
+        </p>
+        <form action={setProductVideoAction} className="grid gap-2">
+          <input name="productId" type="hidden" value={product.id} />
+          <input
+            className="field-input"
+            defaultValue={product.video_url ?? ""}
+            name="videoUrl"
+            placeholder="https://www.youtube.com/watch?v=..."
+            type="url"
+          />
+          <button className="btn-primary w-full" type="submit">Save video</button>
+        </form>
+        {product.video_url ? (
+          <form action={setProductVideoAction}>
+            <input name="productId" type="hidden" value={product.id} />
+            <input name="videoUrl" type="hidden" value="" />
+            <button className="btn-secondary w-full" type="submit">Remove video</button>
+          </form>
+        ) : null}
       </section>
 
       <section className="grid gap-3">
