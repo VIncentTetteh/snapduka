@@ -74,7 +74,7 @@ function contentSecurityPolicy(supabaseUrl: string, nonce: string) {
     "font-src 'self' data:",
     `connect-src 'self' ${supabaseOrigin} https://api.paystack.co wss:`,
     `img-src 'self' data: https: ${supabaseOrigin}`,
-    "frame-src https://js.paystack.co https://checkout.paystack.com",
+    "frame-src https://js.paystack.co https://checkout.paystack.com https://www.youtube-nocookie.com https://www.tiktok.com https://player.vimeo.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self' https://checkout.paystack.com",
