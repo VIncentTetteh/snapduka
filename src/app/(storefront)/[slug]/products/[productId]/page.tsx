@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { AnalyticsTracker } from "@/components/storefront/analytics-tracker";
-import { ProductGallery } from "@/components/storefront/product-gallery";
+import { ProductGallery, type VideoSlide } from "@/components/storefront/product-gallery";
+import type { VideoProvider } from "@/lib/catalog/video";
 import { PurchaseActions } from "@/components/storefront/purchase-actions";
 import { RestockForm } from "@/components/storefront/restock-form";
 import { StoreHeader } from "@/components/storefront/store-header";
@@ -64,6 +65,17 @@ export default async function ProductPage({ params, searchParams }: Props) {
     .sort((a, b) => a.position - b.position)
     .map((media) => publicMediaUrl(media.object_path))
     .filter((url): url is string => Boolean(url));
+
+  const videoSlide: VideoSlide | null =
+    product.video_url && product.video_provider
+      ? {
+          provider: product.video_provider as VideoProvider,
+          videoId: product.video_id,
+          videoUrl: product.video_url,
+          thumbnailUrl: product.video_thumbnail_url,
+        }
+      : null;
+
   const heroGradient = gradientForSeed(product.id);
   const priceLabel =
     product.currency === "XOF"
@@ -97,6 +109,7 @@ export default async function ProductPage({ params, searchParams }: Props) {
               fallbackGradient={heroGradient}
               images={imageUrls}
               productName={product.name}
+              video={videoSlide}
             />
           </div>
 
