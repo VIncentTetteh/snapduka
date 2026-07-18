@@ -8,6 +8,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, planLimit, withinPlanLimit } from "@/lib/billing/resolve";
 import { parseProductInput } from "@/lib/catalog/schema";
+import { fetchOembedThumbnail, parseVideoUrl } from "@/lib/catalog/video";
 import { createClient } from "@/lib/supabase/server";
 
 export type ProductActionState = {
@@ -427,4 +428,43 @@ export async function archiveVariantAction(formData: FormData): Promise<void> {
   const supabase = await createClient();
   await supabase.from("product_variants").update({ active: false }).eq("id", value(formData, "variantId")).eq("product_id", productId).eq("seller_account_id", actor.sellerAccountId);
   revalidatePath(`/dashboard/products/${productId}`);
+}
+
+export async function setProductVideoAction(formData: FormData): Promise<void> {
+  const actor = await resolveServerActor();
+  const productId = value(formData, "productId");
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !productId) return;
+
+  const videoUrl = value(formData, "videoUrl").trim();
+  const supabase = await createClient();
+
+  if (!videoUrl) {
+    await supabase
+      .from("products")
+      .update({ video_url: null, video_provider: null, video_id: null, video_thumbnail_url: null })
+      .eq("id", productId)
+      .eq("seller_account_id", actor.sellerAccountId);
+    revalidatePath(`/dashboard/products/${productId}`);
+    revalidatePath("/dashboard/products");
+    return;
+  }
+
+  const parsed = parseVideoUrl(videoUrl);
+  const thumbnailUrl =
+    parsed.thumbnailUrl ??
+    (parsed.videoId ? await fetchOembedThumbnail(parsed.provider, videoUrl) : null);
+
+  await supabase
+    .from("products")
+    .update({
+      video_url: videoUrl,
+      video_provider: parsed.provider,
+      video_id: parsed.videoId,
+      video_thumbnail_url: thumbnailUrl,
+    })
+    .eq("id", productId)
+    .eq("seller_account_id", actor.sellerAccountId);
+
+  revalidatePath(`/dashboard/products/${productId}`);
+  revalidatePath("/dashboard/products");
 }
