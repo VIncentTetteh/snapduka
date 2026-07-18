@@ -1,7 +1,9 @@
 import { LogoUploader } from "@/components/seller/logo-uploader";
+import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { domainChallenge } from "@/lib/domains/verification";
 import { publicMediaUrl } from "@/lib/storefront/media";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
 import { addCustomDomain, saveBranding, verifyCustomDomain } from "./actions";
@@ -15,10 +17,13 @@ export default async function BrandingPage() {
     .select("id,slug")
     .eq("seller_account_id", actor.sellerAccountId)
     .single();
-  const [{ data: branding }, { data: domains }] = await Promise.all([
+  const [{ data: branding }, { data: domains }, plan] = await Promise.all([
     supabase.from("shop_branding").select("*").eq("shop_id", shop?.id ?? "").maybeSingle(),
     supabase.from("custom_domains").select("id,hostname,status,verification_token,last_checked_at").eq("shop_id", shop?.id ?? ""),
+    getSellerPlan(actor.sellerAccountId),
   ]);
+  const themingAllowed = planAllows(plan, "branding");
+  const domainAllowed = planAllows(plan, "customDomain");
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-16">
@@ -33,6 +38,9 @@ export default async function BrandingPage() {
         <LogoUploader currentLogoUrl={publicMediaUrl(branding?.logo_path, "shop-logos")} />
       </section>
 
+      {!themingAllowed ? (
+        <UpgradePrompt feature="Storefront theming" planName={plan.planName} />
+      ) : (
       <form action={saveBranding} className="card grid gap-3">
         <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Theme</h2>
         <div className="grid gap-1">
@@ -65,7 +73,11 @@ export default async function BrandingPage() {
         </div>
         <button className="btn-primary w-full" type="submit">Save theme</button>
       </form>
+      )}
 
+      {!domainAllowed ? (
+        <UpgradePrompt feature="Custom domains" planName={plan.planName} />
+      ) : (
       <form action={addCustomDomain} className="card grid gap-3">
         <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Custom domain</h2>
         <div className="grid gap-1">
@@ -74,6 +86,7 @@ export default async function BrandingPage() {
         </div>
         <button className="btn-primary w-full" type="submit">Add domain</button>
       </form>
+      )}
 
       {domains?.map((domain) => {
         const challenge = domainChallenge(domain.verification_token);

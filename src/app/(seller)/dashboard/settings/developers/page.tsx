@@ -1,4 +1,6 @@
+import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
 import { addAutomation, addWebhook } from "./actions";
@@ -8,18 +10,37 @@ export default async function DevelopersPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [{ data: keys }, { data: webhooks }, { data: rules }] = await Promise.all([
+  const [{ data: keys }, { data: webhooks }, { data: rules }, plan] = await Promise.all([
     supabase.from("api_keys").select("id,name,key_prefix,scopes,last_used_at,revoked_at").eq("seller_account_id", actor.sellerAccountId),
     supabase.from("outbound_webhooks").select("id,url,event_types,active").eq("seller_account_id", actor.sellerAccountId),
     supabase.from("automation_rules").select("id,name,event_type,action,active").eq("seller_account_id", actor.sellerAccountId),
+    getSellerPlan(actor.sellerAccountId),
   ]);
+  const developerAccess = planLimit(plan, "apiKeys") > 0;
+  const automationLimit = planLimit(plan, "automationRules");
+
+  if (!developerAccess) {
+    return (
+      <main className="mx-auto grid w-full max-w-4xl gap-5 px-3 py-5 pb-16">
+        <header>
+          <p className="page-eyebrow m-0">Seller settings</p>
+          <h1 className="page-title mt-1">Developer tools</h1>
+          <p className="page-sub">Scoped API keys, signed outbound webhooks, and constrained automations.</p>
+        </header>
+        <UpgradePrompt feature="Developer tools" planName={plan.planName} />
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto grid w-full max-w-4xl gap-5 px-3 py-5 pb-16">
       <header>
         <p className="page-eyebrow m-0">Seller settings</p>
         <h1 className="page-title mt-1">Developer tools</h1>
-        <p className="page-sub">Scoped API keys, signed outbound webhooks, and constrained automations.</p>
+        <p className="page-sub">
+          Scoped API keys, signed outbound webhooks, and constrained automations. Your {plan.planName} plan includes{" "}
+          {planLimit(plan, "apiKeys")} API keys and {automationLimit} automation rules.
+        </p>
       </header>
 
       <KeyForm />

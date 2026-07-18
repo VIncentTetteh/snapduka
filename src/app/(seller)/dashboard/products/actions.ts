@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
+import { getSellerPlan, planLimit, withinPlanLimit } from "@/lib/billing/resolve";
 import { parseProductInput } from "@/lib/catalog/schema";
 import { createClient } from "@/lib/supabase/server";
 
@@ -91,6 +92,23 @@ export async function createProductAction(
       status: "error",
       message: "The product currency must match your shop currency.",
       fieldErrors: { currency: ["Use your shop currency."] },
+      values,
+    };
+  }
+
+  // Catalogue size is a plan entitlement; archived products don't count.
+  const [plan, { count: productCount }] = await Promise.all([
+    getSellerPlan(actor.sellerAccountId),
+    supabase
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .eq("seller_account_id", actor.sellerAccountId)
+      .neq("status", "archived"),
+  ]);
+  if (!withinPlanLimit(plan, "products", productCount ?? 0)) {
+    return {
+      status: "error",
+      message: `Your ${plan.planName} plan includes up to ${planLimit(plan, "products")} products. Upgrade in Settings → Plan & billing to add more.`,
       values,
     };
   }

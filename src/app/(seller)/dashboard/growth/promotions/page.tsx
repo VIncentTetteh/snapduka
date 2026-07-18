@@ -1,4 +1,6 @@
+import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
 import { createPromotion } from "./actions";
@@ -7,11 +9,15 @@ export default async function PromotionsPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const { data: items } = await supabase
-    .from("promotions")
-    .select("id,name,code,kind,value,active")
-    .eq("seller_account_id", actor.sellerAccountId)
-    .order("created_at", { ascending: false });
+  const [{ data: items }, plan] = await Promise.all([
+    supabase
+      .from("promotions")
+      .select("id,name,code,kind,value,active")
+      .eq("seller_account_id", actor.sellerAccountId)
+      .order("created_at", { ascending: false }),
+    getSellerPlan(actor.sellerAccountId),
+  ]);
+  const allowed = planAllows(plan, "promotions");
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-16">
@@ -21,6 +27,9 @@ export default async function PromotionsPage() {
         <p className="page-sub">Discounts are validated again at checkout and snapshotted on the order.</p>
       </header>
 
+      {!allowed ? (
+        <UpgradePrompt feature="Promotions" planName={plan.planName} />
+      ) : (
       <form action={createPromotion} className="card grid gap-3">
         <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>New promotion</h2>
         <div className="grid gap-1">
@@ -52,6 +61,7 @@ export default async function PromotionsPage() {
         </div>
         <button className="btn-primary w-full" type="submit">Create promotion</button>
       </form>
+      )}
 
       {items?.map((item) => (
         <article className="card" key={item.id}>

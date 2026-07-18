@@ -1,4 +1,6 @@
+import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
 import { cancelBroadcast, createBroadcast, scheduleBroadcast } from "./actions";
@@ -7,10 +9,17 @@ export default async function BroadcastsPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [{ data }, { data: segments }] = await Promise.all([
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const [{ data }, { data: segments }, plan, { count: usedThisMonth }] = await Promise.all([
     supabase.from("marketing_broadcasts").select("id,channel,subject,body,state,scheduled_at,created_at,marketing_deliveries(state)").eq("seller_account_id", actor.sellerAccountId).order("created_at", { ascending: false }),
     supabase.from("customer_segments").select("id,name").eq("seller_account_id", actor.sellerAccountId).order("name"),
+    getSellerPlan(actor.sellerAccountId),
+    supabase.from("marketing_broadcasts").select("id", { count: "exact", head: true }).eq("seller_account_id", actor.sellerAccountId).gte("created_at", monthStart.toISOString()),
   ]);
+  const monthlyLimit = planLimit(plan, "broadcastsPerMonth");
+  const quotaLeft = monthlyLimit - (usedThisMonth ?? 0);
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-16">
@@ -20,8 +29,18 @@ export default async function BroadcastsPage() {
         <p className="page-sub">Recipients are rechecked for consent and frequency limits when delivery begins.</p>
       </header>
 
+      {monthlyLimit === 0 ? (
+        <UpgradePrompt feature="Broadcasts" planName={plan.planName} />
+      ) : quotaLeft <= 0 ? (
+        <UpgradePrompt
+          feature="Broadcasts"
+          planName={plan.planName}
+          detail={`You've used all ${monthlyLimit} broadcasts included this month.`}
+        />
+      ) : (
       <form action={createBroadcast} className="card grid gap-3">
         <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>New broadcast</h2>
+        <p className="m-0 text-xs" style={{ color: "var(--ink-3)" }}>{quotaLeft} of {monthlyLimit} broadcasts left this month on your {plan.planName} plan.</p>
         <div className="grid gap-1">
           <label className="field-label" htmlFor="bc-channel">Channel</label>
           <select className="field-input" id="bc-channel" name="channel">
@@ -47,6 +66,7 @@ export default async function BroadcastsPage() {
         </div>
         <button className="btn-primary w-full" type="submit">Save draft</button>
       </form>
+      )}
 
       {data?.map((item) => (
         <article className="card" key={item.id}>

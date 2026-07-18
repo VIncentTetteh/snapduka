@@ -5,6 +5,7 @@ import { DashboardHeader } from "@/components/seller/dashboard-header";
 import { MobileNav } from "@/components/seller/mobile-nav";
 import { SidebarNav } from "@/components/seller/sidebar-nav";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   if (actor.kind !== "seller") redirect("/login?next=/dashboard");
 
   const supabase = await createClient();
-  const [{ data: shop }, { data: account }] = await Promise.all([
+  const [{ data: shop }, { data: account }, plan] = await Promise.all([
     supabase
       .from("shops")
       .select("display_name, slug, status")
@@ -26,6 +27,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       .select("contact_name")
       .eq("id", actor.sellerAccountId)
       .maybeSingle(),
+    getSellerPlan(actor.sellerAccountId),
   ]);
 
   const shopName = shop?.display_name ?? "SnapDuka";
@@ -33,7 +35,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   return (
     <div className="flex min-h-svh bg-paper text-ink">
-      <SidebarNav shopName={shopName} />
+      <SidebarNav shopName={shopName} planName={plan.planName} planCode={plan.planCode} />
       <div className="min-w-0 flex-1">
         <DashboardHeader
           isPublished={shop?.status === "published"}

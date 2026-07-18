@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { canTransitionCase, type CaseState } from "@/lib/support/transitions";
@@ -23,7 +24,7 @@ export async function resolveCaseAction(formData: FormData) {
 
 export async function reviewPayoutAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator") return;
+  if (actor.kind !== "operator") redirect("/login?next=/admin/payouts");
   const payoutId = String(formData.get("payoutId"));
   const decision = String(formData.get("decision"));
   const reason = String(formData.get("reason") ?? "").trim();
@@ -118,6 +119,48 @@ export async function approveVerificationAction(formData: FormData) {
   });
 
   revalidatePath(`/admin/sellers/${sellerId}`);
+}
+
+/**
+ * Operator kill switch for the public discovery directory: sets/clears
+ * discovery_preferences.operator_removed_at and re-snapshots the listing so
+ * the change is visible immediately. Audit-logged with a mandatory reason.
+ */
+export async function setDiscoveryRemovalAction(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator") return;
+  const sellerId = String(formData.get("sellerId"));
+  const decision = String(formData.get("decision"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!sellerId || !reason || !["remove", "restore"].includes(decision)) return;
+
+  const admin = createAdminClient();
+  const { data: preference } = await admin
+    .from("discovery_preferences")
+    .select("shop_id,operator_removed_at")
+    .eq("seller_account_id", sellerId)
+    .maybeSingle();
+  if (!preference) return;
+
+  await admin
+    .from("discovery_preferences")
+    .update({ operator_removed_at: decision === "remove" ? new Date().toISOString() : null })
+    .eq("seller_account_id", sellerId);
+  await admin.rpc("refresh_discovery_listing", { p_shop_id: preference.shop_id });
+
+  await admin.rpc("write_audit_event", {
+    p_actor_type: "admin",
+    p_actor_id: actor.userId,
+    p_action: `discovery_${decision}`,
+    p_entity_type: "seller_account",
+    p_entity_id: sellerId,
+    p_before_data: { operator_removed_at: preference.operator_removed_at },
+    p_after_data: { decision, reason },
+    p_metadata: {},
+  });
+
+  revalidatePath(`/admin/sellers/${sellerId}`);
+  revalidatePath("/discover");
 }
 
 export async function addCaseMessageAction(formData: FormData) {

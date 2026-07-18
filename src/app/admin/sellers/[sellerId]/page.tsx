@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { applyRiskAction, approveVerificationAction } from "@/app/admin/actions";
+import { applyRiskAction, approveVerificationAction, setDiscoveryRemovalAction } from "@/app/admin/actions";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { InitialsAvatar } from "@/components/ui/gradient-placeholder";
 import { PageHeader, Panel } from "@/components/ui/surface";
@@ -26,8 +26,13 @@ export default async function AdminSellerPage({
 }) {
   const { sellerId } = await params;
   const admin = createAdminClient();
-  const [{ data: seller }, { data: actions }, { data: paidOrders }, { count: openCases }] =
-    await Promise.all([
+  const [
+    { data: seller },
+    { data: actions },
+    { data: paidOrders },
+    { count: openCases },
+    { data: discoveryPreference },
+  ] = await Promise.all([
       admin
         .from("seller_accounts")
         .select(
@@ -50,6 +55,11 @@ export default async function AdminSellerPage({
         .select("id", { count: "exact", head: true })
         .eq("seller_account_id", sellerId)
         .in("status", ["opened", "seller_response_due", "under_review"]),
+      admin
+        .from("discovery_preferences")
+        .select("opted_in,operator_removed_at")
+        .eq("seller_account_id", sellerId)
+        .maybeSingle(),
     ]);
   if (!seller) notFound();
 
@@ -148,6 +158,57 @@ export default async function AdminSellerPage({
               >
                 Reject
               </button>
+            </div>
+          </form>
+        </Panel>
+      ) : null}
+
+      {discoveryPreference?.opted_in ? (
+        <Panel className="mb-4 p-4.5">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <h2 className="text-[14px] font-bold text-ink">Buyer discovery</h2>
+            <Badge tone={discoveryPreference.operator_removed_at ? "danger" : "success"}>
+              {discoveryPreference.operator_removed_at ? "Removed by operator" : "Listed"}
+            </Badge>
+          </div>
+          <p className="mb-3.5 text-[12.5px] leading-[1.55] text-ink-soft">
+            {discoveryPreference.operator_removed_at
+              ? `Removed from the public directory on ${new Date(discoveryPreference.operator_removed_at).toLocaleDateString()}. Restoring re-lists the shop immediately if it is still opted in and published.`
+              : "This shop is opted in to the public /discover directory. Removal hides it immediately and is recorded in the audit log."}
+          </p>
+          <form action={setDiscoveryRemovalAction} className="grid gap-3">
+            <input name="sellerId" type="hidden" value={seller.id} />
+            <label className="grid gap-1.5 text-[12.5px] font-semibold text-ink" htmlFor="discovery-reason">
+              Operational reason (required)
+              <textarea
+                id="discovery-reason"
+                name="reason"
+                required
+                rows={2}
+                placeholder="e.g. Listing violates content policy — counterfeit goods reported"
+                className="w-full resize-y rounded-[10px] border border-line-input bg-white px-3.5 py-2.5 text-[13.5px] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2.5">
+              {discoveryPreference.operator_removed_at ? (
+                <button
+                  type="submit"
+                  name="decision"
+                  value="restore"
+                  className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep"
+                >
+                  Restore listing
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  name="decision"
+                  value="remove"
+                  className="min-h-10 cursor-pointer rounded-[10px] border border-danger-line bg-white px-4.5 text-[13px] font-bold text-danger transition-colors hover:bg-danger-tint"
+                >
+                  Remove from discovery
+                </button>
+              )}
             </div>
           </form>
         </Panel>

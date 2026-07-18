@@ -3,7 +3,24 @@
 import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan, withinPlanLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
+
+/** Broadcasts created since the start of the current calendar month. */
+async function monthlyBroadcastUsage(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sellerAccountId: string,
+): Promise<number> {
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const { count } = await supabase
+    .from("marketing_broadcasts")
+    .select("id", { count: "exact", head: true })
+    .eq("seller_account_id", sellerAccountId)
+    .gte("created_at", monthStart.toISOString());
+  return count ?? 0;
+}
 
 export async function createBroadcast(formData: FormData) {
   const actor = await resolveServerActor();
@@ -13,6 +30,11 @@ export async function createBroadcast(formData: FormData) {
   const segmentId = String(formData.get("segmentId") ?? "");
   if (!["email", "whatsapp", "push"].includes(channel) || !body) return;
   const supabase = await createClient();
+  const [plan, used] = await Promise.all([
+    getSellerPlan(actor.sellerAccountId),
+    monthlyBroadcastUsage(supabase, actor.sellerAccountId),
+  ]);
+  if (!withinPlanLimit(plan, "broadcastsPerMonth", used)) return;
   await supabase.from("marketing_broadcasts").insert({
     body,
     channel,

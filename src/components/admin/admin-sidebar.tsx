@@ -32,6 +32,12 @@ const ITEMS = [
     badgeKey: null,
   },
   {
+    href: "/admin/products",
+    label: "Products",
+    d: "M3.5 6.5 10 3l6.5 3.5v7L10 17l-6.5-3.5v-7ZM10 3v14M3.5 6.5 10 10l6.5-3.5",
+    badgeKey: null,
+  },
+  {
     href: "/admin/cases",
     label: "Cases",
     d: "M10 2.5a7.5 7.5 0 0 0-6.4 11.4L2.5 17.5l3.7-1A7.5 7.5 0 1 0 10 2.5Z",

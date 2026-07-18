@@ -84,13 +84,21 @@ export default async function OrderPage({
     ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(`Hi ${buyer.name ?? "there"}, regarding your order #${order.public_reference} on SnapDuka.`)}`
     : null;
 
+  // The trailing event only reads as "in progress" while the order is still
+  // moving; terminal orders get a fully checked timeline.
+  const orderSettled =
+    ["fulfilled", "cancelled", "returned"].includes(order.fulfillment_status) ||
+    ["completed", "cancelled"].includes(order.status);
   const timelineSteps: TimelineStep[] = events
     .slice()
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     .map((event, index, sorted) => ({
       title: EVENT_LABEL[event.event_type] ?? event.event_type.replace(/_/g, " "),
       detail: new Date(event.created_at).toLocaleString(),
-      state: index === sorted.length - 1 ? ("current" as const) : ("done" as const),
+      state:
+        index === sorted.length - 1 && !orderSettled
+          ? ("current" as const)
+          : ("done" as const),
     }));
 
   const TABS = [

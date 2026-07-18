@@ -85,7 +85,16 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-export function SidebarNav({ shopName }: { shopName: string; isVerified?: boolean }) {
+export function SidebarNav({
+  shopName,
+  planName = "Free",
+  planCode = "free",
+}: {
+  shopName: string;
+  isVerified?: boolean;
+  planName?: string;
+  planCode?: string;
+}) {
   const pathname = usePathname();
 
   function isActive(href: string, exact?: boolean) {
@@ -138,13 +147,17 @@ export function SidebarNav({ shopName }: { shopName: string; isVerified?: boolea
       {/* Plan card */}
       <div className="px-3 pb-5 pt-2">
         <div className="rounded-[14px] border border-line bg-white px-3.5 py-3">
-          <p className="text-[12px] font-bold text-accent">Free plan</p>
-          <p className="mt-0.5 text-[11.5px] text-ink-muted">Unlimited products &amp; orders</p>
+          <p className="text-[12px] font-bold text-accent">{planName} plan</p>
+          <p className="mt-0.5 text-[11.5px] text-ink-muted">
+            {planCode === "free"
+              ? "Storefront, payments & orders included"
+              : "Growth features unlocked"}
+          </p>
           <Link
             href="/dashboard/settings/billing"
             className="mt-2 block text-[11.5px] font-bold text-accent no-underline hover:text-accent-deep"
           >
-            Upgrade →
+            {planCode === "scale" ? "Manage plan →" : planCode === "free" ? "Upgrade →" : "Manage or upgrade →"}
           </Link>
         </div>
       </div>

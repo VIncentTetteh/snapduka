@@ -25,6 +25,7 @@
     "traceability": "node scripts/check-traceability.mjs",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
+    "create:operator": "node scripts/local-supabase-env.mjs node scripts/create-operator.mjs",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db"
   },

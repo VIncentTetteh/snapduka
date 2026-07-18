@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { parseGuestOrder } from "@/lib/commerce/order";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enqueueOrderEventNotification } from "@/lib/notifications/enqueue";
 import { enqueueIntegrationEvent } from "@/lib/integrations/events";
 
 // 20 checkout attempts per IP per 10 minutes
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
     await admin.from("abandoned_checkouts").update({ recovered_order_id: result.orderId }).eq("shop_id", parsed.data.shopId).eq("contact", parsed.data.buyer.email).is("recovered_order_id", null);
     const { data: createdOrder } = await admin.from("orders").select("customer_id,public_reference,seller_account_id,total_minor,currency").eq("id", result.orderId).maybeSingle();
     if (createdOrder) await enqueueIntegrationEvent({ data: { currency: createdOrder.currency, customerId: createdOrder.customer_id, orderId: result.orderId, reference: createdOrder.public_reference, totalMinor: createdOrder.total_minor }, eventId: `${result.orderId}:created`, eventType: "order.created", sellerAccountId: createdOrder.seller_account_id });
+    await enqueueOrderEventNotification(admin, result.orderId, "order_placed");
   }
 
   return NextResponse.json(data, { status: 201 });

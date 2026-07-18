@@ -1,79 +1,301 @@
+import Link from "next/link";
+import { Suspense } from "react";
+
+import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan } from "@/lib/billing/resolve";
+import type { EntitlementValue } from "@/lib/billing/entitlements";
+import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
+import type { CurrencyCode } from "@/lib/countries/types";
 
 import { cancelSubscription, selectPlan } from "./actions";
+import { SubscriptionVerifier } from "./subscription-verifier";
 
-export default async function BillingPage({ searchParams }: { searchParams: Promise<{ error?: string; payment?: string }> }) {
+type PlanRow = {
+  code: string;
+  name: string;
+  entitlements: Record<string, EntitlementValue>;
+  plan_prices: {
+    id: string;
+    country: string;
+    currency: string;
+    interval: string;
+    amount_minor: number;
+    active: boolean;
+  }[];
+};
+
+const STATE_TONE: Record<string, BadgeTone> = {
+  active: "success",
+  grace: "warn",
+  past_due: "warn",
+  trialing: "neutral",
+  cancelled: "neutral",
+  expired: "danger",
+  free: "accent",
+};
+
+/** Human bullets from the entitlements JSON, in presentation order. */
+function featureBullets(entitlements: Record<string, EntitlementValue>): string[] {
+  const n = (key: string) => entitlements[key];
+  const bullets: (string | null)[] = [
+    typeof n("products") === "number" ? `Up to ${n("products")} products` : null,
+    typeof n("staffAccounts") === "number"
+      ? Number(n("staffAccounts")) > 1
+        ? `${n("staffAccounts")} staff accounts`
+        : "Owner account only"
+      : null,
+    n("campaigns") === true ? "Tracked share links" : null,
+    n("promotions") === true ? "Discount promotions" : null,
+    typeof n("customerSegments") === "number" && Number(n("customerSegments")) > 0
+      ? `${n("customerSegments")} customer segments`
+      : null,
+    typeof n("broadcastsPerMonth") === "number" && Number(n("broadcastsPerMonth")) > 0
+      ? `${n("broadcastsPerMonth")} broadcasts per month`
+      : null,
+    n("branding") === true ? "Storefront theming" : null,
+    n("customDomain") === true ? "Custom domain" : null,
+    n("exports") === true ? "CSV order exports" : null,
+    typeof n("automationRules") === "number" && Number(n("automationRules")) > 0
+      ? `${n("automationRules")} automation rules`
+      : null,
+    typeof n("apiKeys") === "number" && Number(n("apiKeys")) > 0
+      ? `${n("apiKeys")} API keys + webhooks`
+      : null,
+    n("courierIntegrations") === true ? "Courier integrations" : null,
+    n("discovery") === true ? "Discovery listing" : null,
+  ];
+  return bullets.filter((bullet): bullet is string => Boolean(bullet));
+}
+
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; payment?: string }>;
+}) {
   const feedback = await searchParams;
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [{ data: plans }, { data: subscription }] = await Promise.all([
-    supabase.from("plans").select("code,name,version,entitlements,plan_prices(id,country,currency,interval,amount_minor,provider_plan_code,active)").in("code", ["growth", "scale"]).eq("active", true),
+  const [{ data: plans }, { data: subscription }, plan] = await Promise.all([
+    supabase
+      .from("plans")
+      .select("code,name,entitlements,plan_prices(id,country,currency,interval,amount_minor,active)")
+      .eq("active", true)
+      .in("code", ["free", "growth", "scale"]),
     supabase
       .from("seller_subscriptions")
-      .select("state,current_period_end,grace_ends_at,plans(name)")
+      .select("state,current_period_end,grace_ends_at,cancelled_at,plans(code,name)")
       .eq("seller_account_id", actor.sellerAccountId)
       .maybeSingle(),
+    getSellerPlan(actor.sellerAccountId),
   ]);
 
+  const ordered = ["free", "growth", "scale"]
+    .map((code) => (plans as PlanRow[] | null)?.find((row) => row.code === code))
+    .filter((row): row is PlanRow => Boolean(row));
+  const subscribedPlan = subscription?.plans as { code?: string; name?: string } | null;
+  const renewsAt = subscription?.current_period_end
+    ? new Date(subscription.current_period_end).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : null;
+
   return (
-    <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-16">
-      <header>
-        <p className="page-eyebrow m-0">Settings</p>
-        <h1 className="page-title mt-1">Plan and billing</h1>
-        <p className="page-sub">
-          Plan prices are configured per country. Payment processing and SnapDuka platform fees are shown separately before charge authorization.
-        </p>
-      </header>
+    <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
+      <PageHeader
+        eyebrow="Settings"
+        title="Plan & billing"
+        sub="Pick the plan that matches how you sell. Prices are set for your country and billed through Paystack — upgrade or cancel any time."
+      />
 
-      {feedback.error && <div className="alert alert-error" role="alert">{feedback.error}</div>}
-      {feedback.payment === "pending" && <div className="alert alert-info" role="status">Payment received by Paystack. Your plan will activate when the signed webhook is processed.</div>}
+      <div className="grid gap-4">
+        <Suspense fallback={null}>
+          <SubscriptionVerifier />
+        </Suspense>
 
-      {subscription && (
-        <section className="card">
-          <h2 className="m-0 mb-2 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Current subscription</h2>
-          <p className="m-0 capitalize" style={{ color: "var(--ink-2)" }}>{subscription.state.replace("_", " ")}</p>
-          {subscription.grace_ends_at && (
-            <p className="m-0 mt-1 text-sm" style={{ color: "var(--amber)" }}>
-              Recovery deadline: {new Date(subscription.grace_ends_at).toLocaleDateString()}
-            </p>
-          )}
-          <form action={cancelSubscription} className="mt-3">
-            <button className="btn-danger text-sm" type="submit">Cancel renewal</button>
-          </form>
-        </section>
-      )}
+        {feedback.error ? (
+          <div
+            className="rounded-[12px] border border-[#F2C9BF] bg-[#FBEAE7] px-4 py-3 text-[13px] font-semibold text-[#B42318]"
+            role="alert"
+          >
+            {feedback.error}
+          </div>
+        ) : null}
+        {feedback.payment === "confirmed" ? (
+          <div
+            className="rounded-[12px] border border-[#BFE3D2] bg-[#E7F4EE] px-4 py-3 text-[13px] font-semibold text-success"
+            role="status"
+          >
+            Payment confirmed — your plan is active. Welcome aboard!
+          </div>
+        ) : null}
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        {(plans ?? []).map((plan) => {
-          const prices = (plan.plan_prices ?? []).filter((price) => price.country === actor.country && price.active);
-          const configured = prices.some((price) => Boolean(price.provider_plan_code) && price.amount_minor > 0);
-          return (
-          <article className="card" key={plan.code}>
-            <h2 className="m-0 mb-1 text-lg font-extrabold" style={{ color: "var(--ink)" }}>{plan.name}</h2>
-            <p className="m-0 mb-3 text-sm" style={{ color: "var(--ink-2)" }}>
-              Products, campaigns, branding and operating limits are controlled by this versioned plan.
-            </p>
-            {prices.length > 0 ? (
-              <ul className="m-0 mb-3 grid gap-1 pl-5 text-sm" style={{ color: "var(--ink-2)" }}>
-                {prices.map((price) => <li key={price.id}>{price.interval}: {price.currency} {price.currency === "XOF" ? price.amount_minor : (price.amount_minor / 100).toFixed(2)}</li>)}
-              </ul>
-            ) : <p className="alert alert-warning">Pricing is not available for your country yet.</p>}
-            <form action={selectPlan} className="grid gap-3">
-              <input name="planCode" type="hidden" value={plan.code} />
-              <div className="grid gap-1">
-                <label className="field-label" htmlFor={`interval-${plan.code}`}>Billing interval</label>
-                <select className="field-input" id={`interval-${plan.code}`} name="interval">
-                  <option value="monthly">Monthly</option>
-                  <option value="yearly">Yearly</option>
-                </select>
+        {/* Current plan */}
+        <Panel className="p-4.5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                Current plan
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <h2 className="font-serif text-[22px] font-medium text-ink">{plan.planName}</h2>
+                <Badge tone={STATE_TONE[plan.state] ?? "neutral"}>
+                  {plan.state === "free" ? "Free" : plan.state.replace("_", " ")}
+                </Badge>
               </div>
-              <button className="btn-primary w-full" disabled={!configured} type="submit">{configured ? "Continue to Paystack" : "Not available"}</button>
-            </form>
-          </article>
-        );})}
-      </section>
+              <p className="mt-1 text-[12.5px] text-ink-soft">
+                {plan.state === "free"
+                  ? "Core selling is always free — storefront, Paystack payments, orders and share links."
+                  : renewsAt
+                    ? `Renews on ${renewsAt}.`
+                    : "Billing is managed by Paystack."}
+              </p>
+              {plan.graceEndsAt ? (
+                <p className="mt-1 text-[12.5px] font-semibold text-warn">
+                  Payment issue — features stay on until{" "}
+                  {new Date(plan.graceEndsAt).toLocaleDateString()} while we retry.
+                </p>
+              ) : null}
+              {subscription && plan.state === "free" && subscribedPlan?.name ? (
+                <p className="mt-1 text-[12.5px] text-ink-muted">
+                  Your {subscribedPlan.name} subscription is {subscription.state.replace("_", " ")} —
+                  resubscribe below to restore its features.
+                </p>
+              ) : null}
+            </div>
+            {plan.state === "active" || plan.state === "grace" ? (
+              <form action={cancelSubscription}>
+                <button
+                  type="submit"
+                  className="min-h-10 cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13px] font-semibold text-danger transition-colors hover:border-danger"
+                >
+                  Cancel renewal
+                </button>
+              </form>
+            ) : null}
+          </div>
+        </Panel>
+
+        {/* Plan cards */}
+        <div className="grid items-start gap-4 md:grid-cols-3">
+          {ordered.map((row) => {
+            const isCurrent = plan.planCode === row.code;
+            const prices = row.plan_prices.filter(
+              (price) => price.country === actor.country && price.active && price.amount_minor > 0,
+            );
+            const monthly = prices.find((price) => price.interval === "monthly");
+            const yearly = prices.find((price) => price.interval === "yearly");
+            const featured = row.code === "growth";
+            return (
+              <Panel
+                key={row.code}
+                className={`p-4.5 ${featured ? "border-accent shadow-[0_10px_30px_rgba(168,67,26,0.08)]" : ""}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-serif text-[19px] font-medium text-ink">{row.name}</h3>
+                  {isCurrent ? (
+                    <Badge tone="accent">Current</Badge>
+                  ) : featured ? (
+                    <Badge tone="dark">Popular</Badge>
+                  ) : null}
+                </div>
+
+                <p className="mt-2 min-h-[42px]">
+                  {row.code === "free" ? (
+                    <span className="font-serif text-[24px] font-medium text-ink">Free</span>
+                  ) : monthly ? (
+                    <>
+                      <span className="font-serif text-[24px] font-medium text-ink">
+                        {formatMoney(monthly.amount_minor, monthly.currency as CurrencyCode)}
+                      </span>
+                      <span className="text-[12.5px] text-ink-muted"> / month</span>
+                      {yearly ? (
+                        <span className="block text-[11.5px] text-ink-muted">
+                          or {formatMoney(yearly.amount_minor, yearly.currency as CurrencyCode)} / year
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span className="text-[13px] font-semibold text-warn">
+                      Not priced for your country yet
+                    </span>
+                  )}
+                </p>
+
+                <ul className="mt-3 grid list-none gap-1.5 p-0">
+                  {featureBullets(row.entitlements).map((bullet) => (
+                    <li key={bullet} className="flex items-start gap-2 text-[12.5px] text-ink-soft">
+                      <span aria-hidden="true" className="mt-0.5 font-bold text-success">
+                        ✓
+                      </span>
+                      {bullet}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-4">
+                  {isCurrent ? (
+                    <p className="grid min-h-11 place-items-center rounded-[10px] bg-line-soft text-[13px] font-bold text-ink-muted">
+                      Your plan
+                    </p>
+                  ) : row.code === "free" ? (
+                    <p className="text-[12px] text-ink-muted">
+                      Cancel your paid plan to return to Free at the end of the billing period.
+                    </p>
+                  ) : prices.length > 0 ? (
+                    <form action={selectPlan} className="grid gap-2.5">
+                      <input name="planCode" type="hidden" value={row.code} />
+                      <label className="grid gap-1 text-[12px] font-semibold text-ink-soft">
+                        Billing interval
+                        <select
+                          name="interval"
+                          className="min-h-10 rounded-[10px] border border-line-input bg-white px-3 text-[13px] text-ink"
+                          defaultValue="monthly"
+                        >
+                          <option value="monthly">Monthly</option>
+                          {yearly ? <option value="yearly">Yearly (2 months free)</option> : null}
+                        </select>
+                      </label>
+                      <button
+                        type="submit"
+                        className={`min-h-11 cursor-pointer rounded-[10px] px-4 text-[13.5px] font-bold transition-colors ${
+                          featured
+                            ? "border-none bg-accent text-white hover:bg-accent-deep"
+                            : "border border-line-strong bg-white text-ink hover:border-[#B9AC98]"
+                        }`}
+                      >
+                        Upgrade to {row.name}
+                      </button>
+                    </form>
+                  ) : (
+                    <p className="grid min-h-11 place-items-center rounded-[10px] bg-line-soft text-[13px] font-bold text-ink-muted">
+                      Coming to your market soon
+                    </p>
+                  )}
+                </div>
+              </Panel>
+            );
+          })}
+        </div>
+
+        <p className="text-[12px] text-ink-muted">
+          Payments are processed by Paystack. Upgrades take effect immediately after payment;
+          cancelling keeps features until the end of the paid period. Manage plan pricing questions
+          with{" "}
+          <Link
+            href="/dashboard/orders"
+            className="font-semibold text-accent no-underline hover:text-accent-deep"
+          >
+            support
+          </Link>
+          .
+        </p>
+      </div>
     </main>
   );
 }

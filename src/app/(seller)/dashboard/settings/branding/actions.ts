@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { resolveTxt } from "node:dns/promises";
 
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
 import { normalizeHostname } from "@/lib/domains/verification";
 import { parseBranding } from "@/lib/shops/branding";
 import { createClient } from "@/lib/supabase/server";
@@ -11,6 +12,9 @@ import { createClient } from "@/lib/supabase/server";
 export async function saveBranding(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return;
+  // Theme customization is a paid capability; the shop logo stays free.
+  const plan = await getSellerPlan(actor.sellerAccountId);
+  if (!planAllows(plan, "branding")) return;
   const parsed = parseBranding({ accent: formData.get("accent"), surface: formData.get("surface"), font: formData.get("font") });
   if (!parsed.success) return;
   const supabase = await createClient();
@@ -102,6 +106,8 @@ export async function removeShopLogoAction(): Promise<void> {
 export async function addCustomDomain(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return;
+  const plan = await getSellerPlan(actor.sellerAccountId);
+  if (!planAllows(plan, "customDomain")) return;
   const hostname = normalizeHostname(String(formData.get("hostname") ?? ""));
   if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(hostname)) return;
   const supabase = await createClient();

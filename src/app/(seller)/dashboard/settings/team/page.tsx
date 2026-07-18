@@ -1,4 +1,6 @@
+import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
 import { inviteTeamMember, revokeTeamMember } from "./actions";
@@ -8,10 +10,17 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [{ data: members }, { data: invites }] = await Promise.all([
+  const [{ data: members }, { data: invites }, plan] = await Promise.all([
     supabase.from("team_memberships").select("id,email,role,active").eq("seller_account_id", actor.sellerAccountId),
     supabase.from("team_invitations").select("id,email,role,expires_at,accepted_at").eq("seller_account_id", actor.sellerAccountId),
+    getSellerPlan(actor.sellerAccountId),
   ]);
+  const seatLimit = planLimit(plan, "staffAccounts");
+  const pendingInvites = (invites ?? []).filter(
+    (invite) => !invite.accepted_at && new Date(invite.expires_at) > new Date(),
+  );
+  const seatsUsed = 1 + (members ?? []).filter((member) => member.active).length + pendingInvites.length;
+  const seatsFull = seatsUsed >= seatLimit;
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-16">
@@ -24,9 +33,21 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
       {feedback.error && <div className="alert alert-error" role="alert">{feedback.error}</div>}
       {feedback.message && <div className="alert alert-success" role="status">{feedback.message}</div>}
 
-      {!actor.role && (
+      {!actor.role && seatsFull && (
+        <UpgradePrompt
+          feature="Staff accounts"
+          planName={plan.planName}
+          detail={
+            seatLimit === 1
+              ? `The ${plan.planName} plan includes the owner account only.`
+              : `All ${seatLimit} staff accounts on your ${plan.planName} plan are in use.`
+          }
+        />
+      )}
+      {!actor.role && !seatsFull && (
         <form action={inviteTeamMember} className="card grid gap-3">
           <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Invite a teammate</h2>
+          <p className="m-0 text-xs" style={{ color: "var(--ink-3)" }}>{seatsUsed} of {seatLimit} accounts used (including you).</p>
           <div className="grid gap-1">
             <label className="field-label" htmlFor="invite-email">Email<span aria-hidden="true" style={{ color: "var(--red)", fontWeight: 700 }}>*</span></label>
             <input aria-required="true" className="field-input" id="invite-email" name="email" placeholder="teammate@example.com" required type="email" />

@@ -51,6 +51,21 @@ export class PaystackProvider implements PaymentProvider {
     return { authorizationUrl: data.authorization_url as string, reference: data.reference as string };
   }
 
+  /** Creates a recurring billing plan; the returned plan_code is stored on
+   * plan_prices so it is only created once per price. */
+  async createPlan(input: { name: string; interval: "monthly" | "annually"; amountMinor: number; currency: string }) {
+    const data = await this.request("/plan", {
+      method: "POST",
+      body: JSON.stringify({
+        name: input.name,
+        interval: input.interval,
+        amount: input.amountMinor,
+        currency: input.currency,
+      }),
+    });
+    return { planCode: data.plan_code as string };
+  }
+
   async disableSubscription(code: string, token: string) {
     await this.request("/subscription/disable", {
       method: "POST",

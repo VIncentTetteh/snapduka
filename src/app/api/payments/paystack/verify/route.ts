@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { enqueueOrderEventNotification } from "@/lib/notifications/enqueue";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -72,6 +73,17 @@ export async function POST(request: Request) {
 
   if (error) {
     return NextResponse.json({ error: "Payment could not be recorded." }, { status: 500 });
+  }
+
+  if (applied) {
+    const { data: paidAttempt } = await admin
+      .from("payment_attempts")
+      .select("order_id")
+      .eq("reference", reference)
+      .maybeSingle();
+    if (paidAttempt?.order_id) {
+      await enqueueOrderEventNotification(admin, paidAttempt.order_id, "payment_succeeded");
+    }
   }
 
   return NextResponse.json({ paymentStatus: applied ? "paid" : attempt.status });

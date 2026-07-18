@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { appHost } from "@/lib/app-url";
 
+import { NotificationsBell } from "@/components/seller/notifications-bell";
 import { InitialsAvatar } from "@/components/ui/gradient-placeholder";
 import { LogoMark } from "@/components/ui/logo";
 
@@ -40,21 +41,7 @@ export async function DashboardHeader({
           </a>
         ) : null}
         <div className="flex-1" />
-        <Link
-          href="/dashboard/settings/notifications"
-          aria-label="Notifications"
-          className="relative grid h-10 w-10 place-items-center rounded-[10px] border border-line-input bg-white text-ink-soft no-underline transition-colors hover:bg-line-soft"
-        >
-          <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path
-              d="M10 2.5a5 5 0 0 0-5 5v3l-1.5 3h13L15 10.5v-3a5 5 0 0 0-5-5Zm-1.8 11.8a1.8 1.8 0 0 0 3.6 0"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </Link>
+        <NotificationsBell />
         <Link
           href="/dashboard/settings"
           aria-label="Account settings"

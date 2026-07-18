@@ -37,9 +37,16 @@ export default async function DiscoverPage({
     .order("shop_id")
     .limit(100);
   if (filters.country) query = query.eq("country", filters.country);
-  if (filters.q)
+  // The or() filter string has its own grammar — strip PostgREST syntax
+  // characters and LIKE wildcards so user input can only ever match text.
+  const search = (filters.q ?? "")
+    .replace(/[,()."'\\%_]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+  if (search)
     query = query.or(
-      `display_name.ilike.%${filters.q}%,category.ilike.%${filters.q}%,city.ilike.%${filters.q}%`,
+      `display_name.ilike.*${search}*,category.ilike.*${search}*,city.ilike.*${search}*`,
     );
   const { data } = await query;
 
