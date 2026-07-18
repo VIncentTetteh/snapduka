@@ -56,6 +56,17 @@ describe("setProductVideoAction", () => {
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 
+  it("does nothing for a suspended seller account", async () => {
+    mocks.resolveServerActor.mockResolvedValue({
+      ...SELLER_ACTOR,
+      status: "suspended",
+    });
+
+    await setProductVideoAction(formData({ productId: "p1", videoUrl: "https://youtu.be/abc" }));
+
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
   it("saves a parsed YouTube URL with its deterministic thumbnail", async () => {
     mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
     mocks.parseVideoUrl.mockReturnValue({

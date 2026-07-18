@@ -433,7 +433,7 @@ export async function archiveVariantAction(formData: FormData): Promise<void> {
 export async function setProductVideoAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
   const productId = value(formData, "productId");
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !productId) return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !["pending", "active"].includes(actor.status) || !productId) return;
 
   const videoUrl = value(formData, "videoUrl").trim();
   const supabase = await createClient();
