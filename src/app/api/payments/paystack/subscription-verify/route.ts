@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: subscription } = await admin
     .from("seller_subscriptions")
-    .select("id,state,plan_prices(amount_minor,currency,interval)")
+    .select("id,state,plan_prices!price_id(amount_minor,currency,interval)")
     .eq("seller_account_id", actor.sellerAccountId)
     .maybeSingle();
   if (!subscription) return NextResponse.json({ error: "No pending subscription." }, { status: 404 });
