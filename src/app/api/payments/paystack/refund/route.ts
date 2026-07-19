@@ -22,6 +22,7 @@ export async function POST(request: Request) {
   const { data: priorRefunds } = await admin.from("refunds").select("amount_minor").eq("order_id", order.id);
   const alreadyRefundedMinor = (priorRefunds ?? []).reduce((sum, row) => sum + row.amount_minor, 0);
   const remainingMinor = order.total_minor - alreadyRefundedMinor;
+  if (remainingMinor <= 0) return NextResponse.json({ error: "Order is already fully refunded." }, { status: 409 });
   const amount = parsed.data.amountMinor ?? remainingMinor;
   if (amount > remainingMinor) return NextResponse.json({ error: "Amount exceeds the unrefunded balance." }, { status: 400 });
   const result = await paystackProvider().refund({ reference: attempt.reference, amountMinor: amount });

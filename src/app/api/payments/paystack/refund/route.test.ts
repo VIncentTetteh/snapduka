@@ -76,4 +76,19 @@ describe("POST /api/payments/paystack/refund", () => {
     expect(response.status).toBe(202);
     expect(mocks.refund).toHaveBeenCalledWith({ reference: "ref-abc", amountMinor: 3_000 });
   });
+
+  it("rejects a refund request when order is already fully refunded", async () => {
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({
+        order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
+        attempt: { id: "attempt-1", reference: "ref-abc" },
+        priorRefundsTotal: 10_000,
+      }),
+    );
+
+    const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
+
+    expect(response.status).toBe(409);
+    expect(mocks.refund).not.toHaveBeenCalled();
+  });
 });
