@@ -49,6 +49,9 @@ function adminMock(
       select?: unknown;
       update?: (payload: unknown) => unknown;
       updateError?: unknown | ((payload: Record<string, unknown>) => unknown);
+      // Simulates the supabase-js client throwing (network/client-level failure)
+      // rather than resolving with { error }, for the payload(s) it matches.
+      updateThrows?: (payload: Record<string, unknown>) => boolean;
     }
   >,
 ) {
@@ -60,16 +63,21 @@ function adminMock(
           not: () => ({ lte: () => Promise.resolve({ data: t.select }) }),
           eq: () => ({ maybeSingle: () => Promise.resolve({ data: t.select }) }),
         }),
-        update: (payload: unknown) =>
-          makeUpdateChain(() =>
-            Promise.resolve({
-              data: t.update ? t.update(payload) : null,
+        update: (payload: unknown) => {
+          t.update?.(payload);
+          return makeUpdateChain(() => {
+            if (t.updateThrows?.(payload as Record<string, unknown>)) {
+              return Promise.reject(new Error("network failure"));
+            }
+            return Promise.resolve({
+              data: null,
               error:
                 typeof t.updateError === "function"
                   ? (t.updateError as (payload: Record<string, unknown>) => unknown)(payload as Record<string, unknown>)
                   : (t.updateError ?? null),
-            }),
-          ),
+            });
+          });
+        },
       };
     },
   };
@@ -239,6 +247,54 @@ describe("POST /api/internal/billing/apply-plan-changes", () => {
 
     expect(body.applied).toBe(0);
     expect(body.failed).toBe(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("ALSO FAILED"),
+      expect.anything(),
+    );
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("logs an escalated warning when the persist fails twice and the best-effort clear itself throws", async () => {
+    mocks.isInternalJobRequest.mockReturnValue(true);
+    const updateSpy = vi.fn();
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.createSubscriptionForAuthorization.mockResolvedValue({ subscriptionCode: "SUB_new", emailToken: "tok_new" });
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({
+        seller_subscriptions: {
+          select: [{ id: "sub-1", pending_change_type: "downgrade", pending_plan_id: "p1", pending_plan_version: 1, pending_price_id: "pr1", provider_authorization_code: "AUTH_1", provider_customer_code: "CUS_1" }],
+          update: updateSpy,
+          // The full-state persist (payload includes plan_id) fails on both retry
+          // attempts via a returned { error }, same as the sibling test above. The
+          // follow-up best-effort clear (payload is just pending_change_type),
+          // however, THROWS instead of resolving with { error } — the other
+          // supabase-js failure mode — and must still reach the escalated log.
+          updateError: (payload: Record<string, unknown>) => ("plan_id" in payload ? { message: "persist failed" } : null),
+          updateThrows: (payload) => !("plan_id" in payload),
+        },
+        plan_prices: {
+          select: { id: "pr1", amount_minor: 6000, currency: "GHS", interval: "monthly", provider_plan_code: "PLN_growth", plans: { name: "Growth" } },
+        },
+      }),
+    );
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(body.applied).toBe(0);
+    expect(body.failed).toBe(1);
+
+    // Two full-state persist attempts, then one thrown best-effort clear attempt.
+    const fullPersistAttempts = updateSpy.mock.calls.filter(([payload]) => "plan_id" in (payload as object));
+    const clearAttempts = updateSpy.mock.calls.filter(
+      ([payload]) => !("plan_id" in (payload as object)) && (payload as Record<string, unknown>).pending_change_type === null,
+    );
+    expect(fullPersistAttempts).toHaveLength(2);
+    expect(clearAttempts).toHaveLength(1);
+
+    // The escalated "ALSO FAILED" log must fire even though the clear call threw
+    // rather than resolving with { error } — not the unrelated outer/inner catch's
+    // silent "pending_change_type left set — retried on the next run" path, which
+    // logs nothing and would leave this row silently re-chargeable tomorrow.
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringContaining("ALSO FAILED"),
       expect.anything(),

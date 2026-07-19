@@ -178,10 +178,16 @@ export async function POST(request: Request) {
           // to clear just the pending marker so this row stops matching. The
           // row's plan_id/state/current_period_end are still stale either
           // way and need manual reconciliation against what Paystack has.
-          const { error: clearError } = await admin
-            .from("seller_subscriptions")
-            .update({ pending_change_type: null })
-            .eq("id", row.id);
+          let clearError: unknown = null;
+          try {
+            const { error } = await admin
+              .from("seller_subscriptions")
+              .update({ pending_change_type: null })
+              .eq("id", row.id);
+            clearError = error;
+          } catch (err) {
+            clearError = err;
+          }
 
           if (clearError) {
             console.error(
