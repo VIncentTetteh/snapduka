@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
-  checkRateLimit: vi.fn((): RateLimitResult => ({ ok: true })),
+  checkRateLimit: vi.fn<(key: string) => RateLimitResult>(() => ({ ok: true })),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -88,6 +88,29 @@ describe("sendOtpAction", () => {
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("Too+many+attempts"));
+  });
+
+  it("blocks sending when the per-identifier rate limit is exceeded, even though the per-IP limit passes", async () => {
+    // Per-IP check (auth:send-otp:<ip>) passes; per-identifier check
+    // (auth:send-otp:target:<identifier>) is exhausted — simulates many
+    // different IPs all targeting the same phone/email (SMS-pumping).
+    mocks.checkRateLimit.mockImplementation((key: string): RateLimitResult => {
+      if (key.startsWith("auth:send-otp:target:")) {
+        return { ok: false, retryAfterMs: 45_000 };
+      }
+      return { ok: true };
+    });
+
+    await expect(
+      sendOtpAction(formData({ identifier: "+233241234567", next: "/dashboard" })),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      "auth:send-otp:target:+233241234567",
+      expect.objectContaining({ limit: 3, windowMs: 60 * 60 * 1000 }),
+    );
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("Too+many+attempts"));
+    expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });
 
@@ -185,6 +208,26 @@ describe("resendOtpAction", () => {
       resendOtpAction(formData({ identifier: "seller@example.com", next: "/dashboard" })),
     ).rejects.toThrow("NEXT_REDIRECT");
 
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  it("blocks resend when the per-identifier rate limit is exceeded, even though the per-IP limit passes", async () => {
+    mocks.checkRateLimit.mockImplementation((key: string): RateLimitResult => {
+      if (key.startsWith("auth:send-otp:target:")) {
+        return { ok: false, retryAfterMs: 20_000 };
+      }
+      return { ok: true };
+    });
+
+    await expect(
+      resendOtpAction(formData({ identifier: "seller@example.com", next: "/dashboard" })),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      "auth:send-otp:target:seller@example.com",
+      expect.objectContaining({ limit: 3, windowMs: 60 * 60 * 1000 }),
+    );
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("Too+many+attempts"));
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });

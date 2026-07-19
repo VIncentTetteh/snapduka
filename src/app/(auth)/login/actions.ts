@@ -27,6 +27,13 @@ const VERIFY_OTP_LIMIT = { limit: 8, windowMs: 15 * 60 * 1000 };  //  8 / 15 min
 const RESEND_OTP_LIMIT = { limit: 3, windowMs: 15 * 60 * 1000 };  //  3 / 15 min
 const SOCIAL_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 };     // 10 / 15 min
 
+// Per-target-identifier limit, independent of requester IP. Caps how many
+// codes any single email/phone can receive regardless of how many different
+// IPs request them — the primary defense against SMS-pumping / toll fraud,
+// since Supabase auto-creates accounts and sends a real (billed) SMS on
+// every signInWithOtp({ phone }) call with no ownership verification.
+const IDENTIFIER_SEND_LIMIT = { limit: 3, windowMs: 60 * 60 * 1000 }; // 3 / 60 min, per target identifier
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -95,6 +102,12 @@ export async function sendOtpAction(formData: FormData): Promise<never> {
     loginRedirect("error", "Enter a valid email address or phone number.", next);
   }
 
+  const identifierRl = checkRateLimit(`auth:send-otp:target:${identifier.value}`, IDENTIFIER_SEND_LIMIT);
+  if (!identifierRl.ok) {
+    const waitSec = Math.ceil(identifierRl.retryAfterMs / 1000);
+    loginRedirect("error", `Too many attempts. Try again in ${waitSec} seconds.`, next);
+  }
+
   const supabase = await createClient();
   const { error } =
     identifier.kind === "email"
@@ -158,6 +171,12 @@ export async function resendOtpAction(formData: FormData): Promise<never> {
   const identifier = classifyIdentifier(rawIdentifier);
   if (identifier.kind === "invalid") {
     loginRedirect("error", "Enter a valid email address or phone number.", next);
+  }
+
+  const identifierRl = checkRateLimit(`auth:send-otp:target:${identifier.value}`, IDENTIFIER_SEND_LIMIT);
+  if (!identifierRl.ok) {
+    const waitSec = Math.ceil(identifierRl.retryAfterMs / 1000);
+    toCodeStep(identifier.value, next, "error", `Too many attempts. Try again in ${waitSec} seconds.`);
   }
 
   const supabase = await createClient();
