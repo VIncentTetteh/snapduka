@@ -202,7 +202,8 @@ export async function POST(request: Request) {
           }
           failed += 1;
         }
-      } catch {
+      } catch (err) {
+        console.error("[apply-plan-changes] failed to create subscription for authorization", { rowId: row.id, error: err });
         failed += 1;
         // pending_change_type left set on the row — retried on the next run.
       }
