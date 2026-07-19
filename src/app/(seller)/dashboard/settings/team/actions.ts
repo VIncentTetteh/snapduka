@@ -2,6 +2,7 @@
 import {createHash,randomBytes} from "node:crypto";
 import {revalidatePath} from "next/cache";
 import {redirect} from "next/navigation";
+import {z} from "zod";
 import {appOrigin} from "@/lib/app-url";
 import {resolveServerActor} from "@/lib/auth/actor";
 import {getSellerPlan,planLimit} from "@/lib/billing/resolve";
@@ -10,7 +11,7 @@ import {createClient} from "@/lib/supabase/server";
 export async function inviteTeamMember(formData:FormData){
   const actor=await resolveServerActor();if(actor.kind!=="seller"||actor.role)return;
   const email=String(formData.get("email")).trim().toLowerCase();const role=String(formData.get("role"));
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)||!["manager","catalog","fulfillment","support","analyst"].includes(role))redirect("/dashboard/settings/team?error=Check+the+email+and+role");
+  if(!z.email().safeParse(email).success||!["manager","catalog","fulfillment","support","analyst"].includes(role))redirect("/dashboard/settings/team?error=Check+the+email+and+role");
   const token=randomBytes(32).toString("hex");const supabase=await createClient();
   // Seats are a plan entitlement: owner + active members + pending invites.
   const [plan,{count:members},{count:invites}]=await Promise.all([

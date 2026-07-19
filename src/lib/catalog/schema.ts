@@ -4,7 +4,7 @@ const productSchema = z
   .object({
     name: z.string().trim().min(2, "Enter a product name.").max(120),
     description: z.string().trim().max(5_000).optional().default(""),
-    price: z.string().regex(/^\d+$/, "Enter a whole minor-unit amount."),
+    price: z.string().regex(/^\d{1,12}$/, "Enter a whole minor-unit amount."),
     currency: z.enum(["GHS", "NGN", "XOF"], {
       message: "Use the shop currency.",
     }),
@@ -20,7 +20,7 @@ const productSchema = z
   .superRefine((value, context) => {
     if (
       value.inventoryPolicy === "track" &&
-      !/^\d+$/.test(value.stockQuantity)
+      !/^\d{1,12}$/.test(value.stockQuantity)
     ) {
       context.addIssue({
         code: "custom",

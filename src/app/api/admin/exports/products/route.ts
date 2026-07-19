@@ -24,7 +24,10 @@ export async function GET(request: Request) {
   const moderation = url.searchParams.get("moderation");
   if (moderation) query = query.eq("moderation_status", moderation);
   const q = url.searchParams.get("q")?.trim();
-  if (q) query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%`);
+  if (q) {
+    const safeQuery = q.slice(0, 100).replace(/[%,()]/g, "");
+    query = query.or(`name.ilike.%${safeQuery}%,sku.ilike.%${safeQuery}%`);
+  }
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: "Export failed." }, { status: 500 });

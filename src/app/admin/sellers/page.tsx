@@ -32,7 +32,8 @@ export default async function AdminSellersPage({
     .order("created_at", { ascending: false })
     .limit(100);
   if (q?.trim()) {
-    query = query.or(`contact_name.ilike.%${q.trim()}%,contact_email.ilike.%${q.trim()}%`);
+    const safeQuery = q.trim().slice(0, 100).replace(/[%,()]/g, "");
+    query = query.or(`contact_name.ilike.%${safeQuery}%,contact_email.ilike.%${safeQuery}%`);
   }
 
   const [{ data: sellers }, { data: paidOrders }, { data: riskActions }] = await Promise.all([

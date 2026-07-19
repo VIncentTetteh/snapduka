@@ -372,6 +372,12 @@ export async function updateProductAction(formData: FormData): Promise<void> {
   });
   if (!parsed.success) return;
   const supabase = await createClient();
+  const { data: shop } = await supabase
+    .from("shops")
+    .select("id, currency")
+    .eq("seller_account_id", actor.sellerAccountId)
+    .single();
+  if (!shop || shop.currency !== parsed.data.currency) return;
   await supabase.from("products").update({
     currency: parsed.data.currency,
     description: parsed.data.description,
