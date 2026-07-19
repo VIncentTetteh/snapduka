@@ -6,10 +6,12 @@ export default defineConfig([
   ...nextVitals,
   ...nextTypeScript,
   globalIgnores([
-    ".next/**",
-    "coverage/**",
-    "playwright-report/**",
-    "test-results/**",
-    ".remember/**",
+    "**/.next/**",
+    "**/coverage/**",
+    "**/playwright-report/**",
+    "**/test-results/**",
+    "**/.remember/**",
+    ".worktrees/**",
+    ".claude/worktrees/**",
   ]),
 ]);
