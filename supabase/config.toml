@@ -56,6 +56,10 @@ enable_signup = true
 enable_signup = true
 enable_confirmations = false
 
+[auth.email.template.magic_link]
+subject = "Your SnapDuka sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
 [auth.sms]
 enable_signup = true
 enable_confirmations = false
