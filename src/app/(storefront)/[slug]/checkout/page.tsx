@@ -6,7 +6,7 @@ import { CheckoutForm } from "@/components/storefront/checkout-form";
 import { StoreHeader } from "@/components/storefront/store-header";
 import { getPublicProduct, getPublicShop } from "@/lib/storefront/queries";
 import { appOrigin } from "@/lib/app-url";
-import { publicMediaUrl } from "@/lib/storefront/media";
+import { normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
 import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -138,7 +138,7 @@ export default async function CheckoutPage({
         backHref={`/${slug}`}
         canonicalUrl={canonicalUrl}
         country={shop.country}
-        logoUrl={publicMediaUrl(shop.shop_branding?.[0]?.logo_path, "shop-logos")}
+        logoUrl={publicMediaUrl(normalizeToOne(shop.shop_branding)?.logo_path, "shop-logos")}
         name={shop.display_name}
         slug={slug}
       />

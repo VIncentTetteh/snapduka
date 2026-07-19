@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mainImageUrl, publicMediaUrl } from "./media";
+import { mainImageUrl, normalizeToOne, publicMediaUrl } from "./media";
 
 describe("publicMediaUrl", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -41,5 +41,21 @@ describe("mainImageUrl", () => {
   it("returns null when there is no media", () => {
     expect(mainImageUrl([])).toBeNull();
     expect(mainImageUrl(null)).toBeNull();
+  });
+});
+
+describe("normalizeToOne", () => {
+  it("returns the object unchanged when Supabase returns a singular embed (the real runtime shape for a to-one relationship)", () => {
+    expect(normalizeToOne({ logo_path: "seller/logo.webp" })).toEqual({ logo_path: "seller/logo.webp" });
+  });
+
+  it("unwraps the first element when Supabase returns an array-shaped embed", () => {
+    expect(normalizeToOne([{ logo_path: "seller/logo.webp" }])).toEqual({ logo_path: "seller/logo.webp" });
+  });
+
+  it("returns null for an empty array, null, or undefined", () => {
+    expect(normalizeToOne([])).toBeNull();
+    expect(normalizeToOne(null)).toBeNull();
+    expect(normalizeToOne(undefined)).toBeNull();
   });
 });

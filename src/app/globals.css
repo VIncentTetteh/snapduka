@@ -107,13 +107,17 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Full-bleed override for redesigned surfaces whose <main> must not
-   inherit the legacy constrained-width rule below. Remove with the
-   legacy layer once the migration is complete. */
+/* Full-bleed width/margin override for redesigned surfaces whose <main>
+   must not inherit the legacy constrained-width rule below. Remove with
+   the legacy layer once the migration is complete.
+   Deliberately no `padding` here: every page using this class sets its
+   own padding via Tailwind utilities (px-4, px-5, ...) on the element
+   itself — an element+class selector like `main.sd-main` has higher
+   specificity than a plain utility class, so a `padding: 0` here would
+   silently override every page's own padding regardless of source order. */
 main.sd-main {
   width: 100%;
   margin: 0;
-  padding: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

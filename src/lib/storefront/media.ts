@@ -16,6 +16,17 @@ export function publicMediaUrl(
   return `${base.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${objectPath}`;
 }
 
+/**
+ * Supabase's untyped client always infers a `shop_branding(...)` embed as
+ * an array, but `shop_branding.shop_id` is a primary key — a genuine
+ * one-to-one relationship — so PostgREST actually returns a single object
+ * (or null) at runtime. Normalizes either shape before reading a field.
+ */
+export function normalizeToOne<T>(embedded: T | T[] | null | undefined): T | null {
+  if (Array.isArray(embedded)) return embedded[0] ?? null;
+  return embedded ?? null;
+}
+
 type MediaRecord = { object_path: string; position: number };
 
 /** Main image = lowest position; returns its public URL or null. */

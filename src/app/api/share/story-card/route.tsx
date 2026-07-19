@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { appHost } from "@/lib/app-url";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { mainImageUrl, publicMediaUrl } from "@/lib/storefront/media";
+import { mainImageUrl, normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
 import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
@@ -43,8 +43,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Shop not found" }, { status: 404 });
   }
 
-  const branding = Array.isArray(shop.shop_branding) ? shop.shop_branding[0] : shop.shop_branding;
-  const logoUrl = publicMediaUrl(branding?.logo_path, "shop-logos");
+  const logoUrl = publicMediaUrl(normalizeToOne(shop.shop_branding)?.logo_path, "shop-logos");
 
   let product: { name: string; price_minor: number; currency: string } | null = null;
   let backgroundUrl: string | null = null;
