@@ -57,8 +57,21 @@ enable_signup = true
 enable_confirmations = false
 
 [auth.sms]
-enable_signup = false
+enable_signup = true
 enable_confirmations = false
+max_frequency = "10s"
+
+# Twilio SMS provider. Credentials come from the environment running
+# `supabase start` — export TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN /
+# TWILIO_MESSAGE_SERVICE_SID (or keep them in a shell profile). This only
+# covers local development — the equivalent Phone provider must also be
+# configured in the Supabase Cloud dashboard (Authentication → Providers →
+# Phone) for the production project, since Cloud does not read this file.
+[auth.sms.twilio]
+enabled = true
+account_sid = "env(TWILIO_ACCOUNT_SID)"
+auth_token = "env(TWILIO_AUTH_TOKEN)"
+message_service_sid = "env(TWILIO_MESSAGE_SERVICE_SID)"
 
 # Google sign-in. Credentials come from the environment running `supabase
 # start` — export GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (or keep them in a
