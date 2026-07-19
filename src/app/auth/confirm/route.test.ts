@@ -30,24 +30,20 @@ describe("auth confirmation route", () => {
     );
   });
 
-  it("verifies an email token hash before redirecting", async () => {
-    const verifyOtp = vi.fn().mockResolvedValue({ error: null });
+  it("treats a token_hash-only request as invalid now that OTP links are not supported", async () => {
     createClient.mockResolvedValue({
-      auth: { verifyOtp },
+      auth: { exchangeCodeForSession: vi.fn() },
     });
 
-    const response = await GET(
-      new NextRequest(
-        "https://snapduka.example/auth/confirm?token_hash=hash&type=email&next=/settings",
-      ),
+    const request = new NextRequest(
+      "https://snapduka.example/auth/confirm?token_hash=abc123&type=email&next=%2Fonboarding",
     );
+    const response = await GET(request);
 
-    expect(verifyOtp).toHaveBeenCalledWith({
-      token_hash: "hash",
-      type: "email",
-    });
-    expect(response.headers.get("location")).toBe(
-      "https://snapduka.example/settings",
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/login");
+    expect(response.headers.get("location")).toContain(
+      "invalid+or+has+expired",
     );
   });
 
