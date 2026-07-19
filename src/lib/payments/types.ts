@@ -10,6 +10,13 @@ export type InitializePaymentInput = {
 
 export interface PaymentProvider {
   initialize(input: InitializePaymentInput): Promise<{ authorizationUrl: string; accessCode: string; reference: string }>;
-  verify(reference: string): Promise<{ status: string; amountMinor: number; currency: string; reference: string }>;
+  verify(reference: string): Promise<{
+    status: string;
+    amountMinor: number;
+    currency: string;
+    reference: string;
+    authorizationCode: string | null;
+    customerCode: string | null;
+  }>;
   refund(input: { reference: string; amountMinor?: number }): Promise<{ providerId: string; status: string }>;
 }

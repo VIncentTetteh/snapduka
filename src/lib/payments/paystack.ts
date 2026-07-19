@@ -73,6 +73,21 @@ export class PaystackProvider implements PaymentProvider {
     });
   }
 
+  /** Subscribes an already-charged customer to a plan using a stored card
+   * authorization — no checkout redirect needed. Used by the plan-change
+   * cron to apply a scheduled downgrade without a live seller session. */
+  async createSubscriptionForAuthorization(input: { customerCode: string; planCode: string; authorizationCode: string }) {
+    const data = await this.request("/subscription", {
+      method: "POST",
+      body: JSON.stringify({
+        customer: input.customerCode,
+        plan: input.planCode,
+        authorization: input.authorizationCode,
+      }),
+    });
+    return { subscriptionCode: data.subscription_code as string, emailToken: data.email_token as string };
+  }
+
   async createSubaccount(input: {
     businessName: string;
     bankCode: string;
@@ -96,7 +111,14 @@ export class PaystackProvider implements PaymentProvider {
 
   async verify(reference: string) {
     const data = await this.request(`/transaction/verify/${encodeURIComponent(reference)}`);
-    return { status: data.status, amountMinor: data.amount, currency: data.currency, reference: data.reference };
+    return {
+      status: data.status,
+      amountMinor: data.amount,
+      currency: data.currency,
+      reference: data.reference,
+      authorizationCode: (data.authorization?.authorization_code as string | undefined) ?? null,
+      customerCode: (data.customer?.customer_code as string | undefined) ?? null,
+    };
   }
 
   async refund(input: { reference: string; amountMinor?: number }) {
