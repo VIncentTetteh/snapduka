@@ -28,7 +28,7 @@ export type OnboardingWizardModel = {
   account: {
     country: CountryCode;
     contactName: string;
-    contactEmail: string;
+    contactEmail: string | null;
     contactPhone: string | null;
   } | null;
   shop: {
