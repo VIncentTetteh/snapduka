@@ -32,7 +32,7 @@ export async function changePlan(formData: FormData) {
   const { data: existing } = await supabase
     .from("seller_subscriptions")
     .select(
-      "id,state,grace_ends_at,current_period_end,provider_subscription_code,provider_email_token,plans(code),plan_prices(interval)",
+      "id,state,grace_ends_at,current_period_end,provider_subscription_code,provider_email_token,plans!plan_id(code),plan_prices!price_id(interval)",
     )
     .eq("seller_account_id", actor.sellerAccountId)
     .maybeSingle();

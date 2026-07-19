@@ -38,7 +38,7 @@ export default async function SettingsPage() {
       .eq("active", true),
     supabase
       .from("seller_subscriptions")
-      .select("state, plans(code)")
+      .select("state, plans!plan_id(code)")
       .eq("seller_account_id", actor.sellerAccountId)
       .maybeSingle(),
     supabase
