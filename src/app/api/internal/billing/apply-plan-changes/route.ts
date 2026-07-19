@@ -18,7 +18,11 @@ function periodEnd(start: Date, interval: string): string {
  * until this cron runs — the seller keeps what they paid for. Safe to
  * re-invoke: a row only matches the initial query while pending_change_type
  * is still set, so an already-applied row is naturally skipped on rerun. A
- * failed downgrade leaves pending_change_type set so the next run retries.
+ * failed downgrade leaves pending_change_type set so the next run retries —
+ * EXCEPT when the seller's card was already charged via Paystack and only
+ * the follow-up persist failed: there, pending_change_type is cleared via a
+ * best-effort update instead, because leaving it set would let tomorrow's
+ * run match this row again and charge the card a second time.
  */
 export async function POST(request: Request) {
   if (!isInternalJobRequest(request)) {
@@ -167,10 +171,29 @@ export async function POST(request: Request) {
         if (persisted) {
           applied += 1;
         } else {
-          console.error(
-            `CRITICAL: seller charged via Paystack (subscription ${subscription.subscriptionCode}) but failed to persist to seller_subscriptions after retry — row ${row.id} needs manual reconciliation`,
-            lastError,
-          );
+          // The card is already charged. Leaving pending_change_type set here
+          // would let tomorrow's "due" query match this row again and charge
+          // the card a second time — a log message doesn't stop an automated
+          // cron from re-running. Make one best-effort, non-retried attempt
+          // to clear just the pending marker so this row stops matching. The
+          // row's plan_id/state/current_period_end are still stale either
+          // way and need manual reconciliation against what Paystack has.
+          const { error: clearError } = await admin
+            .from("seller_subscriptions")
+            .update({ pending_change_type: null })
+            .eq("id", row.id);
+
+          if (clearError) {
+            console.error(
+              `CRITICAL: seller charged via Paystack (subscription ${subscription.subscriptionCode}) but failed to persist to seller_subscriptions after retry — row ${row.id} needs manual reconciliation. The best-effort pending_change_type clear ALSO FAILED, so this row may be picked up and charged again on the next run.`,
+              { persistError: lastError, clearError },
+            );
+          } else {
+            console.error(
+              `CRITICAL: seller charged via Paystack (subscription ${subscription.subscriptionCode}) but failed to persist to seller_subscriptions after retry — row ${row.id} needs manual reconciliation of plan_id/state/current_period_end. pending_change_type was cleared to prevent a repeat charge on the next run.`,
+              { persistError: lastError },
+            );
+          }
           failed += 1;
         }
       } catch {
