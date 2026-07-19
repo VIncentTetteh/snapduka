@@ -49,10 +49,43 @@ export async function POST(request: Request) {
   if (error?.code === "23505") return NextResponse.json({ received: true, applied: false });
   if (error) return NextResponse.json({ error: "Event processing failed." }, { status: 500 });
 
-  const update: Record<string, unknown> = { state: nextState, updated_at: new Date().toISOString() };
+  const nowIso = new Date().toISOString();
+
+  if (nextState === "cancelled") {
+    // A pending scheduled change (set by changePlan) already disabled this
+    // subscription on purpose — the daily apply-plan-changes cron is the
+    // sole authority for that state transition once current_period_end
+    // passes. Only record cancellation here when Paystack-side cancellation
+    // was NOT solicited by us (e.g. the seller cancelled directly with
+    // their bank, or an operator acted outside this app).
+    const { data: current } = await admin
+      .from("seller_subscriptions")
+      .select("pending_change_type")
+      .eq("id", subscription.id)
+      .maybeSingle();
+    if (current?.pending_change_type) {
+      return NextResponse.json({ received: true, applied: true, pending: true });
+    }
+    await admin
+      .from("seller_subscriptions")
+      .update({ state: "cancelled", cancelled_at: nowIso, updated_at: nowIso })
+      .eq("id", subscription.id);
+    return NextResponse.json({ received: true, applied: true });
+  }
+
+  const update: Record<string, unknown> = { state: nextState, updated_at: nowIso };
   if (nextState === "past_due") update.grace_ends_at = new Date(Date.now() + 7 * 86_400_000).toISOString();
-  if (nextState === "active") update.grace_ends_at = null;
-  if (nextState === "cancelled") update.cancelled_at = new Date().toISOString();
+  if (nextState === "active") {
+    update.grace_ends_at = null;
+    const nextPaymentDate = payload.data?.next_payment_date ?? payload.data?.subscription?.next_payment_date;
+    if (typeof nextPaymentDate === "string" && !Number.isNaN(new Date(nextPaymentDate).getTime())) {
+      update.current_period_end = new Date(nextPaymentDate).toISOString();
+    }
+    const authorizationCode = payload.data?.authorization?.authorization_code;
+    if (typeof authorizationCode === "string") update.provider_authorization_code = authorizationCode;
+    const customerCode = payload.data?.customer?.customer_code;
+    if (typeof customerCode === "string") update.provider_customer_code = customerCode;
+  }
   await admin.from("seller_subscriptions").update(update).eq("id", subscription.id);
   return NextResponse.json({ received: true, applied: true });
 }
