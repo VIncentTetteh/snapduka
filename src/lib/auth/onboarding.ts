@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidPhoneForCountry } from "@/lib/countries/phone";
 import type { CountryCode } from "@/lib/countries/types";
 
 export const onboardingMilestoneKeys = [
@@ -159,14 +160,17 @@ export function normalizeShopSlug(input: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-const accountSetupSchema = z.object({
-  country: z.enum(["GH", "NG", "CI"]),
-  contactName: z.string().trim().min(2, "Enter your contact name."),
-  contactEmail: z.email("Use the verified email on your account.").nullable(),
-  contactPhone: z
-    .string()
-    .regex(/^\+[1-9][0-9]{7,14}$/, "Enter a valid phone number."),
-});
+const accountSetupSchema = z
+  .object({
+    country: z.enum(["GH", "NG", "CI"]),
+    contactName: z.string().trim().min(2, "Enter your contact name."),
+    contactEmail: z.email("Use the verified email on your account.").nullable(),
+    contactPhone: z.string(),
+  })
+  .refine((value) => isValidPhoneForCountry(value.contactPhone, value.country), {
+    message: "Enter a valid phone number.",
+    path: ["contactPhone"],
+  });
 
 const shopIdentitySchema = z.object({
   displayName: z.string().trim().min(2, "Enter a shop display name."),

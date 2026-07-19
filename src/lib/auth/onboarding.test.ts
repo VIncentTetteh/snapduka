@@ -252,3 +252,35 @@ describe("evaluateOnboarding account milestone with no email", () => {
     expect(account?.complete).toBe(false);
   });
 });
+
+describe("parseAccountSetup with country-exact phone validation", () => {
+  it("rejects a Ghana phone number with only 8 local digits", () => {
+    const result = parseAccountSetup(
+      { country: "GH", contactName: "Ama Serwaa", contactPhone: "0241234" },
+      "ama@example.com",
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.fieldErrors.contactPhone?.[0]).toContain("valid phone number");
+    }
+  });
+
+  it("accepts a correctly-sized Nigeria phone number", () => {
+    const result = parseAccountSetup(
+      { country: "NG", contactName: "Chidi Okafor", contactPhone: "08012345678" },
+      "chidi@example.com",
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.contactPhone).toBe("+2348012345678");
+    }
+  });
+
+  it("rejects a Nigeria phone number normalized to the Ghana digit count", () => {
+    const result = parseAccountSetup(
+      { country: "NG", contactName: "Chidi Okafor", contactPhone: "0801234567" },
+      "chidi@example.com",
+    );
+    expect(result.success).toBe(false);
+  });
+});
