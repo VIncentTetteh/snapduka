@@ -91,17 +91,17 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  await admin
-    .from("seller_subscriptions")
-    .update({
-      state: "active",
-      current_period_start: now.toISOString(),
-      current_period_end: periodEnd(now, price.interval),
-      grace_ends_at: null,
-      cancelled_at: null,
-      updated_at: now.toISOString(),
-    })
-    .eq("id", subscription.id);
+  const updatePayload: Record<string, unknown> = {
+    state: "active",
+    current_period_start: now.toISOString(),
+    current_period_end: periodEnd(now, price.interval),
+    grace_ends_at: null,
+    cancelled_at: null,
+    updated_at: now.toISOString(),
+  };
+  if (verified.authorizationCode) updatePayload.provider_authorization_code = verified.authorizationCode;
+  if (verified.customerCode) updatePayload.provider_customer_code = verified.customerCode;
+  await admin.from("seller_subscriptions").update(updatePayload).eq("id", subscription.id);
 
   return NextResponse.json({ state: "active" });
 }
