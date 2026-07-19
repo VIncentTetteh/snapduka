@@ -23,7 +23,9 @@ function request() {
 }
 
 /** A minimal chainable Supabase query-builder mock, table-keyed. */
-function adminMock(tables: Record<string, { select?: unknown; update?: (payload: unknown) => unknown }>) {
+function adminMock(
+  tables: Record<string, { select?: unknown; update?: (payload: unknown) => unknown; updateError?: unknown }>,
+) {
   return {
     from: (table: string) => {
       const t = tables[table] ?? {};
@@ -33,7 +35,13 @@ function adminMock(tables: Record<string, { select?: unknown; update?: (payload:
           eq: () => ({ maybeSingle: () => Promise.resolve({ data: t.select }) }),
         }),
         update: (payload: unknown) => ({
-          eq: () => ({ eq: () => Promise.resolve({ data: t.update ? t.update(payload) : null }) }),
+          eq: () => ({
+            eq: () =>
+              Promise.resolve({
+                data: t.update ? t.update(payload) : null,
+                error: t.updateError ?? null,
+              }),
+          }),
         }),
       };
     },
@@ -106,6 +114,32 @@ describe("POST /api/internal/billing/apply-plan-changes", () => {
       customerCode: "CUS_1", planCode: "PLN_growth", authorizationCode: "AUTH_1",
     });
     expect(updateSpy).toHaveBeenCalledWith(expect.objectContaining({ state: "active", plan_id: "p1", pending_change_type: null }));
+  });
+
+  it("leaves the row untouched for retry when Paystack throws (no double-charge)", async () => {
+    mocks.isInternalJobRequest.mockReturnValue(true);
+    const updateSpy = vi.fn();
+    mocks.createSubscriptionForAuthorization.mockRejectedValue(new Error("Paystack unavailable"));
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({
+        seller_subscriptions: {
+          select: [{ id: "sub-1", pending_change_type: "downgrade", pending_plan_id: "p1", pending_plan_version: 1, pending_price_id: "pr1", provider_authorization_code: "AUTH_1", provider_customer_code: "CUS_1" }],
+          update: updateSpy,
+        },
+        plan_prices: {
+          select: { id: "pr1", amount_minor: 6000, currency: "GHS", interval: "monthly", provider_plan_code: "PLN_growth", plans: { name: "Growth" } },
+        },
+      }),
+    );
+    const response = await POST(request());
+    const body = await response.json();
+    expect(body.failed).toBe(1);
+    expect(body.applied).toBe(0);
+    // The Paystack call threw before the success-path persist was ever attempted,
+    // so no write happened for this row at all: pending_change_type is still set,
+    // meaning the row remains "due" and will be retried next run.
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(updateSpy).not.toHaveBeenCalledWith(expect.objectContaining({ state: "active" }));
   });
 
   it("re-invoking after a row was already applied is a no-op", async () => {

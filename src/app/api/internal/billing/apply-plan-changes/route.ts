@@ -38,99 +38,148 @@ export async function POST(request: Request) {
   let failed = 0;
 
   for (const row of due ?? []) {
-    if (row.pending_change_type === "cancel") {
-      await admin
-        .from("seller_subscriptions")
-        .update({
-          state: "cancelled",
-          cancelled_at: now.toISOString(),
-          pending_change_type: null,
-          pending_plan_id: null,
-          pending_plan_version: null,
-          pending_price_id: null,
-        })
-        .eq("id", row.id)
-        .eq("pending_change_type", "cancel");
-      applied += 1;
-      continue;
-    }
+    // Isolate each row: a thrown error anywhere in this row's handling (DB or
+    // Paystack) must not abort the batch — the remaining due rows still need
+    // to run this cycle. A row that errors here is safely retried next run.
+    try {
+      if (row.pending_change_type === "cancel") {
+        const { error } = await admin
+          .from("seller_subscriptions")
+          .update({
+            state: "cancelled",
+            cancelled_at: now.toISOString(),
+            pending_change_type: null,
+            pending_plan_id: null,
+            pending_plan_version: null,
+            pending_price_id: null,
+          })
+          .eq("id", row.id)
+          .eq("pending_change_type", "cancel");
+        if (error) {
+          console.error("[apply-plan-changes] failed to persist cancellation", { rowId: row.id, error });
+          failed += 1;
+        } else {
+          applied += 1;
+        }
+        continue;
+      }
 
-    if (!row.provider_authorization_code || !row.provider_customer_code) {
-      // No stored card to charge headlessly — fail safe to Free rather than
-      // silently not billing.
-      await admin
-        .from("seller_subscriptions")
-        .update({
-          state: "cancelled",
-          cancelled_at: now.toISOString(),
-          pending_change_type: null,
-          pending_plan_id: null,
-          pending_plan_version: null,
-          pending_price_id: null,
-        })
-        .eq("id", row.id)
-        .eq("pending_change_type", "downgrade");
-      failed += 1;
-      continue;
-    }
-
-    const { data: price } = await admin
-      .from("plan_prices")
-      .select("id,amount_minor,currency,interval,provider_plan_code,plans(name)")
-      .eq("id", row.pending_price_id)
-      .maybeSingle();
-    if (!price) {
-      failed += 1;
-      continue;
-    }
-
-    let providerPlanCode = price.provider_plan_code;
-    if (!providerPlanCode) {
-      try {
-        const planRow = price.plans as { name?: string } | { name?: string }[] | null;
-        const planName = Array.isArray(planRow) ? planRow[0]?.name : planRow?.name;
-        const created = await paystackProvider().createPlan({
-          name: `SnapDuka ${planName ?? "plan"} (${price.currency} ${price.interval})`,
-          interval: price.interval === "yearly" ? "annually" : "monthly",
-          amountMinor: price.amount_minor,
-          currency: price.currency,
-        });
-        providerPlanCode = created.planCode;
-        await admin.from("plan_prices").update({ provider_plan_code: providerPlanCode }).eq("id", price.id);
-      } catch {
+      if (!row.provider_authorization_code || !row.provider_customer_code) {
+        // No stored card to charge headlessly — fail safe to Free rather than
+        // silently not billing.
+        const { error } = await admin
+          .from("seller_subscriptions")
+          .update({
+            state: "cancelled",
+            cancelled_at: now.toISOString(),
+            pending_change_type: null,
+            pending_plan_id: null,
+            pending_plan_version: null,
+            pending_price_id: null,
+          })
+          .eq("id", row.id)
+          .eq("pending_change_type", "downgrade");
+        if (error) {
+          console.error("[apply-plan-changes] failed to persist fail-safe cancellation", { rowId: row.id, error });
+        }
         failed += 1;
         continue;
       }
-    }
 
-    try {
-      const subscription = await paystackProvider().createSubscriptionForAuthorization({
-        customerCode: row.provider_customer_code,
-        planCode: providerPlanCode,
-        authorizationCode: row.provider_authorization_code,
-      });
-      await admin
-        .from("seller_subscriptions")
-        .update({
-          plan_id: row.pending_plan_id,
-          plan_version: row.pending_plan_version,
-          price_id: row.pending_price_id,
-          state: "active",
-          current_period_start: now.toISOString(),
-          current_period_end: periodEnd(now, price.interval),
-          provider_subscription_code: subscription.subscriptionCode,
-          provider_email_token: subscription.emailToken,
-          pending_change_type: null,
-          pending_plan_id: null,
-          pending_plan_version: null,
-          pending_price_id: null,
-        })
-        .eq("id", row.id)
-        .eq("pending_change_type", "downgrade");
-      applied += 1;
-    } catch {
+      const { data: price } = await admin
+        .from("plan_prices")
+        .select("id,amount_minor,currency,interval,provider_plan_code,plans(name)")
+        .eq("id", row.pending_price_id)
+        .maybeSingle();
+      if (!price) {
+        failed += 1;
+        continue;
+      }
+
+      let providerPlanCode = price.provider_plan_code;
+      if (!providerPlanCode) {
+        try {
+          const planRow = price.plans as { name?: string } | { name?: string }[] | null;
+          const planName = Array.isArray(planRow) ? planRow[0]?.name : planRow?.name;
+          const created = await paystackProvider().createPlan({
+            name: `SnapDuka ${planName ?? "plan"} (${price.currency} ${price.interval})`,
+            interval: price.interval === "yearly" ? "annually" : "monthly",
+            amountMinor: price.amount_minor,
+            currency: price.currency,
+          });
+          providerPlanCode = created.planCode;
+          await admin.from("plan_prices").update({ provider_plan_code: providerPlanCode }).eq("id", price.id);
+        } catch {
+          failed += 1;
+          continue;
+        }
+      }
+
+      try {
+        const subscription = await paystackProvider().createSubscriptionForAuthorization({
+          customerCode: row.provider_customer_code,
+          planCode: providerPlanCode,
+          authorizationCode: row.provider_authorization_code,
+        });
+
+        // The seller's card is now charged and a Paystack subscription exists.
+        // Persisting that onto seller_subscriptions must not silently fail: if
+        // it does, pending_change_type stays set and tomorrow's run would
+        // charge the card again (createSubscriptionForAuthorization has no
+        // idempotency key). Retry once to close the most likely transient
+        // failure window, then stop and demand manual reconciliation rather
+        // than risk a second charge.
+        const persistUpdate = () =>
+          admin
+            .from("seller_subscriptions")
+            .update({
+              plan_id: row.pending_plan_id,
+              plan_version: row.pending_plan_version,
+              price_id: row.pending_price_id,
+              state: "active",
+              current_period_start: now.toISOString(),
+              current_period_end: periodEnd(now, price.interval),
+              provider_subscription_code: subscription.subscriptionCode,
+              provider_email_token: subscription.emailToken,
+              pending_change_type: null,
+              pending_plan_id: null,
+              pending_plan_version: null,
+              pending_price_id: null,
+            })
+            .eq("id", row.id)
+            .eq("pending_change_type", "downgrade");
+
+        let persisted = false;
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < 2 && !persisted; attempt += 1) {
+          try {
+            const { error } = await persistUpdate();
+            if (error) {
+              lastError = error;
+            } else {
+              persisted = true;
+            }
+          } catch (err) {
+            lastError = err;
+          }
+        }
+
+        if (persisted) {
+          applied += 1;
+        } else {
+          console.error(
+            `CRITICAL: seller charged via Paystack (subscription ${subscription.subscriptionCode}) but failed to persist to seller_subscriptions after retry — row ${row.id} needs manual reconciliation`,
+            lastError,
+          );
+          failed += 1;
+        }
+      } catch {
+        failed += 1;
+        // pending_change_type left set on the row — retried on the next run.
+      }
+    } catch (err) {
+      console.error("[apply-plan-changes] unexpected error processing row", { rowId: row.id, error: err });
       failed += 1;
-      // pending_change_type left set on the row — retried on the next run.
     }
   }
 
