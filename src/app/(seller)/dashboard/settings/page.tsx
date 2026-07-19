@@ -21,7 +21,7 @@ export default async function SettingsPage() {
   const [
     { data: branding },
     { count: fulfillmentCount },
-    { data: subscription },
+    { data: subscription, error: subscriptionError },
     { count: teamCount },
     { data: discovery },
     { count: keyCount },
@@ -55,6 +55,9 @@ export default async function SettingsPage() {
       .select("id", { count: "exact", head: true })
       .eq("seller_account_id", actor.sellerAccountId),
   ]);
+  if (subscriptionError) {
+    console.error("[SettingsPage] seller_subscriptions query failed", subscriptionError);
+  }
 
   const plans = subscription?.plans as { code?: string } | { code?: string }[] | null | undefined;
   const planCode = (Array.isArray(plans) ? plans[0]?.code : plans?.code) ?? "free";

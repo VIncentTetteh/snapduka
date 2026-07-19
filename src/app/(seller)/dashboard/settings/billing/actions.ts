@@ -29,13 +29,20 @@ export async function changePlan(formData: FormData) {
   const supabase = await createClient();
   const admin = createAdminClient();
 
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from("seller_subscriptions")
     .select(
       "id,state,grace_ends_at,current_period_end,provider_subscription_code,provider_email_token,plans!plan_id(code),plan_prices!price_id(interval)",
     )
     .eq("seller_account_id", actor.sellerAccountId)
     .maybeSingle();
+  // A query error here is an infrastructure failure, not "no subscription" —
+  // fail loudly rather than silently treating the seller as Free/no-sub,
+  // which could let a plan change apply on top of stale/wrong state.
+  if (existingError) {
+    console.error("[changePlan] seller_subscriptions query failed", existingError);
+    fail("Could not load your subscription. Try again shortly.");
+  }
 
   const existingPlan = existing?.plans as { code?: string } | { code?: string }[] | null;
   const existingPlanCode = (Array.isArray(existingPlan) ? existingPlan[0]?.code : existingPlan?.code) ?? "free";

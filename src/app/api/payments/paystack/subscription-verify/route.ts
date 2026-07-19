@@ -43,11 +43,18 @@ export async function POST(request: Request) {
   }
 
   const admin = createAdminClient();
-  const { data: subscription } = await admin
+  const { data: subscription, error: subscriptionError } = await admin
     .from("seller_subscriptions")
     .select("id,state,plan_prices!price_id(amount_minor,currency,interval)")
     .eq("seller_account_id", actor.sellerAccountId)
     .maybeSingle();
+  // A query error is a distinct infrastructure failure from "no subscription
+  // exists yet" — surface it as a 500 rather than letting the client read it
+  // as "nothing to confirm" and give up silently.
+  if (subscriptionError) {
+    console.error("[subscription-verify] seller_subscriptions query failed", subscriptionError);
+    return NextResponse.json({ error: "Subscription lookup failed." }, { status: 500 });
+  }
   if (!subscription) return NextResponse.json({ error: "No pending subscription." }, { status: 404 });
   if (subscription.state === "active") return NextResponse.json({ state: "active" });
 

@@ -107,7 +107,7 @@ export async function getSellerPlan(sellerAccountId: string): Promise<SellerPlan
   // test files can't load at module scope.
   const { createAdminClient } = await import("@/lib/supabase/admin");
   const admin = createAdminClient();
-  const [{ data: subscription }, { data: freePlan }] = await Promise.all([
+  const [{ data: subscription, error: subscriptionError }, { data: freePlan }] = await Promise.all([
     admin
       .from("seller_subscriptions")
       // Aliased to plan_id: seller_subscriptions has two FKs to plans (plan_id,
@@ -122,6 +122,12 @@ export async function getSellerPlan(sellerAccountId: string): Promise<SellerPlan
       .eq("active", true)
       .maybeSingle(),
   ]);
+  // A real query error (e.g. an ambiguous embed reintroduced by a migration,
+  // a transient DB error, an RLS change) is distinct from "no subscription
+  // found" — log it so it doesn't silently resolve as Free with zero signal.
+  if (subscriptionError) {
+    console.error("[getSellerPlan] seller_subscriptions query failed", subscriptionError);
+  }
   return resolvePlanFromSubscription(
     (subscription as SubscriptionRow | null) ?? null,
     (freePlan?.entitlements as Record<string, EntitlementValue>) ?? FREE_PLAN_FALLBACK,

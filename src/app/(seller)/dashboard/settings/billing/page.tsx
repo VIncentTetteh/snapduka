@@ -81,7 +81,7 @@ export default async function BillingPage({
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [{ data: plans }, { data: subscription }, plan] = await Promise.all([
+  const [{ data: plans }, { data: subscription, error: subscriptionError }, plan] = await Promise.all([
     supabase
       .from("plans")
       .select("code,name,entitlements,plan_prices(id,country,currency,interval,amount_minor,active)")
@@ -96,6 +96,9 @@ export default async function BillingPage({
       .maybeSingle(),
     getSellerPlan(actor.sellerAccountId),
   ]);
+  if (subscriptionError) {
+    console.error("[BillingPage] seller_subscriptions query failed", subscriptionError);
+  }
 
   const ordered = ["free", "growth", "scale"]
     .map((code) => (plans as PlanRow[] | null)?.find((row) => row.code === code))
