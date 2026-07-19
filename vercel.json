@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/internal/discovery/refresh", "schedule": "30 3 * * *" }
+    { "path": "/api/internal/discovery/refresh", "schedule": "30 3 * * *" },
+    { "path": "/api/internal/billing/apply-plan-changes", "schedule": "15 3 * * *" }
   ]
 }
