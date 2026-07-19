@@ -23,7 +23,7 @@ export type OnboardingFacts = {
   seller: {
     country: CountryCode;
     contactName: string;
-    contactEmail: string;
+    contactEmail: string | null;
     contactPhone: string | null;
   } | null;
   shop: {
@@ -73,7 +73,6 @@ export function evaluateOnboarding(
   const accountComplete =
     facts.seller !== null &&
     hasText(facts.seller.contactName) &&
-    hasText(facts.seller.contactEmail) &&
     hasText(facts.seller.contactPhone);
   const shopIdentityComplete =
     facts.shop !== null &&
@@ -163,7 +162,7 @@ export function normalizeShopSlug(input: string): string {
 const accountSetupSchema = z.object({
   country: z.enum(["GH", "NG", "CI"]),
   contactName: z.string().trim().min(2, "Enter your contact name."),
-  contactEmail: z.email("Use the verified email on your account."),
+  contactEmail: z.email("Use the verified email on your account.").nullable(),
   contactPhone: z
     .string()
     .regex(/^\+[1-9][0-9]{7,14}$/, "Enter a valid phone number."),
@@ -230,7 +229,7 @@ export function parseAccountSetup(
     accountSetupSchema.safeParse({
       country: input.country,
       contactName: input.contactName,
-      contactEmail: verifiedEmail?.trim().toLowerCase() ?? "",
+      contactEmail: verifiedEmail ? verifiedEmail.trim().toLowerCase() : null,
       contactPhone:
         input.country === "GH" || input.country === "NG" || input.country === "CI"
           ? normalizePhoneNumber(input.contactPhone, input.country)

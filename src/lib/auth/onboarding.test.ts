@@ -200,3 +200,55 @@ describe("onboarding input normalization", () => {
     });
   });
 });
+
+describe("parseAccountSetup with no verified email", () => {
+  it("succeeds with a null contactEmail when verifiedEmail is null", () => {
+    const result = parseAccountSetup(
+      { country: "GH", contactName: "Ama Serwaa", contactPhone: "0241234567" },
+      null,
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.contactEmail).toBeNull();
+      expect(result.data.contactPhone).toBe("+233241234567");
+    }
+  });
+});
+
+describe("evaluateOnboarding account milestone with no email", () => {
+  it("treats the account milestone as complete when contactEmail is null but name and phone are present", () => {
+    const state = evaluateOnboarding(
+      {
+        seller: { country: "GH", contactName: "Ama Serwaa", contactEmail: null, contactPhone: "+233241234567" },
+        shop: null,
+        policyAccepted: false,
+        verificationState: "not_started",
+        paymentSubaccountActive: false,
+      },
+      {
+        firstProduct: { available: false, complete: false },
+        fulfillment: { available: false, complete: false },
+      },
+    );
+    const account = state.milestones.find((m) => m.key === "account");
+    expect(account?.complete).toBe(true);
+  });
+
+  it("still requires contactPhone even when contactEmail is present", () => {
+    const state = evaluateOnboarding(
+      {
+        seller: { country: "GH", contactName: "Ama Serwaa", contactEmail: "ama@example.com", contactPhone: null },
+        shop: null,
+        policyAccepted: false,
+        verificationState: "not_started",
+        paymentSubaccountActive: false,
+      },
+      {
+        firstProduct: { available: false, complete: false },
+        fulfillment: { available: false, complete: false },
+      },
+    );
+    const account = state.milestones.find((m) => m.key === "account");
+    expect(account?.complete).toBe(false);
+  });
+});
