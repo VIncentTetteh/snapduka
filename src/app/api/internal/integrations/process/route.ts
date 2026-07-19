@@ -12,7 +12,11 @@ export async function POST(request: Request) {
   let delivered = 0;
   for (const job of jobs ?? []) {
     const hook = job.outbound_webhooks as unknown as { secret_encrypted: string; url: string };
-    if (!(await isSafeWebhookUrl(hook.url))) continue;
+    if (!(await isSafeWebhookUrl(hook.url))) {
+      const attempts = job.attempt_count + 1;
+      await admin.from("webhook_deliveries").update({ attempt_count: attempts, last_error: "Webhook URL failed safety check (blocked host or private IP).", next_attempt_at: new Date(Date.now() + Math.min(86_400_000, 2 ** attempts * 60_000)).toISOString(), state: attempts >= 8 ? "dead_letter" : "retry" }).eq("id", job.id);
+      continue;
+    }
     const body = JSON.stringify(job.payload);
     try {
       const response = await fetch(hook.url, { body, headers: { "content-type": "application/json", "x-snapduka-signature": signWebhook(body, hook.secret_encrypted) }, method: "POST", signal: AbortSignal.timeout(10_000) });
