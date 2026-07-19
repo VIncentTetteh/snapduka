@@ -110,7 +110,9 @@ export async function getSellerPlan(sellerAccountId: string): Promise<SellerPlan
   const [{ data: subscription }, { data: freePlan }] = await Promise.all([
     admin
       .from("seller_subscriptions")
-      .select("state,grace_ends_at,current_period_end,plans(code,name,entitlements)")
+      // Aliased to plan_id: seller_subscriptions has two FKs to plans (plan_id,
+      // pending_plan_id), so an unaliased embed throws PGRST201.
+      .select("state,grace_ends_at,current_period_end,plans!plan_id(code,name,entitlements)")
       .eq("seller_account_id", sellerAccountId)
       .maybeSingle(),
     admin
