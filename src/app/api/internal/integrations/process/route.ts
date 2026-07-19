@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
+import { isSafeWebhookUrl } from "@/lib/security/url";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { signWebhook } from "@/lib/webhooks/signing";
 
@@ -11,6 +12,7 @@ export async function POST(request: Request) {
   let delivered = 0;
   for (const job of jobs ?? []) {
     const hook = job.outbound_webhooks as unknown as { secret_encrypted: string; url: string };
+    if (!(await isSafeWebhookUrl(hook.url))) continue;
     const body = JSON.stringify(job.payload);
     try {
       const response = await fetch(hook.url, { body, headers: { "content-type": "application/json", "x-snapduka-signature": signWebhook(body, hook.secret_encrypted) }, method: "POST", signal: AbortSignal.timeout(10_000) });
