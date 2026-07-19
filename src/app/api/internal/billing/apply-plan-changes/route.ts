@@ -11,6 +11,14 @@ function periodEnd(start: Date, interval: string): string {
   return end.toISOString();
 }
 
+// How many days past current_period_end a downgrade may keep retrying the
+// headless Paystack charge before we give up and fail safe to Free. The row
+// is retried once per daily cron run, so 3 days means ~3 failed attempts —
+// enough to ride out a transient Paystack outage without leaving a seller on
+// their old (higher) plan indefinitely when the failure is permanent (e.g. a
+// cancelled card).
+const DOWNGRADE_RETRY_GRACE_DAYS = 3;
+
 /**
  * Applies scheduled downgrades/cancellations once current_period_end has
  * passed. changePlan disables the seller's old Paystack subscription
@@ -33,7 +41,7 @@ export async function POST(request: Request) {
   const { data: due } = await admin
     .from("seller_subscriptions")
     .select(
-      "id,pending_change_type,pending_plan_id,pending_plan_version,pending_price_id,provider_authorization_code,provider_customer_code",
+      "id,pending_change_type,pending_plan_id,pending_plan_version,pending_price_id,provider_authorization_code,provider_customer_code,current_period_end",
     )
     .not("pending_change_type", "is", null)
     .lte("current_period_end", now.toISOString());
@@ -204,8 +212,43 @@ export async function POST(request: Request) {
         }
       } catch (err) {
         console.error("[apply-plan-changes] failed to create subscription for authorization", { rowId: row.id, error: err });
+
+        // TODO: once the Paystack integration supports idempotency keys, check
+        // here whether the charge actually went through despite the throw
+        // (rather than assuming it didn't) before deciding to keep retrying.
+        const periodEndMs = row.current_period_end ? new Date(row.current_period_end).getTime() : NaN;
+        const daysPastPeriodEnd = Number.isNaN(periodEndMs) ? 0 : (now.getTime() - periodEndMs) / (1000 * 60 * 60 * 24);
+
+        if (daysPastPeriodEnd > DOWNGRADE_RETRY_GRACE_DAYS) {
+          // The headless charge has been failing since before the grace
+          // period — most likely a permanent failure (declined/cancelled
+          // card, revoked authorization) rather than a transient one. Retrying
+          // forever would leave the seller on their old, higher-tier plan
+          // indefinitely past what they paid for. Fail safe to Free, mirroring
+          // the no-stored-authorization branch above.
+          const { error } = await admin
+            .from("seller_subscriptions")
+            .update({
+              state: "cancelled",
+              cancelled_at: now.toISOString(),
+              pending_change_type: null,
+              pending_plan_id: null,
+              pending_plan_version: null,
+              pending_price_id: null,
+            })
+            .eq("id", row.id)
+            .eq("pending_change_type", "downgrade");
+          if (error) {
+            console.error("[apply-plan-changes] failed to persist fail-safe cancellation after grace period", { rowId: row.id, error });
+          }
+          console.error(
+            "[apply-plan-changes] downgrade retry exhausted after grace period, failing safe to Free",
+            { rowId: row.id, currentPeriodEnd: row.current_period_end, daysPastPeriodEnd },
+          );
+        }
+        // Within the grace period: pending_change_type left set on the row —
+        // retried on the next run.
         failed += 1;
-        // pending_change_type left set on the row — retried on the next run.
       }
     } catch (err) {
       console.error("[apply-plan-changes] unexpected error processing row", { rowId: row.id, error: err });

@@ -177,6 +177,78 @@ describe("POST /api/internal/billing/apply-plan-changes", () => {
     expect(updateSpy).not.toHaveBeenCalledWith(expect.objectContaining({ state: "active" }));
   });
 
+  it("leaves the row untouched for retry when Paystack throws and current_period_end is within the grace period", async () => {
+    mocks.isInternalJobRequest.mockReturnValue(true);
+    const updateSpy = vi.fn();
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.createSubscriptionForAuthorization.mockRejectedValue(new Error("Paystack unavailable"));
+    // current_period_end is 1 day in the past — well within DOWNGRADE_RETRY_GRACE_DAYS (3).
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({
+        seller_subscriptions: {
+          select: [{ id: "sub-1", pending_change_type: "downgrade", pending_plan_id: "p1", pending_plan_version: 1, pending_price_id: "pr1", provider_authorization_code: "AUTH_1", provider_customer_code: "CUS_1", current_period_end: oneDayAgo }],
+          update: updateSpy,
+        },
+        plan_prices: {
+          select: { id: "pr1", amount_minor: 6000, currency: "GHS", interval: "monthly", provider_plan_code: "PLN_growth", plans: { name: "Growth" } },
+        },
+      }),
+    );
+    const response = await POST(request());
+    const body = await response.json();
+    expect(body.failed).toBe(1);
+    expect(body.applied).toBe(0);
+    // Still within the grace period: no fail-safe update, pending_change_type
+    // is left set so the row remains "due" and is retried next run.
+    expect(updateSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("fails safe to Free when Paystack keeps throwing and current_period_end is past the grace period", async () => {
+    mocks.isInternalJobRequest.mockReturnValue(true);
+    const updateSpy = vi.fn();
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.createSubscriptionForAuthorization.mockRejectedValue(new Error("Paystack unavailable"));
+    // current_period_end is 10 days in the past — past DOWNGRADE_RETRY_GRACE_DAYS (3).
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({
+        seller_subscriptions: {
+          select: [{ id: "sub-1", pending_change_type: "downgrade", pending_plan_id: "p1", pending_plan_version: 1, pending_price_id: "pr1", provider_authorization_code: "AUTH_1", provider_customer_code: "CUS_1", current_period_end: tenDaysAgo }],
+          update: updateSpy,
+        },
+        plan_prices: {
+          select: { id: "pr1", amount_minor: 6000, currency: "GHS", interval: "monthly", provider_plan_code: "PLN_growth", plans: { name: "Growth" } },
+        },
+      }),
+    );
+    const response = await POST(request());
+    const body = await response.json();
+
+    // A fail-safe cancellation is not a successful downgrade.
+    expect(body.applied).toBe(0);
+    expect(body.failed).toBe(1);
+
+    // Mirrors the no-authorization branch's update payload shape exactly.
+    expect(updateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: "cancelled",
+        pending_change_type: null,
+        pending_plan_id: null,
+        pending_plan_version: null,
+        pending_price_id: null,
+      }),
+    );
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[apply-plan-changes] downgrade retry exhausted after grace period, failing safe to Free",
+      expect.anything(),
+    );
+    consoleErrorSpy.mockRestore();
+  });
+
   it("clears pending_change_type via a best-effort update when the charge succeeds but persist fails twice (no repeat charge tomorrow)", async () => {
     mocks.isInternalJobRequest.mockReturnValue(true);
     const updateSpy = vi.fn();
