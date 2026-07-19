@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     throw new Error("NEXT_REDIRECT");
   }),
   resolveServerActor: vi.fn(),
+  createClient: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -14,6 +15,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/auth/actor", () => ({
   resolveServerActor: mocks.resolveServerActor,
+}));
+
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: mocks.createClient,
 }));
 
 vi.mock("@/components/seller/onboarding-wizard", () => ({
@@ -73,5 +78,26 @@ describe("OnboardingPage access states", () => {
       screen.getByRole("heading", { name: /account needs resolution/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/onboarding is read-only/i)).toBeInTheDocument();
+  });
+
+  it("does not block onboarding for a phone-verified user with no confirmed email", async () => {
+    mocks.resolveServerActor.mockResolvedValue({
+      kind: "unprovisioned",
+      authenticated: true,
+      userId: "u1",
+      email: null,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { email_confirmed_at: null, phone_confirmed_at: "2026-07-19T00:00:00Z" } },
+        }),
+      },
+    });
+
+    const page = await OnboardingPage();
+    render(page);
+
+    expect(screen.queryByText("Verify your email")).not.toBeInTheDocument();
   });
 });

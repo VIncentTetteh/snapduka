@@ -215,10 +215,10 @@ export default async function OnboardingPage() {
   if (actor.kind === "unprovisioned") {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user?.email_confirmed_at) {
+    if (!user?.email_confirmed_at && !user?.phone_confirmed_at) {
       return statePage(
-        "Verify your email",
-        "We sent a confirmation link to your email address. Click it to continue setting up your shop.",
+        "Verify your account",
+        "We sent a 6-digit code to your email or phone. Enter it on the sign-in page to continue setting up your shop.",
       );
     }
 
