@@ -5,47 +5,27 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { appOrigin } from "@/lib/app-url";
+import { classifyIdentifier } from "@/lib/auth/identifier";
 import { safeNextPath } from "@/lib/auth/redirect";
-import { checkRateLimit } from "@/lib/rate-limit";
 import { isSocialProviderEnabled } from "@/lib/auth/social";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
 
-const signInSchema = z.object({
-  email: z.email(),
-  password: z.string().min(1),
-});
-
-/**
- * Passwords must be at least 8 characters and contain at least one uppercase
- * letter, one lowercase letter, and one digit. The 128-char ceiling prevents
- * bcrypt-truncation attacks.
- */
-const passwordSchema = z
-  .string()
-  .min(8, "Password must be at least 8 characters.")
-  .max(128, "Password must be 128 characters or fewer.")
-  .refine((v) => /[A-Z]/.test(v), "Password must contain an uppercase letter.")
-  .refine((v) => /[a-z]/.test(v), "Password must contain a lowercase letter.")
-  .refine((v) => /[0-9]/.test(v), "Password must contain a number.");
-
-const signUpSchema = z.object({
-  email: z.email(),
-  password: passwordSchema,
-});
-
 const socialProviderSchema = z.enum(["google", "facebook", "apple"]);
+const codeSchema = z.string().regex(/^[0-9]{6}$/, "Enter the 6-digit code.");
 
 // ---------------------------------------------------------------------------
 // Rate-limit configs
 // ---------------------------------------------------------------------------
 
-const SIGN_IN_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 };   // 10 / 15 min
-const SIGN_UP_LIMIT = { limit: 5,  windowMs: 60 * 60 * 1000 };    //  5 / 60 min
-const SOCIAL_LIMIT  = { limit: 10, windowMs: 15 * 60 * 1000 };    // 10 / 15 min
+const SEND_OTP_LIMIT = { limit: 5, windowMs: 15 * 60 * 1000 };    //  5 / 15 min
+const VERIFY_OTP_LIMIT = { limit: 8, windowMs: 15 * 60 * 1000 };  //  8 / 15 min
+const RESEND_OTP_LIMIT = { limit: 3, windowMs: 15 * 60 * 1000 };  //  3 / 15 min
+const SOCIAL_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 };     // 10 / 15 min
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,22 +49,6 @@ function authNextPath(value: string): string {
   return safeNextPath(value || "/onboarding");
 }
 
-function signUpErrorMessage(error: { code?: string }): string {
-  if (error.code === "user_already_exists") {
-    return "An account already exists for this email. Sign in or continue with Google.";
-  }
-  return "We could not create that account.";
-}
-
-function loginRedirect(
-  kind: "error" | "message",
-  text: string,
-  next: string,
-): never {
-  const searchParams = new URLSearchParams({ [kind]: text, next });
-  redirect(`/login?${searchParams.toString()}`);
-}
-
 async function confirmationUrl(next: string): Promise<string> {
   const configuredUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (!configuredUrl) {
@@ -94,134 +58,123 @@ async function confirmationUrl(next: string): Promise<string> {
   if (appUrl.protocol !== "https:" && appUrl.protocol !== "http:") {
     throw new Error("NEXT_PUBLIC_APP_URL must use http or https.");
   }
-  // In development the live request origin wins so confirmation and magic
-  // links point at the port the app is actually running on.
+  // In development the live request origin wins so the OAuth redirect
+  // points at the port the app is actually running on.
   const origin = await appOrigin();
   const confirmUrl = new URL("/auth/confirm", origin);
   confirmUrl.searchParams.set("next", next);
   return confirmUrl.toString();
 }
 
+function loginRedirect(kind: "error" | "message", text: string, next: string): never {
+  const searchParams = new URLSearchParams({ [kind]: text, next });
+  redirect(`/login?${searchParams.toString()}`);
+}
+
+function toCodeStep(identifier: string, next: string, kind: "error" | "message", text: string): never {
+  const searchParams = new URLSearchParams({ step: "code", identifier, next, [kind]: text });
+  redirect(`/login?${searchParams.toString()}`);
+}
+
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
-export async function signIn(formData: FormData): Promise<never> {
+export async function sendOtpAction(formData: FormData): Promise<never> {
   const next = authNextPath(formValue(formData, "next"));
   const ip = await clientIp();
 
-  const rl = checkRateLimit(`auth:signin:${ip}`, SIGN_IN_LIMIT);
+  const rl = checkRateLimit(`auth:send-otp:${ip}`, SEND_OTP_LIMIT);
   if (!rl.ok) {
     const waitSec = Math.ceil(rl.retryAfterMs / 1000);
-    loginRedirect(
-      "error",
-      `Too many sign-in attempts. Try again in ${waitSec} seconds.`,
-      next,
-    );
+    loginRedirect("error", `Too many attempts. Try again in ${waitSec} seconds.`, next);
   }
 
-  const credentials = signInSchema.safeParse({
-    email: formValue(formData, "email").trim().toLowerCase(),
-    password: formValue(formData, "password"),
-  });
-
-  if (!credentials.success) {
-    loginRedirect("error", "Enter a valid email and password.", next);
+  const identifier = classifyIdentifier(formValue(formData, "identifier"));
+  if (identifier.kind === "invalid") {
+    loginRedirect("error", "Enter a valid email address or phone number.", next);
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(credentials.data);
+  const { error } =
+    identifier.kind === "email"
+      ? await supabase.auth.signInWithOtp({ email: identifier.value })
+      : await supabase.auth.signInWithOtp({ phone: identifier.value, options: { channel: "sms" } });
 
   if (error) {
-    loginRedirect("error", "Invalid email or password.", next);
+    loginRedirect("error", "We could not send a code. Please try again.", next);
+  }
+
+  toCodeStep(
+    identifier.value,
+    next,
+    "message",
+    identifier.kind === "email" ? "We sent a 6-digit code to your email." : "We sent a 6-digit code by SMS.",
+  );
+}
+
+export async function verifyOtpAction(formData: FormData): Promise<never> {
+  const next = authNextPath(formValue(formData, "next"));
+  const rawIdentifier = formValue(formData, "identifier");
+  const ip = await clientIp();
+
+  const rl = checkRateLimit(`auth:verify-otp:${ip}`, VERIFY_OTP_LIMIT);
+  if (!rl.ok) {
+    const waitSec = Math.ceil(rl.retryAfterMs / 1000);
+    toCodeStep(rawIdentifier, next, "error", `Too many attempts. Try again in ${waitSec} seconds.`);
+  }
+
+  const identifier = classifyIdentifier(rawIdentifier);
+  const parsedCode = codeSchema.safeParse(formValue(formData, "code").trim());
+
+  if (identifier.kind === "invalid" || !parsedCode.success) {
+    toCodeStep(rawIdentifier, next, "error", "Enter the 6-digit code.");
+  }
+
+  const supabase = await createClient();
+  const { error } =
+    identifier.kind === "email"
+      ? await supabase.auth.verifyOtp({ email: identifier.value, token: parsedCode.data, type: "email" })
+      : await supabase.auth.verifyOtp({ phone: identifier.value, token: parsedCode.data, type: "sms" });
+
+  if (error) {
+    toCodeStep(identifier.value, next, "error", "That code is invalid or has expired.");
   }
 
   redirect(next);
 }
 
-export async function signUp(formData: FormData): Promise<never> {
+export async function resendOtpAction(formData: FormData): Promise<never> {
   const next = authNextPath(formValue(formData, "next"));
+  const rawIdentifier = formValue(formData, "identifier");
   const ip = await clientIp();
 
-  const rl = checkRateLimit(`auth:signup:${ip}`, SIGN_UP_LIMIT);
+  const rl = checkRateLimit(`auth:resend-otp:${ip}`, RESEND_OTP_LIMIT);
   if (!rl.ok) {
     const waitSec = Math.ceil(rl.retryAfterMs / 1000);
-    loginRedirect(
-      "error",
-      `Too many sign-up attempts. Try again in ${waitSec} seconds.`,
-      next,
-    );
+    toCodeStep(rawIdentifier, next, "error", `Too many attempts. Try again in ${waitSec} seconds.`);
   }
 
-  const credentials = signUpSchema.safeParse({
-    email: formValue(formData, "email").trim().toLowerCase(),
-    password: formValue(formData, "password"),
-  });
-
-  if (!credentials.success) {
-    const message =
-      credentials.error.issues[0]?.message ??
-      "Use a valid email and a password of at least 8 characters.";
-    loginRedirect("error", message, next);
+  const identifier = classifyIdentifier(rawIdentifier);
+  if (identifier.kind === "invalid") {
+    loginRedirect("error", "Enter a valid email address or phone number.", next);
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    ...credentials.data,
-    options: { emailRedirectTo: await confirmationUrl(next) },
-  });
+  const { error } =
+    identifier.kind === "email"
+      ? await supabase.auth.signInWithOtp({ email: identifier.value })
+      : await supabase.auth.signInWithOtp({ phone: identifier.value, options: { channel: "sms" } });
 
   if (error) {
-    loginRedirect("error", signUpErrorMessage(error), next);
+    toCodeStep(identifier.value, next, "error", "We could not resend the code. Please try again.");
   }
 
-  if (data.session) {
-    redirect(next);
-  }
-
-  loginRedirect("message", "Check your email to confirm your account.", next);
-}
-
-export async function signInWithMagicLink(formData: FormData): Promise<never> {
-  const next = authNextPath(formValue(formData, "next"));
-  const ip = await clientIp();
-
-  const rl = checkRateLimit(`auth:magic:${ip}`, SIGN_IN_LIMIT);
-  if (!rl.ok) {
-    const waitSec = Math.ceil(rl.retryAfterMs / 1000);
-    loginRedirect(
-      "error",
-      `Too many requests. Try again in ${waitSec} seconds.`,
-      next,
-    );
-  }
-
-  const parsedEmail = z
-    .email()
-    .safeParse(formValue(formData, "email").trim().toLowerCase());
-
-  if (!parsedEmail.success) {
-    loginRedirect("error", "Enter a valid email address.", next);
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithOtp({
-    email: parsedEmail.data,
-    options: { emailRedirectTo: await confirmationUrl(next) },
-  });
-
-  if (error) {
-    loginRedirect(
-      "error",
-      "We could not send the magic link. Please try again.",
-      next,
-    );
-  }
-
-  loginRedirect(
-    "message",
-    "Check your email for a magic link to sign in.",
+  toCodeStep(
+    identifier.value,
     next,
+    "message",
+    identifier.kind === "email" ? "We sent a new code to your email." : "We sent a new code by SMS.",
   );
 }
 

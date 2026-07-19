@@ -4,10 +4,9 @@ import type { RateLimitResult } from "@/lib/rate-limit";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
-  redirect: vi.fn(() => {
-    throw new Error("NEXT_REDIRECT");
+  redirect: vi.fn((url: string) => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
   }),
-  // Rate limiter always allows in tests — we test it separately in rate-limit.test.ts
   checkRateLimit: vi.fn((): RateLimitResult => ({ ok: true })),
 }));
 
@@ -23,7 +22,7 @@ vi.mock("@/lib/rate-limit", () => ({
   checkRateLimit: mocks.checkRateLimit,
 }));
 
-import { signIn, signInWithSocial, signOut, signUp } from "./actions";
+import { resendOtpAction, sendOtpAction, signInWithSocial, signOut, verifyOtpAction } from "./actions";
 
 function formData(values: Record<string, string>) {
   const data = new FormData();
@@ -31,244 +30,199 @@ function formData(values: Record<string, string>) {
   return data;
 }
 
-// Passwords used in sign-up tests must meet the strengthened schema:
-// min 8 chars, at least one uppercase, one lowercase, one digit.
-const STRONG_PASSWORD = "Correct-H0rse-Battery";
+beforeEach(() => {
+  vi.clearAllMocks();
+  process.env.NEXT_PUBLIC_APP_URL = "https://snapduka.example";
+  process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = "true";
+  mocks.checkRateLimit.mockReturnValue({ ok: true as const });
+});
 
-describe("login actions", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.NEXT_PUBLIC_APP_URL = "https://snapduka.example";
-    process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = "true";
-    mocks.checkRateLimit.mockReturnValue({ ok: true as const });
-  });
-
-  it("signs in and rejects an unsafe next redirect", async () => {
-    const signInWithPassword = vi.fn().mockResolvedValue({ error: null });
-    mocks.createClient.mockResolvedValue({
-      auth: { signInWithPassword },
-    });
+describe("sendOtpAction", () => {
+  it("sends an email OTP when the identifier is an email", async () => {
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null });
+    mocks.createClient.mockResolvedValue({ auth: { signInWithOtp } });
 
     await expect(
-      signIn(
-        formData({
-          email: "seller@example.com",
-          password: "correct horse battery staple",
-          next: "//evil.example",
-        }),
-      ),
+      sendOtpAction(formData({ identifier: "Seller@Example.com", next: "/dashboard" })),
     ).rejects.toThrow("NEXT_REDIRECT");
 
-    expect(signInWithPassword).toHaveBeenCalledWith({
-      email: "seller@example.com",
-      password: "correct horse battery staple",
-    });
-    expect(mocks.redirect).toHaveBeenCalledWith("/");
-  });
-
-  it("returns an explicit sign-in error through the login page", async () => {
-    mocks.createClient.mockResolvedValue({
-      auth: {
-        signInWithPassword: vi.fn().mockResolvedValue({
-          error: new Error("invalid credentials"),
-        }),
-      },
-    });
-
-    await expect(
-      signIn(
-        formData({
-          email: "seller@example.com",
-          password: "wrong-password",
-          next: "/settings",
-        }),
-      ),
-    ).rejects.toThrow("NEXT_REDIRECT");
-
+    expect(signInWithOtp).toHaveBeenCalledWith({ email: "seller@example.com" });
     expect(mocks.redirect).toHaveBeenCalledWith(
-      "/login?error=Invalid+email+or+password.&next=%2Fsettings",
+      expect.stringContaining("step=code"),
+    );
+    expect(mocks.redirect).toHaveBeenCalledWith(
+      expect.stringContaining("identifier=seller%40example.com"),
     );
   });
 
-  it("blocks sign-in when rate limit is exceeded", async () => {
+  it("sends an SMS OTP when the identifier is a phone number", async () => {
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null });
+    mocks.createClient.mockResolvedValue({ auth: { signInWithOtp } });
+
+    await expect(
+      sendOtpAction(formData({ identifier: "+233241234567", next: "/dashboard" })),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: "+233241234567",
+      options: { channel: "sms" },
+    });
+  });
+
+  it("rejects an identifier that is neither a valid email nor phone", async () => {
+    await expect(
+      sendOtpAction(formData({ identifier: "not valid", next: "/dashboard" })),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(mocks.redirect).toHaveBeenCalledWith(
+      expect.stringContaining("Enter+a+valid+email+address+or+phone+number"),
+    );
+  });
+
+  it("blocks sending when the rate limit is exceeded", async () => {
     mocks.checkRateLimit.mockReturnValue({ ok: false, retryAfterMs: 30_000 } satisfies RateLimitResult);
 
     await expect(
-      signIn(formData({ email: "seller@example.com", password: "any", next: "/dashboard" })),
+      sendOtpAction(formData({ identifier: "seller@example.com", next: "/dashboard" })),
     ).rejects.toThrow("NEXT_REDIRECT");
 
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      expect.stringContaining("Too+many+sign-in+attempts"),
-    );
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("Too+many+attempts"));
   });
+});
 
-  it("creates a sign-up confirmation URL on the configured app origin", async () => {
-    const signUpWithPassword = vi.fn().mockResolvedValue({
-      data: { session: null },
-      error: null,
-    });
-    mocks.createClient.mockResolvedValue({
-      auth: { signUp: signUpWithPassword },
-    });
+describe("verifyOtpAction", () => {
+  it("verifies an email code and redirects to next on success", async () => {
+    const verifyOtp = vi.fn().mockResolvedValue({ error: null });
+    mocks.createClient.mockResolvedValue({ auth: { verifyOtp } });
 
     await expect(
-      signUp(
-        formData({
-          email: "new@example.com",
-          password: STRONG_PASSWORD,
-          next: "/dashboard",
-        }),
+      verifyOtpAction(
+        formData({ identifier: "seller@example.com", code: "123456", next: "/dashboard" }),
       ),
-    ).rejects.toThrow("NEXT_REDIRECT");
+    ).rejects.toThrow("NEXT_REDIRECT:/dashboard");
 
-    expect(signUpWithPassword).toHaveBeenCalledWith({
-      email: "new@example.com",
-      password: STRONG_PASSWORD,
-      options: {
-        emailRedirectTo:
-          "https://snapduka.example/auth/confirm?next=%2Fdashboard",
-      },
+    expect(verifyOtp).toHaveBeenCalledWith({
+      email: "seller@example.com",
+      token: "123456",
+      type: "email",
     });
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      "/login?message=Check+your+email+to+confirm+your+account.&next=%2Fdashboard",
-    );
   });
 
-  it("sends a new account to onboarding when no return path is supplied", async () => {
-    mocks.createClient.mockResolvedValue({
-      auth: {
-        signUp: vi.fn().mockResolvedValue({
-          data: { session: { access_token: "session" } },
-          error: null,
-        }),
-      },
-    });
+  it("verifies a phone code with type sms", async () => {
+    const verifyOtp = vi.fn().mockResolvedValue({ error: null });
+    mocks.createClient.mockResolvedValue({ auth: { verifyOtp } });
 
     await expect(
-      signUp(
-        formData({
-          email: "new@example.com",
-          password: STRONG_PASSWORD,
-        }),
+      verifyOtpAction(
+        formData({ identifier: "+233241234567", code: "654321", next: "/dashboard" }),
       ),
-    ).rejects.toThrow("NEXT_REDIRECT");
+    ).rejects.toThrow("NEXT_REDIRECT:/dashboard");
 
-    expect(mocks.redirect).toHaveBeenCalledWith("/onboarding");
+    expect(verifyOtp).toHaveBeenCalledWith({
+      phone: "+233241234567",
+      token: "654321",
+      type: "sms",
+    });
   });
 
-  it("explains when the email already belongs to an account", async () => {
-    mocks.createClient.mockResolvedValue({
-      auth: {
-        signUp: vi.fn().mockResolvedValue({
-          data: { session: null },
-          error: Object.assign(new Error("User already registered"), {
-            code: "user_already_exists",
-          }),
-        }),
-      },
-    });
+  it("redirects back to the code step with an error on an invalid code", async () => {
+    const verifyOtp = vi.fn().mockResolvedValue({ error: new Error("invalid") });
+    mocks.createClient.mockResolvedValue({ auth: { verifyOtp } });
 
     await expect(
-      signUp(
-        formData({
-          email: "existing@example.com",
-          password: STRONG_PASSWORD,
-          next: "/onboarding",
-        }),
+      verifyOtpAction(
+        formData({ identifier: "seller@example.com", code: "000000", next: "/dashboard" }),
       ),
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(mocks.redirect).toHaveBeenCalledWith(
-      "/login?error=An+account+already+exists+for+this+email.+Sign+in+or+continue+with+Google.&next=%2Fonboarding",
+      expect.stringContaining("That+code+is+invalid+or+has+expired"),
     );
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("step=code"));
   });
 
-  it("rejects weak passwords that fail the strength requirement", async () => {
+  it("rejects a code that is not 6 digits without calling Supabase", async () => {
     await expect(
-      signUp(formData({ email: "new@example.com", password: "alllowercase1", next: "/" })),
+      verifyOtpAction(
+        formData({ identifier: "seller@example.com", code: "123", next: "/dashboard" }),
+      ),
     ).rejects.toThrow("NEXT_REDIRECT");
 
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      expect.stringContaining("uppercase"),
-    );
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 
-  it("rejects passwords shorter than 8 characters", async () => {
-    await expect(
-      signUp(formData({ email: "new@example.com", password: "Ab1!", next: "/" })),
-    ).rejects.toThrow("NEXT_REDIRECT");
-
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      expect.stringContaining("8+characters"),
-    );
-    expect(mocks.createClient).not.toHaveBeenCalled();
-  });
-
-  it("blocks sign-up when rate limit is exceeded", async () => {
+  it("blocks verification when the rate limit is exceeded", async () => {
     mocks.checkRateLimit.mockReturnValue({ ok: false, retryAfterMs: 60_000 } satisfies RateLimitResult);
 
     await expect(
-      signUp(formData({ email: "new@example.com", password: STRONG_PASSWORD })),
+      verifyOtpAction(
+        formData({ identifier: "seller@example.com", code: "123456", next: "/dashboard" }),
+      ),
     ).rejects.toThrow("NEXT_REDIRECT");
 
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      expect.stringContaining("Too+many+sign-up+attempts"),
-    );
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("resendOtpAction", () => {
+  it("resends a code and redirects back to the code step with a confirmation message", async () => {
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null });
+    mocks.createClient.mockResolvedValue({ auth: { signInWithOtp } });
+
+    await expect(
+      resendOtpAction(formData({ identifier: "seller@example.com", next: "/dashboard" })),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(signInWithOtp).toHaveBeenCalledWith({ email: "seller@example.com" });
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("step=code"));
   });
 
+  it("blocks resend when the rate limit is exceeded", async () => {
+    mocks.checkRateLimit.mockReturnValue({ ok: false, retryAfterMs: 90_000 } satisfies RateLimitResult);
+
+    await expect(
+      resendOtpAction(formData({ identifier: "seller@example.com", next: "/dashboard" })),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("signInWithSocial", () => {
   it("starts an enabled social sign-in with a safe callback URL", async () => {
     const signInWithOAuth = vi.fn().mockResolvedValue({
       data: { url: "https://accounts.google.com/oauth" },
       error: null,
     });
-    mocks.createClient.mockResolvedValue({
-      auth: { signInWithOAuth },
-    });
+    mocks.createClient.mockResolvedValue({ auth: { signInWithOAuth } });
 
     await expect(
-      signInWithSocial(
-        formData({
-          provider: "google",
-          next: "//evil.example",
-        }),
-      ),
+      signInWithSocial(formData({ provider: "google", next: "//evil.example" })),
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(signInWithOAuth).toHaveBeenCalledWith({
       provider: "google",
-      options: {
-        redirectTo: "https://snapduka.example/auth/confirm?next=%2F",
-      },
+      options: { redirectTo: "https://snapduka.example/auth/confirm?next=%2F" },
     });
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      "https://accounts.google.com/oauth",
-    );
+    expect(mocks.redirect).toHaveBeenCalledWith("https://accounts.google.com/oauth");
   });
 
   it("rejects social providers that are not enabled", async () => {
     process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = "false";
 
     await expect(
-      signInWithSocial(
-        formData({
-          provider: "google",
-          next: "/dashboard",
-        }),
-      ),
+      signInWithSocial(formData({ provider: "google", next: "/dashboard" })),
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(mocks.createClient).not.toHaveBeenCalled();
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      "/login?error=That+social+sign-in+option+is+not+available.&next=%2Fdashboard",
-    );
   });
+});
 
+describe("signOut", () => {
   it("signs out and returns to login", async () => {
     const signOutFromSupabase = vi.fn().mockResolvedValue({ error: null });
-    mocks.createClient.mockResolvedValue({
-      auth: { signOut: signOutFromSupabase },
-    });
+    mocks.createClient.mockResolvedValue({ auth: { signOut: signOutFromSupabase } });
 
     await expect(signOut()).rejects.toThrow("NEXT_REDIRECT");
 
