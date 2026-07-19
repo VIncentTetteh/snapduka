@@ -10,7 +10,7 @@ import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
 
-import { cancelSubscription, selectPlan } from "./actions";
+import { cancelSubscription, changePlan } from "./actions";
 import { SubscriptionVerifier } from "./subscription-verifier";
 
 type PlanRow = {
@@ -36,6 +36,8 @@ const STATE_TONE: Record<string, BadgeTone> = {
   expired: "danger",
   free: "accent",
 };
+
+const TIER: Record<string, number> = { free: 0, growth: 1, scale: 2 };
 
 /** Human bullets from the entitlements JSON, in presentation order. */
 function featureBullets(entitlements: Record<string, EntitlementValue>): string[] {
@@ -87,7 +89,9 @@ export default async function BillingPage({
       .in("code", ["free", "growth", "scale"]),
     supabase
       .from("seller_subscriptions")
-      .select("state,current_period_end,grace_ends_at,cancelled_at,plans(code,name)")
+      .select(
+        "state,current_period_end,grace_ends_at,cancelled_at,pending_change_type,plans!plan_id(code,name),pending_plan:plans!pending_plan_id(name)",
+      )
       .eq("seller_account_id", actor.sellerAccountId)
       .maybeSingle(),
     getSellerPlan(actor.sellerAccountId),
@@ -105,12 +109,23 @@ export default async function BillingPage({
       })
     : null;
 
+  const pendingPlanRow = subscription?.pending_plan as { name?: string } | { name?: string }[] | null;
+  const pendingPlanName = Array.isArray(pendingPlanRow) ? pendingPlanRow[0]?.name : pendingPlanRow?.name;
+  const pendingLabel =
+    subscription?.pending_change_type && renewsAt
+      ? subscription.pending_change_type === "cancel"
+        ? `Switching to Free on ${renewsAt}`
+        : `Switching to ${pendingPlanName ?? "a different plan"} on ${renewsAt}`
+      : null;
+
+  const isEntitled = plan.state === "active" || plan.state === "grace";
+
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
       <PageHeader
         eyebrow="Settings"
         title="Plan & billing"
-        sub="Pick the plan that matches how you sell. Prices are set for your country and billed through Paystack — upgrade or cancel any time."
+        sub="Pick the plan that matches how you sell. Prices are set for your country and billed through Paystack — upgrade any time; downgrades and cancellations take effect at the end of your paid period."
       />
 
       <div className="grid gap-4">
@@ -167,8 +182,11 @@ export default async function BillingPage({
                   resubscribe below to restore its features.
                 </p>
               ) : null}
+              {pendingLabel ? (
+                <p className="mt-1 text-[12.5px] font-semibold text-ink-muted">{pendingLabel}</p>
+              ) : null}
             </div>
-            {plan.state === "active" || plan.state === "grace" ? (
+            {isEntitled && !subscription?.pending_change_type ? (
               <form action={cancelSubscription}>
                 <button
                   type="submit"
@@ -191,6 +209,11 @@ export default async function BillingPage({
             const monthly = prices.find((price) => price.interval === "monthly");
             const yearly = prices.find((price) => price.interval === "yearly");
             const featured = row.code === "growth";
+            const isUpgradeTarget = row.code !== "free" && (!isEntitled || TIER[row.code] > TIER[plan.planCode]);
+            const isPendingThisRow =
+              row.code === "free"
+                ? subscription?.pending_change_type === "cancel"
+                : subscription?.pending_change_type === "downgrade" && pendingPlanName === row.name;
             return (
               <Panel
                 key={row.code}
@@ -243,24 +266,38 @@ export default async function BillingPage({
                     <p className="grid min-h-11 place-items-center rounded-[10px] bg-line-soft text-[13px] font-bold text-ink-muted">
                       Your plan
                     </p>
+                  ) : isPendingThisRow ? (
+                    <p className="text-[12px] text-ink-muted">{pendingLabel}</p>
                   ) : row.code === "free" ? (
-                    <p className="text-[12px] text-ink-muted">
-                      Cancel your paid plan to return to Free at the end of the billing period.
-                    </p>
-                  ) : prices.length > 0 ? (
-                    <form action={selectPlan} className="grid gap-2.5">
-                      <input name="planCode" type="hidden" value={row.code} />
-                      <label className="grid gap-1 text-[12px] font-semibold text-ink-soft">
-                        Billing interval
-                        <select
-                          name="interval"
-                          className="min-h-10 rounded-[10px] border border-line-input bg-white px-3 text-[13px] text-ink"
-                          defaultValue="monthly"
+                    isEntitled ? (
+                      <form action={changePlan}>
+                        <input name="planCode" type="hidden" value="free" />
+                        <button
+                          type="submit"
+                          className="min-h-11 w-full cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13.5px] font-bold text-ink transition-colors hover:border-[#B9AC98]"
                         >
-                          <option value="monthly">Monthly</option>
-                          {yearly ? <option value="yearly">Yearly (2 months free)</option> : null}
-                        </select>
-                      </label>
+                          Switch to Free — takes effect {renewsAt ?? "at period end"}
+                        </button>
+                      </form>
+                    ) : (
+                      <p className="text-[12px] text-ink-muted">Free is always available — no billing required.</p>
+                    )
+                  ) : prices.length > 0 ? (
+                    <form action={changePlan} className="grid gap-2.5">
+                      <input name="planCode" type="hidden" value={row.code} />
+                      {isUpgradeTarget ? (
+                        <label className="grid gap-1 text-[12px] font-semibold text-ink-soft">
+                          Billing interval
+                          <select
+                            name="interval"
+                            className="min-h-10 rounded-[10px] border border-line-input bg-white px-3 text-[13px] text-ink"
+                            defaultValue="monthly"
+                          >
+                            <option value="monthly">Monthly</option>
+                            {yearly ? <option value="yearly">Yearly (2 months free)</option> : null}
+                          </select>
+                        </label>
+                      ) : null}
                       <button
                         type="submit"
                         className={`min-h-11 cursor-pointer rounded-[10px] px-4 text-[13.5px] font-bold transition-colors ${
@@ -269,7 +306,7 @@ export default async function BillingPage({
                             : "border border-line-strong bg-white text-ink hover:border-[#B9AC98]"
                         }`}
                       >
-                        Upgrade to {row.name}
+                        {isUpgradeTarget ? `Upgrade to ${row.name}` : `Switch to ${row.name} — takes effect ${renewsAt ?? "at period end"}`}
                       </button>
                     </form>
                   ) : (
@@ -285,8 +322,8 @@ export default async function BillingPage({
 
         <p className="text-[12px] text-ink-muted">
           Payments are processed by Paystack. Upgrades take effect immediately after payment;
-          cancelling keeps features until the end of the paid period. Manage plan pricing questions
-          with{" "}
+          downgrades and cancellations keep your current features until the end of the paid period.
+          Manage plan pricing questions with{" "}
           <Link
             href="/dashboard/orders"
             className="font-semibold text-accent no-underline hover:text-accent-deep"
