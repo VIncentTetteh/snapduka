@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { OrderStatusPoller } from "@/components/storefront/order-status-poller";
 import { Timeline, type TimelineStep } from "@/components/ui/timeline";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
+import { isSafeHttpUrl } from "@/lib/catalog/video";
 import { buyerInitiatedWhatsApp } from "@/lib/notifications/whatsapp";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -185,7 +186,7 @@ export default async function TrackingPage({
           {shipment?.tracking_number ? (
             <p className="mt-3 border-t border-line-soft pt-3 text-[12.5px] text-ink-soft">
               Delivery tracking:{" "}
-              {shipment.tracking_url ? (
+              {shipment.tracking_url && isSafeHttpUrl(shipment.tracking_url) ? (
                 <a
                   href={shipment.tracking_url}
                   target="_blank"

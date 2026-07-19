@@ -3,10 +3,11 @@ import { z } from "zod";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
+import { isSafeHttpUrl } from "@/lib/catalog/video";
 import { courierAdapter } from "@/lib/couriers/registry";
 import { createClient } from "@/lib/supabase/server";
 
-const schema = z.object({ orderId: z.uuid(), provider: z.literal("manual").default("manual"), quoteId: z.string().min(1).max(200), trackingNumber: z.string().trim().min(2).max(100).optional(), trackingUrl: z.url().optional() });
+const schema = z.object({ orderId: z.uuid(), provider: z.literal("manual").default("manual"), quoteId: z.string().min(1).max(200), trackingNumber: z.string().trim().min(2).max(100).optional(), trackingUrl: z.url().refine(isSafeHttpUrl, "Tracking URL must be http(s).").optional() });
 
 export async function POST(request: Request) {
   const actor = await resolveServerActor();
