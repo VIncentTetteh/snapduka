@@ -251,7 +251,7 @@ select throws_ok(
     )
   $$,
   '42501',
-  'A verified auth email is required.',
+  'A verified email or phone number is required.',
   'trusted bootstrap refuses an unverified auth email'
 );
 
