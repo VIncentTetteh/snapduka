@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { buildEmbedUrl, parseVideoUrl } from "./video";
+import { buildEmbedUrl, isSafeHttpUrl, parseVideoUrl } from "./video";
+
+describe("isSafeHttpUrl", () => {
+  it("accepts https and http URLs", () => {
+    expect(isSafeHttpUrl("https://example.com/video.mp4")).toBe(true);
+    expect(isSafeHttpUrl("http://example.com/video.mp4")).toBe(true);
+  });
+
+  it("rejects javascript: URLs", () => {
+    expect(isSafeHttpUrl("javascript:alert(document.cookie)")).toBe(false);
+  });
+
+  it("rejects data: URLs", () => {
+    expect(isSafeHttpUrl("data:text/html,<script>alert(1)</script>")).toBe(false);
+  });
+
+  it("rejects unparseable input instead of throwing", () => {
+    expect(isSafeHttpUrl("not a url at all")).toBe(false);
+  });
+});
 
 describe("parseVideoUrl", () => {
   it("extracts a YouTube watch URL and builds a deterministic thumbnail", () => {

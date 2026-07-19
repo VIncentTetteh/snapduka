@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { buildEmbedUrl, type VideoProvider } from "@/lib/catalog/video";
+import { buildEmbedUrl, isSafeHttpUrl, type VideoProvider } from "@/lib/catalog/video";
 
 export type VideoSlide = {
   provider: VideoProvider;
@@ -60,6 +60,7 @@ export function ProductGallery({
       setPlaying(true);
       return;
     }
+    if (!isSafeHttpUrl(video.videoUrl)) return;
     window.open(video.videoUrl, "_blank", "noopener,noreferrer");
   }
 

@@ -8,7 +8,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, planLimit, withinPlanLimit } from "@/lib/billing/resolve";
 import { parseProductInput } from "@/lib/catalog/schema";
-import { fetchOembedThumbnail, parseVideoUrl } from "@/lib/catalog/video";
+import { fetchOembedThumbnail, isSafeHttpUrl, parseVideoUrl } from "@/lib/catalog/video";
 import { createClient } from "@/lib/supabase/server";
 
 export type ProductActionState = {
@@ -448,6 +448,8 @@ export async function setProductVideoAction(formData: FormData): Promise<void> {
     revalidatePath("/dashboard/products");
     return;
   }
+
+  if (!isSafeHttpUrl(videoUrl)) return;
 
   const parsed = parseVideoUrl(videoUrl);
   const thumbnailUrl =

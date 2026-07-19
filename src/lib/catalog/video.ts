@@ -43,6 +43,20 @@ function extractInstagramId(url: URL): string | null {
 }
 
 /**
+ * True only for a well-formed http(s) URL — the one thing safe to store as
+ * a raw video link or pass to `window.open`. Rejects `javascript:`, `data:`,
+ * and any other scheme that could execute in the viewer's browser context.
+ */
+export function isSafeHttpUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl.trim());
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Parses a pasted video URL into a provider + ID, with a deterministic
  * thumbnail where one is available without a network call (YouTube only —
  * TikTok/Vimeo need `fetchOembedThumbnail`; Instagram/other never get one).

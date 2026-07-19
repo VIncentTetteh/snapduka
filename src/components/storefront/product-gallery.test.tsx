@@ -82,4 +82,26 @@ describe("ProductGallery", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("never calls window.open for a stored javascript: URL, even if it slipped past storage validation (stored XSS guard)", async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.fn();
+    vi.stubGlobal("open", openSpy);
+
+    const MALICIOUS_VIDEO: VideoSlide = {
+      provider: "other",
+      videoId: null,
+      videoUrl: "javascript:alert(document.cookie)",
+      thumbnailUrl: null,
+    };
+
+    render(
+      <ProductGallery images={[]} video={MALICIOUS_VIDEO} productName="Blue Sneakers" fallbackGradient="red" />,
+    );
+    await user.click(screen.getByRole("button", { name: /play video for blue sneakers/i }));
+
+    expect(openSpy).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
 });

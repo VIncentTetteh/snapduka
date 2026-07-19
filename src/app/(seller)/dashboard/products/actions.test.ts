@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   parseVideoUrl: vi.fn(),
   fetchOembedThumbnail: vi.fn(),
+  isSafeHttpUrl: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/actor", () => ({
@@ -23,6 +24,7 @@ vi.mock("next/cache", () => ({
 vi.mock("@/lib/catalog/video", () => ({
   parseVideoUrl: mocks.parseVideoUrl,
   fetchOembedThumbnail: mocks.fetchOembedThumbnail,
+  isSafeHttpUrl: mocks.isSafeHttpUrl,
 }));
 
 import { setProductVideoAction } from "./actions";
@@ -46,6 +48,24 @@ const SELLER_ACTOR = {
 describe("setProductVideoAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isSafeHttpUrl.mockReturnValue(true);
+  });
+
+  it("rejects a javascript: URL without saving anything (stored XSS guard)", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    mocks.isSafeHttpUrl.mockReturnValue(false);
+
+    const update = vi.fn();
+    const from = vi.fn().mockReturnValue({ update });
+    mocks.createClient.mockResolvedValue({ from });
+
+    await setProductVideoAction(
+      formData({ productId: "p1", videoUrl: "javascript:alert(document.cookie)" }),
+    );
+
+    expect(mocks.isSafeHttpUrl).toHaveBeenCalledWith("javascript:alert(document.cookie)");
+    expect(mocks.parseVideoUrl).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
   });
 
   it("does nothing for a non-seller actor", async () => {
