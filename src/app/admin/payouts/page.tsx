@@ -3,6 +3,7 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterPills } from "@/components/ui/filter-pills";
 import { PageHeader, Panel } from "@/components/ui/surface";
+import { FormActionButton } from "@/components/ui/submit-button";
 import { formatMoney } from "@/lib/i18n";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CurrencyCode } from "@/lib/countries/types";
@@ -152,32 +153,32 @@ export default async function AdminPayoutsPage({
                       </label>
                       <div className="flex flex-wrap gap-2.5">
                         {payout.status === "requested" ? (
-                          <button
-                            type="submit"
+                          <FormActionButton
                             name="decision"
                             value="approved"
-                            className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep"
+                            pendingLabel="Approving…"
+                            className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep disabled:cursor-wait disabled:opacity-60"
                           >
                             Approve
-                          </button>
+                          </FormActionButton>
                         ) : (
-                          <button
-                            type="submit"
+                          <FormActionButton
                             name="decision"
                             value="paid"
-                            className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep"
+                            pendingLabel="Marking as paid…"
+                            className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep disabled:cursor-wait disabled:opacity-60"
                           >
                             Mark as paid
-                          </button>
+                          </FormActionButton>
                         )}
-                        <button
-                          type="submit"
+                        <FormActionButton
                           name="decision"
                           value="rejected"
-                          className="min-h-10 cursor-pointer rounded-[10px] border border-danger-line bg-white px-4.5 text-[13px] font-bold text-danger transition-colors hover:bg-danger-tint"
+                          pendingLabel="Rejecting…"
+                          className="min-h-10 cursor-pointer rounded-[10px] border border-danger-line bg-white px-4.5 text-[13px] font-bold text-danger transition-colors hover:bg-danger-tint disabled:cursor-wait disabled:opacity-60"
                         >
                           Reject
-                        </button>
+                        </FormActionButton>
                       </div>
                     </form>
                   </details>

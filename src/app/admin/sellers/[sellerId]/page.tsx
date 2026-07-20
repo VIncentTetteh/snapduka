@@ -5,6 +5,7 @@ import { applyRiskAction, approveVerificationAction, setDiscoveryRemovalAction }
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { InitialsAvatar } from "@/components/ui/gradient-placeholder";
 import { PageHeader, Panel } from "@/components/ui/surface";
+import { FormActionButton, SubmitButton } from "@/components/ui/submit-button";
 import { formatMoney } from "@/lib/i18n";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CurrencyCode } from "@/lib/countries/types";
@@ -142,22 +143,22 @@ export default async function AdminSellerPage({
               />
             </label>
             <div className="flex flex-wrap gap-2.5">
-              <button
-                type="submit"
+              <FormActionButton
                 name="decision"
                 value="verified"
-                className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep"
+                pendingLabel="Approving…"
+                className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep disabled:cursor-wait disabled:opacity-60"
               >
                 Approve verification
-              </button>
-              <button
-                type="submit"
+              </FormActionButton>
+              <FormActionButton
                 name="decision"
                 value="rejected"
-                className="min-h-10 cursor-pointer rounded-[10px] border border-danger-line bg-white px-4.5 text-[13px] font-bold text-danger transition-colors hover:bg-danger-tint"
+                pendingLabel="Rejecting…"
+                className="min-h-10 cursor-pointer rounded-[10px] border border-danger-line bg-white px-4.5 text-[13px] font-bold text-danger transition-colors hover:bg-danger-tint disabled:cursor-wait disabled:opacity-60"
               >
                 Reject
-              </button>
+              </FormActionButton>
             </div>
           </form>
         </Panel>
@@ -178,6 +179,7 @@ export default async function AdminSellerPage({
           </p>
           <form action={setDiscoveryRemovalAction} className="grid gap-3">
             <input name="sellerId" type="hidden" value={seller.id} />
+            <input name="decision" type="hidden" value={discoveryPreference.operator_removed_at ? "restore" : "remove"} />
             <label className="grid gap-1.5 text-[12.5px] font-semibold text-ink" htmlFor="discovery-reason">
               Operational reason (required)
               <textarea
@@ -191,23 +193,19 @@ export default async function AdminSellerPage({
             </label>
             <div className="flex flex-wrap gap-2.5">
               {discoveryPreference.operator_removed_at ? (
-                <button
-                  type="submit"
-                  name="decision"
-                  value="restore"
-                  className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep"
+                <SubmitButton
+                  className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep disabled:cursor-wait disabled:opacity-60"
+                  pendingLabel="Restoring…"
                 >
                   Restore listing
-                </button>
+                </SubmitButton>
               ) : (
-                <button
-                  type="submit"
-                  name="decision"
-                  value="remove"
-                  className="min-h-10 cursor-pointer rounded-[10px] border border-danger-line bg-white px-4.5 text-[13px] font-bold text-danger transition-colors hover:bg-danger-tint"
+                <SubmitButton
+                  className="min-h-10 cursor-pointer rounded-[10px] border border-danger-line bg-white px-4.5 text-[13px] font-bold text-danger transition-colors hover:bg-danger-tint disabled:cursor-wait disabled:opacity-60"
+                  pendingLabel="Removing…"
                 >
                   Remove from discovery
-                </button>
+                </SubmitButton>
               )}
             </div>
           </form>
@@ -263,12 +261,12 @@ export default async function AdminSellerPage({
               />
               I confirm this high-impact action takes effect immediately.
             </label>
-            <button
-              type="submit"
-              className="min-h-11 cursor-pointer rounded-[10px] border-none bg-danger px-4.5 text-[13.5px] font-bold text-white transition-opacity hover:opacity-90"
+            <SubmitButton
+              className="min-h-11 cursor-pointer rounded-[10px] border-none bg-danger px-4.5 text-[13.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+              pendingLabel="Applying…"
             >
               Apply risk action
-            </button>
+            </SubmitButton>
           </form>
         </Panel>
 

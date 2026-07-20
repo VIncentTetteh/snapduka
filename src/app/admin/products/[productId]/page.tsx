@@ -5,6 +5,7 @@ import { setProductCategoriesAction, setProductModerationAction } from "@/app/ad
 import { ModerationBadge } from "@/components/admin/moderation-badge";
 import { ProductStatusBadge } from "@/components/seller/status-badges";
 import { PageHeader, Panel } from "@/components/ui/surface";
+import { FormActionButton, SubmitButton } from "@/components/ui/submit-button";
 import { formatMoney } from "@/lib/i18n";
 import { publicMediaUrl } from "@/lib/storefront/media";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -193,12 +194,12 @@ export default async function AdminProductPage({
             </label>
             <div className="flex flex-wrap gap-2.5">
               {MODERATION_ACTIONS.map((action) => (
-                <button
+                <FormActionButton
                   key={action.value}
-                  type="submit"
                   name="decision"
                   value={action.value}
-                  className={`min-h-10 cursor-pointer rounded-[10px] px-4.5 text-[13px] font-bold transition-colors ${
+                  pendingLabel={`${action.label}…`}
+                  className={`min-h-10 cursor-pointer rounded-[10px] px-4.5 text-[13px] font-bold transition-colors disabled:cursor-wait disabled:opacity-60 ${
                     action.tone === "danger"
                       ? "border-none bg-danger text-white hover:opacity-90"
                       : action.tone === "success"
@@ -207,7 +208,7 @@ export default async function AdminProductPage({
                   }`}
                 >
                   {action.label}
-                </button>
+                </FormActionButton>
               ))}
             </div>
           </form>
@@ -266,12 +267,12 @@ export default async function AdminProductPage({
                 </label>
               ))}
             </div>
-            <button
-              type="submit"
-              className="min-h-10 w-fit cursor-pointer rounded-[10px] border-none bg-ink px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-ink-2"
+            <SubmitButton
+              className="min-h-10 w-fit cursor-pointer rounded-[10px] border-none bg-ink px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-ink-2 disabled:cursor-wait disabled:opacity-60"
+              pendingLabel="Saving…"
             >
               Save categories
-            </button>
+            </SubmitButton>
           </form>
         )}
       </Panel>
