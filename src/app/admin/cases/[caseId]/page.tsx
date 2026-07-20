@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { addCaseMessageAction, resolveCaseAction } from "@/app/admin/actions";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { PageHeader, Panel } from "@/components/ui/surface";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { formatMoney } from "@/lib/i18n";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CurrencyCode } from "@/lib/countries/types";
@@ -128,12 +129,12 @@ export default async function AdminCasePage({
                   />
                   Internal note — operators only
                 </label>
-                <button
-                  type="submit"
-                  className="min-h-10 cursor-pointer justify-self-start rounded-[10px] border-none bg-ink px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-ink-2"
+                <SubmitButton
+                  className="min-h-10 cursor-pointer justify-self-start rounded-[10px] border-none bg-ink px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-ink-2 disabled:cursor-wait disabled:opacity-60"
+                  pendingLabel="Posting…"
                 >
                   Post message
-                </button>
+                </SubmitButton>
               </form>
             </Panel>
           ) : null}
@@ -203,12 +204,12 @@ export default async function AdminCasePage({
                   className="w-full resize-y rounded-[10px] border border-line-input bg-white px-3.5 py-2.5 text-[13.5px] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
                 />
               </label>
-              <button
-                type="submit"
-                className="min-h-11 cursor-pointer rounded-[10px] border-none bg-accent px-4.5 text-[13.5px] font-bold text-white transition-colors hover:bg-accent-deep"
+              <SubmitButton
+                className="min-h-11 cursor-pointer rounded-[10px] border-none bg-accent px-4.5 text-[13.5px] font-bold text-white transition-colors hover:bg-accent-deep disabled:cursor-wait disabled:opacity-60"
+                pendingLabel="Updating…"
               >
                 Update case
-              </button>
+              </SubmitButton>
               <p className="m-0 text-[11.5px] leading-[1.5] text-ink-muted">
                 Refunds for Paystack orders are issued from the payments dashboard and reconciled
                 automatically via webhook.

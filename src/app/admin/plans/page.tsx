@@ -1,6 +1,7 @@
 import { updatePlanPriceAction } from "@/app/admin/actions";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, Panel } from "@/components/ui/surface";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { formatMoney } from "@/lib/i18n";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CurrencyCode } from "@/lib/countries/types";
@@ -102,12 +103,12 @@ export default async function AdminPlansPage() {
                             className="h-10 w-full rounded-[9px] border border-line-input bg-white px-3 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
                           />
                         </label>
-                        <button
-                          type="submit"
-                          className="min-h-9 cursor-pointer justify-self-start rounded-[9px] border-none bg-ink px-3.5 text-[12.5px] font-bold text-white transition-colors hover:bg-ink-2"
+                        <SubmitButton
+                          className="min-h-9 cursor-pointer justify-self-start rounded-[9px] border-none bg-ink px-3.5 text-[12.5px] font-bold text-white transition-colors hover:bg-ink-2 disabled:cursor-wait disabled:opacity-60"
+                          pendingLabel="Saving…"
                         >
                           Save price
-                        </button>
+                        </SubmitButton>
                       </form>
                     </details>
                   ))

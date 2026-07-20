@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FilterPills } from "@/components/ui/filter-pills";
 import { MetricTile } from "@/components/ui/metric-tile";
 import { PageHeader, Panel } from "@/components/ui/surface";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { mainImageUrl } from "@/lib/storefront/media";
 import { formatMoney } from "@/lib/i18n";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -243,12 +244,12 @@ export default async function AdminProductsPage({
                 placeholder="Description (optional)"
                 className="h-10 min-w-0 flex-1 rounded-[10px] border border-line-input bg-white px-3.5 text-[13.5px] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
               />
-              <button
-                type="submit"
-                className="h-10 cursor-pointer rounded-[10px] border-none bg-ink px-4 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
+              <SubmitButton
+                className="h-10 cursor-pointer rounded-[10px] border-none bg-ink px-4 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2 disabled:cursor-wait disabled:opacity-60"
+                pendingLabel="Adding…"
               >
                 Add category
-              </button>
+              </SubmitButton>
             </form>
 
             {!categories?.length ? (
@@ -266,12 +267,12 @@ export default async function AdminProductsPage({
                     <form action={setCategoryActiveAction}>
                       <input name="categoryId" type="hidden" value={category.id} />
                       <input name="active" type="hidden" value={category.active ? "false" : "true"} />
-                      <button
-                        type="submit"
-                        className="text-[12.5px] font-semibold text-accent hover:underline"
+                      <SubmitButton
+                        className="text-[12.5px] font-semibold text-accent hover:underline disabled:cursor-wait disabled:opacity-60"
+                        pendingLabel={category.active ? "Archiving…" : "Restoring…"}
                       >
                         {category.active ? "Archive" : "Restore"}
-                      </button>
+                      </SubmitButton>
                     </form>
                   </div>
                 ))}
