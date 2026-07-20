@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { addVariantAction, archiveVariantAction, setProductVideoAction, updateProductAction, updateVariantAction } from "@/app/(seller)/dashboard/products/actions";
 import { ProductMediaManager } from "@/components/seller/product-media-manager";
 import { Req } from "@/components/ui/required-mark";
+import { FormActionButton, SubmitButton } from "@/components/ui/submit-button";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
 
@@ -39,7 +40,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
         <label className="grid gap-1"><span className="field-label">Availability</span><select className="field-input" defaultValue={product.inventory_policy} name="inventoryPolicy"><option value="track">Track finite stock</option><option value="continue_selling">Preorder</option><option value="deny_when_out_of_stock">Always available</option></select></label>
         <label className="grid gap-1"><span className="field-label">Stock quantity (at least {product.reserved_quantity} reserved)</span><input className="field-input" defaultValue={product.stock_quantity ?? ""} inputMode="numeric" min={product.reserved_quantity} name="stockQuantity" pattern="[0-9]*" title="Whole number" /></label>
         <label className="grid gap-1"><span className="field-label">Status</span><select className="field-input" defaultValue={product.status === "archived" ? "draft" : product.status} name="status"><option value="draft">Draft</option><option value="active">Published</option></select></label>
-        <button className="btn-primary w-full" type="submit">Save product</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Saving…">Save product</SubmitButton>
       </form>
 
       <section className="card grid gap-3">
@@ -65,13 +66,13 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
             placeholder="https://www.youtube.com/watch?v=..."
             type="url"
           />
-          <button className="btn-primary w-full" type="submit">Save video</button>
+          <SubmitButton className="btn-primary w-full" pendingLabel="Saving…">Save video</SubmitButton>
         </form>
         {product.video_url ? (
           <form action={setProductVideoAction}>
             <input name="productId" type="hidden" value={product.id} />
             <input name="videoUrl" type="hidden" value="" />
-            <button className="btn-secondary w-full" type="submit">Remove video</button>
+            <SubmitButton className="btn-secondary w-full" pendingLabel="Removing…">Remove video</SubmitButton>
           </form>
         ) : null}
       </section>
@@ -84,7 +85,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input className="field-input" defaultValue={variant.name} name="name" placeholder="Name" required /><input className="field-input" defaultValue={variant.sku ?? ""} name="sku" placeholder="SKU" /></div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input className="field-input" defaultValue={variant.price_minor ?? ""} inputMode="numeric" name="price" pattern="[0-9]*" title="Whole number in minor units" placeholder="Price (blank uses product price)" /><input className="field-input" defaultValue={variant.stock_quantity ?? ""} inputMode="numeric" min={variant.reserved_quantity} name="stock" pattern="[0-9]*" title="Whole number" placeholder="Stock" /></div>
             <div className="flex gap-2"><select className="field-input" defaultValue={variant.inventory_policy} name="inventoryPolicy"><option value="track">Track stock</option><option value="continue_selling">Preorder</option><option value="deny_when_out_of_stock">Always available</option></select><select className="field-input" defaultValue={String(variant.active)} name="active"><option value="true">Active</option><option value="false">Hidden</option></select></div>
-            <div className="flex gap-2"><button className="btn-primary flex-1" type="submit">Save variant</button><button className="btn-secondary" formAction={archiveVariantAction} type="submit">Hide</button></div>
+            <div className="flex gap-2"><FormActionButton className="btn-primary flex-1" formAction={updateVariantAction} pendingLabel="Saving…">Save variant</FormActionButton><FormActionButton className="btn-secondary" formAction={archiveVariantAction} pendingLabel="Hiding…">Hide</FormActionButton></div>
           </form>
         ))}
         <form action={addVariantAction} className="card grid gap-2">
@@ -92,7 +93,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input className="field-input" minLength={2} name="name" placeholder="Name, e.g. Large *" required aria-required="true" /><input className="field-input" name="sku" placeholder="SKU" /></div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input className="field-input" inputMode="numeric" name="price" pattern="[0-9]*" title="Whole number in minor units" placeholder="Price (blank uses product price)" /><input className="field-input" inputMode="numeric" name="stock" pattern="[0-9]*" title="Whole number" placeholder="Stock" /></div>
           <input name="active" type="hidden" value="true" /><select className="field-input" defaultValue="track" name="inventoryPolicy"><option value="track">Track stock</option><option value="continue_selling">Preorder</option><option value="deny_when_out_of_stock">Always available</option></select>
-          <button className="btn-primary w-full" type="submit">Add variant</button>
+          <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add variant</SubmitButton>
         </form>
       </section>
     </main>
