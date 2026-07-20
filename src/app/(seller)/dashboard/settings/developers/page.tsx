@@ -2,6 +2,7 @@ import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { addAutomation, addWebhook } from "./actions";
 import { KeyForm } from "./key-form";
@@ -75,7 +76,7 @@ export default async function DevelopersPage() {
             <input name="event" type="checkbox" value="order.created" /> order.created
           </label>
         </fieldset>
-        <button className="btn-primary w-full" type="submit">Add webhook</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add webhook</SubmitButton>
       </form>
 
       {webhooks?.map((w) => (
@@ -115,7 +116,7 @@ export default async function DevelopersPage() {
           <label className="field-label" htmlFor="auto-value">Notification text or customer tag</label>
           <input className="field-input" id="auto-value" name="actionValue" placeholder="Thank you / repeat-buyer" />
         </div>
-        <button className="btn-primary w-full" type="submit">Create rule</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Creating…">Create rule</SubmitButton>
       </form>
 
       {rules?.map((r) => (

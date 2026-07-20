@@ -1,5 +1,6 @@
 import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { saveNotificationPreferences } from "./actions";
 
@@ -55,7 +56,7 @@ export default async function NotificationSettings() {
             type="number"
           />
         </div>
-        <button className="btn-primary w-full" type="submit">Save preferences</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Saving…">Save preferences</SubmitButton>
       </form>
     </main>
   );

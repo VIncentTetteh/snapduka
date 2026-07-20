@@ -2,6 +2,7 @@ import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { inviteTeamMember, revokeTeamMember } from "./actions";
 
@@ -62,7 +63,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
               <option>analyst</option>
             </select>
           </div>
-          <button className="btn-primary w-full" type="submit">Create invitation</button>
+          <SubmitButton className="btn-primary w-full" pendingLabel="Sending invitation…">Create invitation</SubmitButton>
         </form>
       )}
 
@@ -80,7 +81,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
           {m.active && !actor.role && (
             <form action={revokeTeamMember} className="mt-3">
               <input name="membershipId" type="hidden" value={m.id} />
-              <button className="btn-danger text-sm" type="submit">Revoke access</button>
+              <SubmitButton className="btn-danger text-sm" pendingLabel="Revoking…">Revoke access</SubmitButton>
             </form>
           )}
         </article>

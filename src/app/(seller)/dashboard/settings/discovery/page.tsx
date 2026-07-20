@@ -1,5 +1,6 @@
 import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { saveDiscovery } from "./actions";
 
@@ -59,7 +60,7 @@ export default async function DiscoverySettings() {
             rows={4}
           />
         </div>
-        <button className="btn-primary w-full" type="submit">Save discovery settings</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Saving…">Save discovery settings</SubmitButton>
       </form>
     </main>
   );

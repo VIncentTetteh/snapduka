@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { saveFulfillmentMethod, toggleFulfillmentMethod, updateFulfillmentFee } from "./actions";
 import { formatMoney } from "@/lib/i18n";
@@ -49,7 +50,7 @@ export default async function FulfillmentSettingsPage() {
         <input aria-required="true" className="field-input" minLength={2} name="name" placeholder="Method name, e.g. Accra delivery *" required />
         <input aria-required="true" className="field-input" inputMode="numeric" name="feeMinor" pattern="[0-9]+" title="Whole number in minor units (0 = free)" placeholder="Fee in minor units (0 = free) *" required />
         <textarea className="field-input" name="instructions" placeholder="Areas, timing, or pickup directions (optional)" rows={3} />
-        <button className="btn-primary w-full" type="submit">Add method</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add method</SubmitButton>
       </form>
 
       <section className="grid gap-3">
@@ -103,14 +104,17 @@ export default async function FulfillmentSettingsPage() {
                 required
                 title="Whole number in minor units (0 = free)"
               />
-              <button className="btn-secondary" type="submit">Save</button>
+              <SubmitButton className="btn-secondary" pendingLabel="Saving…">Save</SubmitButton>
             </form>
             <form action={toggleFulfillmentMethod}>
               <input name="methodId" type="hidden" value={method.id} />
               <input name="active" type="hidden" value={method.active ? "false" : "true"} />
-              <button className={method.active ? "btn-danger" : "btn-secondary"} type="submit">
+              <SubmitButton
+                className={method.active ? "btn-danger" : "btn-secondary"}
+                pendingLabel={method.active ? "Deactivating…" : "Activating…"}
+              >
                 {method.active ? "Deactivate" : "Activate"}
-              </button>
+              </SubmitButton>
             </form>
           </article>
         ))}

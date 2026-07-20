@@ -1,5 +1,6 @@
 import { LogoUploader } from "@/components/seller/logo-uploader";
 import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { domainChallenge } from "@/lib/domains/verification";
 import { publicMediaUrl } from "@/lib/storefront/media";
 import { resolveServerActor } from "@/lib/auth/actor";
@@ -71,7 +72,7 @@ export default async function BrandingPage() {
             <option value="serif">Serif</option>
           </select>
         </div>
-        <button className="btn-primary w-full" type="submit">Save theme</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Saving theme…">Save theme</SubmitButton>
       </form>
       )}
 
@@ -84,7 +85,7 @@ export default async function BrandingPage() {
           <label className="field-label" htmlFor="hostname">Domain</label>
           <input className="field-input" id="hostname" name="hostname" placeholder="shop.example.com" />
         </div>
-        <button className="btn-primary w-full" type="submit">Add domain</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Adding…">Add domain</SubmitButton>
       </form>
       )}
 
@@ -108,7 +109,7 @@ export default async function BrandingPage() {
             {domain.status !== "verified" && (
               <form action={verifyCustomDomain} className="mt-3">
                 <input name="domainId" type="hidden" value={domain.id} />
-                <button className="btn-secondary text-sm" type="submit">Check DNS</button>
+                <SubmitButton className="btn-secondary text-sm" pendingLabel="Checking…">Check DNS</SubmitButton>
               </form>
             )}
             {domain.last_checked_at && <p className="m-0 mt-2 text-xs" style={{ color: "var(--ink-3)" }}>Last checked {new Date(domain.last_checked_at).toLocaleString()}</p>}
