@@ -2,6 +2,7 @@ import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { createSegment } from "./actions";
 
@@ -57,7 +58,7 @@ export default async function SegmentsPage() {
           <label className="field-label" htmlFor="seg-days">Ordered within N days</label>
           <input className="field-input" id="seg-days" min="1" name="orderedWithinDays" placeholder="Ordered within days" type="number" />
         </div>
-        <button className="btn-primary w-full" type="submit">Create segment</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Creating…">Create segment</SubmitButton>
       </form>
       )}
 

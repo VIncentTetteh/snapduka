@@ -2,6 +2,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { appOrigin } from "@/lib/app-url";
 import { campaignUrl } from "@/lib/campaigns/links";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { createCampaign } from "./actions";
 
@@ -41,7 +42,7 @@ export default async function CampaignsPage() {
             <option>other</option>
           </select>
         </div>
-        <button className="btn-primary w-full" type="submit">Create tracked link</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Creating…">Create tracked link</SubmitButton>
       </form>
 
       {items?.map((item) => {

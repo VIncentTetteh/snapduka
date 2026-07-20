@@ -4,6 +4,7 @@ import {
 } from "@/app/(seller)/dashboard/products/actions";
 import { ImageUploader } from "@/components/seller/image-uploader";
 import { Badge } from "@/components/ui/badge";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { publicMediaUrl } from "@/lib/storefront/media";
 
 type MediaItem = {
@@ -56,23 +57,23 @@ export function ProductMediaManager({
                     <form action={setMainImageAction}>
                       <input name="productId" type="hidden" value={productId} />
                       <input name="mediaId" type="hidden" value={item.id} />
-                      <button
-                        type="submit"
-                        className="min-h-8 cursor-pointer rounded-lg border border-line-strong bg-white px-2.5 text-[12px] font-semibold text-ink transition-colors hover:border-[#B9AC98]"
+                      <SubmitButton
+                        className="min-h-8 cursor-pointer rounded-lg border border-line-strong bg-white px-2.5 text-[12px] font-semibold text-ink transition-colors hover:border-[#B9AC98] disabled:cursor-wait disabled:opacity-60"
+                        pendingLabel="Setting…"
                       >
                         Make main
-                      </button>
+                      </SubmitButton>
                     </form>
                   ) : null}
                   <form action={deleteProductImageAction}>
                     <input name="productId" type="hidden" value={productId} />
                     <input name="mediaId" type="hidden" value={item.id} />
-                    <button
-                      type="submit"
-                      className="min-h-8 cursor-pointer rounded-lg border border-danger-line bg-white px-2.5 text-[12px] font-semibold text-danger transition-colors hover:bg-danger-tint"
+                    <SubmitButton
+                      className="min-h-8 cursor-pointer rounded-lg border border-danger-line bg-white px-2.5 text-[12px] font-semibold text-danger transition-colors hover:bg-danger-tint disabled:cursor-wait disabled:opacity-60"
+                      pendingLabel="Removing…"
                     >
                       Remove
-                    </button>
+                    </SubmitButton>
                   </form>
                 </figcaption>
               </figure>

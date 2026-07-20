@@ -2,6 +2,7 @@ import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { cancelBroadcast, createBroadcast, scheduleBroadcast } from "./actions";
 
@@ -64,7 +65,7 @@ export default async function BroadcastsPage() {
           <label className="field-label" htmlFor="bc-body">Message</label>
           <textarea className="field-input" id="bc-body" name="body" placeholder="Message" rows={5} />
         </div>
-        <button className="btn-primary w-full" type="submit">Save draft</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Saving…">Save draft</SubmitButton>
       </form>
       )}
 
@@ -85,12 +86,12 @@ export default async function BroadcastsPage() {
                 <input name="id" type="hidden" value={item.id} />
                 <label className="sr-only" htmlFor={`schedule-${item.id}`}>Schedule time</label>
                 <input className="field-input" id={`schedule-${item.id}`} name="scheduledAt" style={{ minHeight: "2.5rem", width: "13rem" }} type="datetime-local" />
-                <button className="btn-primary" type="submit">Schedule / send now</button>
+                <SubmitButton className="btn-primary" pendingLabel="Scheduling…">Schedule / send now</SubmitButton>
               </form>
-              <form action={cancelBroadcast}><input name="id" type="hidden" value={item.id} /><button className="btn-secondary" type="submit">Cancel</button></form>
+              <form action={cancelBroadcast}><input name="id" type="hidden" value={item.id} /><SubmitButton className="btn-secondary" pendingLabel="Cancelling…">Cancel</SubmitButton></form>
             </div>
           ) : item.state === "scheduled" ? (
-            <form action={cancelBroadcast} className="mt-3"><input name="id" type="hidden" value={item.id} /><button className="btn-secondary" type="submit">Cancel broadcast</button></form>
+            <form action={cancelBroadcast} className="mt-3"><input name="id" type="hidden" value={item.id} /><SubmitButton className="btn-secondary" pendingLabel="Cancelling…">Cancel broadcast</SubmitButton></form>
           ) : null}
         </article>
       ))}

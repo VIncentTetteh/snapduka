@@ -2,6 +2,7 @@ import Link from "next/link";
 import QRCode from "qrcode";
 
 import { disconnectSocialAccountAction, generateShareLinksAction } from "./actions";
+import { SubmitButton } from "@/components/ui/submit-button";
 import {
   isSocialProviderConfigured,
   PROVIDER_LABEL,
@@ -233,12 +234,12 @@ export default async function ShareStudioPage({
                     <form action={generateShareLinksAction}>
                       <input name="destinationPath" type="hidden" value={destinationPath} />
                       <input name="label" type="hidden" value={destinationLabel} />
-                      <button
-                        type="submit"
-                        className="min-h-10 cursor-pointer rounded-[10px] border-none bg-accent px-4.5 text-[13.5px] font-bold text-white transition-colors hover:bg-accent-deep"
+                      <SubmitButton
+                        className="min-h-10 cursor-pointer rounded-[10px] border-none bg-accent px-4.5 text-[13.5px] font-bold text-white transition-colors hover:bg-accent-deep disabled:cursor-wait disabled:opacity-60"
+                        pendingLabel="Generating…"
                       >
                         Generate share links
-                      </button>
+                      </SubmitButton>
                     </form>
                   </div>
                 ) : (
@@ -398,12 +399,12 @@ export default async function ShareStudioPage({
                     </p>
                     <form action={disconnectSocialAccountAction}>
                       <input name="provider" type="hidden" value={provider} />
-                      <button
-                        type="submit"
-                        className="min-h-9 cursor-pointer rounded-[9px] border border-danger-line bg-white px-3 text-[12.5px] font-semibold text-danger transition-colors hover:bg-danger-tint"
+                      <SubmitButton
+                        className="min-h-9 cursor-pointer rounded-[9px] border border-danger-line bg-white px-3 text-[12.5px] font-semibold text-danger transition-colors hover:bg-danger-tint disabled:cursor-wait disabled:opacity-60"
+                        pendingLabel="Disconnecting…"
                       >
                         Disconnect
-                      </button>
+                      </SubmitButton>
                     </form>
                   </>
                 ) : configured ? (

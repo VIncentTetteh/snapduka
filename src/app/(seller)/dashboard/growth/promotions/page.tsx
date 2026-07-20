@@ -2,6 +2,7 @@ import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 import { createPromotion } from "./actions";
 
@@ -59,7 +60,7 @@ export default async function PromotionsPage() {
           <label className="field-label" htmlFor="promo-limit">Total uses limit (optional)</label>
           <input className="field-input" id="promo-limit" min="0" name="redemptionLimit" placeholder="Blank = unlimited" type="number" />
         </div>
-        <button className="btn-primary w-full" type="submit">Create promotion</button>
+        <SubmitButton className="btn-primary w-full" pendingLabel="Creating…">Create promotion</SubmitButton>
       </form>
       )}
 
