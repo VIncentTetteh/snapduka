@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock server-only before importing auth
-vi.mock("server-only");
+// Mock server-only before importing auth. An explicit empty-object factory
+// is required — the bare form triggers Vitest's automock path, which
+// imports the real module to introspect its shape, and the real
+// server-only package throws unconditionally outside webpack.
+vi.mock("server-only", () => ({}));
 
 import { isInternalJobRequest } from "./auth";
 
