@@ -154,6 +154,8 @@ describe("FormActionButton", () => {
       </>,
     );
     expect(screen.getByRole("button", { name: "Saving…" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Hide" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide" })).toBeDisabled();
   });
 });
