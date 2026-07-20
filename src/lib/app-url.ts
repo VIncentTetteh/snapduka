@@ -4,7 +4,7 @@ const FALLBACK = "http://localhost:3000";
 
 /**
  * Origin used when generating user-facing links (share links, QR codes,
- * canonical URLs, auth confirmation links).
+ * canonical URLs, auth confirmation links, Paystack payment callback URLs).
  *
  * In production the configured canonical URL is the only source — request
  * headers (Host / X-Forwarded-Host) are attacker-influenceable and must never
@@ -16,7 +16,19 @@ export async function appOrigin(): Promise<string> {
   const configured = process.env.NEXT_PUBLIC_APP_URL || undefined;
 
   if (process.env.NODE_ENV === "production") {
-    return configured ?? FALLBACK;
+    if (configured) return configured;
+    // NEXT_PUBLIC_APP_URL should always be set explicitly, but a missing or
+    // blank value must never silently resolve to localhost in production —
+    // that's what broke every Paystack payment callback (buyers redirected
+    // to an unreachable http://localhost:3000 after paying) and would break
+    // auth-confirmation links the same way. Vercel auto-injects the stable
+    // production domain at build and runtime with no manual config, so
+    // prefer that over the dev-only localhost fallback while actually
+    // running on Vercel.
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+      return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+    }
+    return FALLBACK;
   }
 
   try {
