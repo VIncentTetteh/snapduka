@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { analyticsEventTypes } from "@/lib/analytics/events";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const schema = z.object({
@@ -12,6 +13,10 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+  if (!checkRateLimit(`analytics-events:${ip}`, { limit: 60, windowMs: 60_000 }).ok) {
+    return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+  }
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid event." }, { status: 400 });
   const admin = createAdminClient();

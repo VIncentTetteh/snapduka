@@ -19,8 +19,12 @@ export async function POST(request: Request) {
   if (!order || order.payment_status !== "paid") return NextResponse.json({ error: "Order is not refundable." }, { status: 409 });
   const { data: attempt } = await admin.from("payment_attempts").select("id,reference").eq("order_id", order.id).eq("status", "paid").maybeSingle();
   if (!attempt) return NextResponse.json({ error: "Paid attempt not found." }, { status: 409 });
-  const amount = parsed.data.amountMinor ?? order.total_minor;
-  if (amount > order.total_minor) return NextResponse.json({ error: "Amount exceeds paid balance." }, { status: 400 });
+  const { data: priorRefunds } = await admin.from("refunds").select("amount_minor").eq("order_id", order.id);
+  const alreadyRefundedMinor = (priorRefunds ?? []).reduce((sum, row) => sum + row.amount_minor, 0);
+  const remainingMinor = order.total_minor - alreadyRefundedMinor;
+  if (remainingMinor <= 0) return NextResponse.json({ error: "Order is already fully refunded." }, { status: 409 });
+  const amount = parsed.data.amountMinor ?? remainingMinor;
+  if (amount > remainingMinor) return NextResponse.json({ error: "Amount exceeds the unrefunded balance." }, { status: 400 });
   const result = await paystackProvider().refund({ reference: attempt.reference, amountMinor: amount });
   await admin.from("refunds").insert({
     order_id: order.id, payment_attempt_id: attempt.id, seller_account_id: order.seller_account_id,

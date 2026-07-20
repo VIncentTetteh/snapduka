@@ -30,6 +30,15 @@ export async function createBroadcast(formData: FormData) {
   const segmentId = String(formData.get("segmentId") ?? "");
   if (!["email", "whatsapp", "push"].includes(channel) || !body) return;
   const supabase = await createClient();
+  if (segmentId) {
+    const { data: segment } = await supabase
+      .from("customer_segments")
+      .select("id")
+      .eq("id", segmentId)
+      .eq("seller_account_id", actor.sellerAccountId)
+      .maybeSingle();
+    if (!segment) return;
+  }
   const [plan, used] = await Promise.all([
     getSellerPlan(actor.sellerAccountId),
     monthlyBroadcastUsage(supabase, actor.sellerAccountId),

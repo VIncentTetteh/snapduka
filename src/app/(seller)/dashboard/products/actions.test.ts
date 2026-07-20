@@ -27,7 +27,7 @@ vi.mock("@/lib/catalog/video", () => ({
   isSafeHttpUrl: mocks.isSafeHttpUrl,
 }));
 
-import { setProductVideoAction } from "./actions";
+import { setProductVideoAction, updateProductAction } from "./actions";
 
 function formData(values: Record<string, string>) {
   const data = new FormData();
@@ -172,5 +172,43 @@ describe("setProductVideoAction", () => {
     await setProductVideoAction(formData({ videoUrl: "https://youtu.be/abc" }));
 
     expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateProductAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("does not update the product when the submitted currency doesn't match the shop currency", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+
+    const single = vi.fn().mockResolvedValue({ data: { id: "shop1", currency: "GHS" } });
+    const shopsEq = vi.fn().mockReturnValue({ single });
+    const shopsSelect = vi.fn().mockReturnValue({ eq: shopsEq });
+    const update = vi.fn();
+    const from = vi.fn((table: string) => {
+      if (table === "shops") return { select: shopsSelect };
+      if (table === "products") return { update };
+      throw new Error(`unexpected table ${table}`);
+    });
+    mocks.createClient.mockResolvedValue({ from });
+
+    await updateProductAction(
+      formData({
+        productId: "p1",
+        name: "Test Product",
+        description: "",
+        price: "1000",
+        currency: "NGN",
+        inventoryPolicy: "continue_selling",
+        stockQuantity: "",
+        sku: "",
+        status: "draft",
+      }),
+    );
+
+    expect(shopsEq).toHaveBeenCalledWith("seller_account_id", SELLER_ACTOR.sellerAccountId);
+    expect(update).not.toHaveBeenCalled();
   });
 });

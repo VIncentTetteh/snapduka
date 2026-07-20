@@ -225,6 +225,8 @@ export async function applyRiskAction(formData: FormData) {
   const reason = String(formData.get("reason") ?? "").trim();
   if (!reason || !["warning","require_verification","restrict_payments","suspend","remove"].includes(action)) return;
   const admin = createAdminClient();
+  const { data: seller } = await admin.from("seller_accounts").select("id").eq("id", sellerId).maybeSingle();
+  if (!seller) return;
   await admin.from("risk_actions").insert({ seller_account_id: sellerId, case_id: caseId, operator_user_id: actor.userId, action, reason });
   if (action === "restrict_payments") await admin.from("payment_subaccounts").update({ status: "restricted" }).eq("seller_account_id",sellerId);
   if (action === "suspend") await admin.from("seller_accounts").update({ status: "suspended", is_active: false }).eq("id",sellerId);

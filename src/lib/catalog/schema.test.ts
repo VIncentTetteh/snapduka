@@ -68,3 +68,39 @@ describe("parseProductInput", () => {
     }
   });
 });
+
+describe("parseProductInput price/stock bounds", () => {
+  it("rejects a price string long enough to lose precision when converted to a number", () => {
+    const result = parseProductInput({
+      name: "Test Product",
+      price: "9".repeat(20),
+      currency: "GHS",
+      inventoryPolicy: "continue_selling",
+      status: "draft",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a normal price", () => {
+    const result = parseProductInput({
+      name: "Test Product",
+      price: "15000",
+      currency: "GHS",
+      inventoryPolicy: "continue_selling",
+      status: "draft",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a stock quantity string long enough to lose precision", () => {
+    const result = parseProductInput({
+      name: "Test Product",
+      price: "15000",
+      currency: "GHS",
+      inventoryPolicy: "track",
+      stockQuantity: "9".repeat(20),
+      status: "draft",
+    });
+    expect(result.success).toBe(false);
+  });
+});
