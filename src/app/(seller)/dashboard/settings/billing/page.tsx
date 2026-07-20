@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { PageHeader, Panel } from "@/components/ui/surface";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan } from "@/lib/billing/resolve";
 import type { EntitlementValue } from "@/lib/billing/entitlements";
@@ -191,12 +192,12 @@ export default async function BillingPage({
             </div>
             {isEntitled && !subscription?.pending_change_type ? (
               <form action={cancelSubscription}>
-                <button
-                  type="submit"
-                  className="min-h-10 cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13px] font-semibold text-danger transition-colors hover:border-danger"
+                <SubmitButton
+                  className="min-h-10 cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13px] font-semibold text-danger transition-colors hover:border-danger disabled:cursor-wait disabled:opacity-60"
+                  pendingLabel="Cancelling…"
                 >
                   Cancel renewal
-                </button>
+                </SubmitButton>
               </form>
             ) : null}
           </div>
@@ -275,12 +276,12 @@ export default async function BillingPage({
                     isEntitled ? (
                       <form action={changePlan}>
                         <input name="planCode" type="hidden" value="free" />
-                        <button
-                          type="submit"
-                          className="min-h-11 w-full cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13.5px] font-bold text-ink transition-colors hover:border-[#B9AC98]"
+                        <SubmitButton
+                          className="min-h-11 w-full cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13.5px] font-bold text-ink transition-colors hover:border-[#B9AC98] disabled:cursor-wait disabled:opacity-60"
+                          pendingLabel="Switching…"
                         >
                           Switch to Free — takes effect {renewsAt ?? "at period end"}
-                        </button>
+                        </SubmitButton>
                       </form>
                     ) : (
                       <p className="text-[12px] text-ink-muted">Free is always available — no billing required.</p>
@@ -301,16 +302,16 @@ export default async function BillingPage({
                           </select>
                         </label>
                       ) : null}
-                      <button
-                        type="submit"
-                        className={`min-h-11 cursor-pointer rounded-[10px] px-4 text-[13.5px] font-bold transition-colors ${
+                      <SubmitButton
+                        className={`min-h-11 cursor-pointer rounded-[10px] px-4 text-[13.5px] font-bold transition-colors disabled:cursor-wait disabled:opacity-60 ${
                           featured
                             ? "border-none bg-accent text-white hover:bg-accent-deep"
                             : "border border-line-strong bg-white text-ink hover:border-[#B9AC98]"
                         }`}
+                        pendingLabel={isUpgradeTarget ? "Redirecting to payment…" : "Switching…"}
                       >
                         {isUpgradeTarget ? `Upgrade to ${row.name}` : `Switch to ${row.name} — takes effect ${renewsAt ?? "at period end"}`}
-                      </button>
+                      </SubmitButton>
                     </form>
                   ) : (
                     <p className="grid min-h-11 place-items-center rounded-[10px] bg-line-soft text-[13px] font-bold text-ink-muted">
