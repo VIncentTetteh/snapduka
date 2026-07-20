@@ -1,6 +1,7 @@
 "use client";
 
 import { updateOrderAction } from "@/app/(seller)/dashboard/orders/actions";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { canTransitionOrder, type OrderState } from "@/lib/commerce/transitions";
 
 export function OrderActions({ order }: { order: { id: string; status: OrderState; event_version: number; payment_status: string } }) {
@@ -21,12 +22,12 @@ export function OrderActions({ order }: { order: { id: string; status: OrderStat
               <input name="offlinePaid" required type="checkbox" value="yes" /> Payment received
             </label>
           ) : null}
-          <button
+          <SubmitButton
             className={next === "cancelled" ? "btn-danger" : "btn-secondary"}
-            type="submit"
+            pendingLabel={next === "cancelled" ? "Cancelling…" : next === "confirmed" ? "Confirming…" : next === "processing" ? "Updating…" : next === "completed" ? "Completing…" : "Working…"}
           >
             {next === "cancelled" ? "Cancel order" : next === "confirmed" ? "Confirm" : next === "processing" ? "Mark processing" : next === "completed" ? "Mark complete" : next}
-          </button>
+          </SubmitButton>
         </form>
       ))}
     </div>
