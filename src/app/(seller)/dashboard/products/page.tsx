@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { setProductStatusAction } from "@/app/(seller)/dashboard/products/actions";
 import { ProductForm } from "@/components/seller/product-form";
 import { ProductStatusBadge } from "@/components/seller/status-badges";
+import { ProductStatusToggle } from "@/components/seller/product-status-toggle";
 import { EmptyState } from "@/components/ui/empty-state";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { mainImageUrl } from "@/lib/storefront/media";
@@ -138,21 +139,11 @@ export default async function ProductsPage() {
                 <form action={setProductStatusAction} className="flex-none">
                   <input name="productId" type="hidden" value={product.id} />
                   <input name="status" type="hidden" value={isActive ? "draft" : "active"} />
-                  <button
-                    type="submit"
-                    role="switch"
-                    aria-checked={isActive}
-                    aria-label={isActive ? `Hide ${product.name}` : `Publish ${product.name}`}
+                  <ProductStatusToggle
+                    ariaLabel={isActive ? `Hide ${product.name}` : `Publish ${product.name}`}
+                    checked={isActive}
                     title={isActive ? "Hide product" : "Publish product"}
-                    className={`relative h-[26px] w-11 cursor-pointer rounded-full border-none p-0 transition-colors ${
-                      isActive ? "bg-accent" : "bg-line-strong"
-                    }`}
-                  >
-                    <span
-                      className="absolute top-0.5 block h-[22px] w-[22px] rounded-full bg-white shadow-[0_1px_3px_rgba(33,27,20,0.25)] transition-[left]"
-                      style={{ left: isActive ? "20px" : "2px" }}
-                    />
-                  </button>
+                  />
                 </form>
                 </span>
               </div>
