@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { NextResponse, type NextRequest } from "next/server";
+import QRCode from "qrcode";
 
 import { appHost } from "@/lib/app-url";
 import { resolveServerActor } from "@/lib/auth/actor";
@@ -64,6 +65,9 @@ export async function GET(request: NextRequest) {
   const storeLink = `${host}/${shop.slug}`;
   const title = product?.name ?? shop.display_name;
   const price = product ? cardPrice(product.price_minor, product.currency) : null;
+  // Rendered at 2x the display size (132px) for a crisp scan off a phone
+  // screen once the 1080-wide card is shrunk down in a chat/story preview.
+  const qrDataUrl = await QRCode.toDataURL(`https://${storeLink}`, { width: 264, margin: 1 });
 
   return new ImageResponse(
     (
@@ -200,21 +204,36 @@ export async function GET(request: NextRequest) {
             ) : null}
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              alignSelf: "flex-start",
-              background: "#FAF7F2",
-              color: "#211B14",
-              borderRadius: 24,
-              padding: "26px 40px",
-              fontSize: 36,
-              fontWeight: 700,
-              maxWidth: WIDTH - 144,
-            }}
-          >
-            Order at {storeLink}
+          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                background: "#FAF7F2",
+                color: "#211B14",
+                borderRadius: 24,
+                padding: "26px 40px",
+                fontSize: 36,
+                fontWeight: 700,
+                maxWidth: WIDTH - 144 - 172,
+              }}
+            >
+              Order at {storeLink}
+            </div>
+            {/* Scan-to-shop — same destination as the link above */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrDataUrl}
+              alt=""
+              width={132}
+              height={132}
+              style={{
+                flexShrink: 0,
+                borderRadius: 16,
+                border: "6px solid #FAF7F2",
+                background: "#FFFFFF",
+              }}
+            />
           </div>
 
           <div
