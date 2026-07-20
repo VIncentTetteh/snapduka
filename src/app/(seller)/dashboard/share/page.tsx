@@ -8,6 +8,7 @@ import {
   PROVIDER_LABEL,
   SOCIAL_PROVIDERS,
 } from "@/lib/social/providers";
+import { NativeShareButtonClient } from "@/components/seller/native-share-button-client";
 import { ShareButtons } from "@/components/seller/share-buttons";
 import { TrackedLinkShare } from "@/components/seller/tracked-link-share";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +60,7 @@ export default async function ShareStudioPage({
         .maybeSingle(),
       supabase
         .from("products")
-        .select("id,name,currency,price_minor")
+        .select("id,name,currency,price_minor,video_url")
         .eq("seller_account_id", actor.sellerAccountId)
         .eq("status", "active")
         .order("created_at", { ascending: false })
@@ -121,7 +122,7 @@ export default async function ShareStudioPage({
 
   const destinationLinks = (links ?? []).filter((link) => link.destination_path === destinationPath);
   const caption = selectedProduct
-    ? `${selectedProduct.name} — ${formatMoney(selectedProduct.price_minor, selectedProduct.currency as CurrencyCode)}. Order in two taps, pay securely with Paystack. 🛍️`
+    ? `${selectedProduct.name} — ${formatMoney(selectedProduct.price_minor, selectedProduct.currency as CurrencyCode)}. Order in two taps, pay securely with Paystack. 🛍️${selectedProduct.video_url ? `\nWatch: ${selectedProduct.video_url}` : ""}`
     : `Shop ${shop.display_name} — secure Paystack checkout, no account needed. 🛍️`;
 
   const qrDataUrl = await QRCode.toDataURL(targetUrl, { width: 480, margin: 2 });
@@ -357,6 +358,21 @@ export default async function ShareStudioPage({
               ))}
             </div>
             <div className="flex flex-wrap gap-2.5">
+              <NativeShareButtonClient
+                className="inline-flex min-h-9 cursor-pointer items-center rounded-[9px] border-none bg-accent px-3.5 text-[12.5px] font-bold text-white transition-colors hover:bg-accent-deep disabled:cursor-wait disabled:opacity-60"
+                fallback={
+                  <p className="m-0 flex items-center text-[12px] text-ink-muted">
+                    Open this page on your phone to attach the product photo directly.
+                  </p>
+                }
+                fallbackUrl={targetUrl}
+                imageFilename="snapduka-story.png"
+                imageUrl={`/api/share/story-card${selectedProduct ? `?product=${selectedProduct.id}` : ""}`}
+                label="Share photo + caption…"
+                pendingLabel="Preparing…"
+                text={`${caption}\n${targetUrl}`}
+                title={shop.display_name}
+              />
               <CopyButton value={`${caption}\n${targetUrl}`} label="Copy caption" />
               <a
                 href={`https://wa.me/?text=${encodeURIComponent(`${caption}\n${targetUrl}`)}`}

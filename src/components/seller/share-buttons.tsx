@@ -1,20 +1,20 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
+
+import { NativeShareButton, useCanNativeShare } from "./native-share-button";
 
 type ChannelLink = { channel: string; shortUrl: string };
 
 /**
- * One-tap sharing. WhatsApp/X/Facebook/Telegram open with the post
- * pre-filled via their web intents. TikTok/Instagram/Snapchat have no
- * public prefill intent, so those buttons copy the caption (with the
- * channel's tracked link) and open the platform. On mobile, the native
- * share sheet attaches the story-card image + caption directly.
+ * One-tap sharing. On mobile, the native share sheet is the primary action —
+ * it attaches the story-card image (the product photo, composited with
+ * price/caption) directly, not just a link. WhatsApp/X/Facebook/Telegram
+ * open with the post pre-filled via their web intents as a link-only
+ * fallback. TikTok/Instagram/Snapchat have no public prefill intent, so
+ * those buttons copy the caption (with the channel's tracked link) and open
+ * the platform.
  */
-function subscribeNever(): () => void {
-  return () => {};
-}
-
 export function ShareButtons({
   caption,
   storeUrl,
@@ -29,13 +29,7 @@ export function ShareButtons({
   shopName: string;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
-  const [sharing, setSharing] = useState(false);
-  // Server renders "no native share"; the client corrects after hydration.
-  const canNativeShare = useSyncExternalStore(
-    subscribeNever,
-    () => typeof navigator !== "undefined" && "share" in navigator,
-    () => false,
-  );
+  const canNativeShare = useCanNativeShare();
 
   const linkFor = (channel: string) =>
     links.find((link) => link.channel === channel)?.shortUrl ?? storeUrl;
@@ -52,31 +46,6 @@ export function ShareButtons({
     window.open(openUrl, "_blank", "noopener");
   }
 
-  async function nativeShare() {
-    setSharing(true);
-    setNotice(null);
-    try {
-      const response = await fetch(storyCardUrl);
-      const blob = await response.blob();
-      const file = new File([blob], "snapduka-story.png", { type: blob.type || "image/png" });
-      const payload: ShareData = {
-        title: shopName,
-        text: text("other"),
-        files: [file],
-      };
-      if (navigator.canShare?.(payload)) {
-        await navigator.share(payload);
-        return;
-      }
-      // No file support — share text + link only.
-      await navigator.share({ title: shopName, text: caption, url: storeUrl });
-    } catch {
-      // User dismissed the sheet or share unsupported — nothing to do.
-    } finally {
-      setSharing(false);
-    }
-  }
-
   const intentButton =
     "inline-flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border-none px-3.5 text-[12.5px] font-bold text-white no-underline transition-opacity hover:opacity-90";
   const copyButton =
@@ -85,15 +54,22 @@ export function ShareButtons({
   return (
     <div className="grid gap-3">
       {canNativeShare ? (
-        <button
-          type="button"
-          disabled={sharing}
-          onClick={nativeShare}
+        <NativeShareButton
           className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border-none bg-accent px-4 text-[13.5px] font-bold text-white transition-colors hover:bg-accent-deep disabled:cursor-wait disabled:opacity-60"
-        >
-          {sharing ? "Preparing…" : "Share story card + caption…"}
-        </button>
-      ) : null}
+          fallbackUrl={storeUrl}
+          imageFilename="snapduka-story.png"
+          imageUrl={storyCardUrl}
+          label="Share photo + caption…"
+          pendingLabel="Preparing…"
+          text={text("other")}
+          title={shopName}
+        />
+      ) : (
+        <p className="m-0 text-[12px] text-ink-muted">
+          On your phone, sharing here attaches the product photo directly — open this page on
+          mobile to try it. From a computer, use the buttons below (link only).
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {/* Pre-filled post intents */}
