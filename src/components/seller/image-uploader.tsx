@@ -4,39 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { uploadProductImageAction } from "@/app/(seller)/dashboard/products/actions";
-import { compressProductImage, validateProductImage } from "@/lib/catalog/images";
-
-type PreparedImage = {
-  dataUrl: string;
-  width: number;
-  height: number;
-  sizeKb: number;
-};
-
-function prepareImage(file: File): Promise<PreparedImage> {
-  return new Promise((resolve, reject) => {
-    compressProductImage(file)
-      .then((compressed) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error("read failed"));
-        reader.onload = (event) => {
-          const dataUrl = event.target?.result as string;
-          const image = new Image();
-          image.onerror = () => reject(new Error("decode failed"));
-          image.onload = () =>
-            resolve({
-              dataUrl,
-              width: image.naturalWidth,
-              height: image.naturalHeight,
-              sizeKb: Math.ceil(compressed.size / 1024),
-            });
-          image.src = dataUrl;
-        };
-        reader.readAsDataURL(compressed);
-      })
-      .catch(reject);
-  });
-}
+import { type PreparedImage, prepareImage, validateProductImage } from "@/lib/catalog/images";
 
 /** Multi-file product photo uploader: pick several, review, upload in order. */
 export function ImageUploader({ productId }: { productId: string }) {
