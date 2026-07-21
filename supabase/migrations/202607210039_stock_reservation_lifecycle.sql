@@ -5,6 +5,86 @@
 -- that quantity out of availability math, and reservations never actually
 -- expired in practice even though they carry an expires_at.
 
+-- finish_stock_reservation used to unconditionally decrement reserved_quantity
+-- even for non-track products, where it was never incremented in the first
+-- place — this drove reserved_quantity negative and violated the stock check
+-- constraint the moment any order for a non-track product was finalized.
+create or replace function public.finish_stock_reservation(
+  p_reservation_id uuid,
+  p_outcome text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+set row_security = off
+as $$
+declare
+  reservation_record public.stock_reservations%rowtype;
+begin
+  if p_outcome not in ('released', 'consumed', 'expired') then
+    raise exception using errcode = '22023', message = 'Invalid reservation outcome.';
+  end if;
+
+  select * into reservation_record
+  from public.stock_reservations
+  where id = p_reservation_id
+  for update;
+
+  if reservation_record.id is null or reservation_record.status <> 'active' then
+    return;
+  end if;
+
+  if reservation_record.variant_id is not null then
+    update public.product_variants
+    set
+      reserved_quantity = case
+        when inventory_policy = 'track'
+          then reserved_quantity - reservation_record.quantity
+        else reserved_quantity
+      end,
+      stock_quantity = case
+        when p_outcome = 'consumed' and inventory_policy = 'track'
+          then stock_quantity - reservation_record.quantity
+        else stock_quantity
+      end
+    where id = reservation_record.variant_id;
+  else
+    update public.products
+    set
+      reserved_quantity = case
+        when inventory_policy = 'track'
+          then reserved_quantity - reservation_record.quantity
+        else reserved_quantity
+      end,
+      stock_quantity = case
+        when p_outcome = 'consumed' and inventory_policy = 'track'
+          then stock_quantity - reservation_record.quantity
+        else stock_quantity
+      end
+    where id = reservation_record.product_id;
+  end if;
+
+  update public.stock_reservations
+  set status = p_outcome
+  where id = reservation_record.id;
+
+  if p_outcome = 'consumed' then
+    insert into public.inventory_movements (
+      product_id, variant_id, seller_account_id, quantity_delta, reason, reference
+    )
+    values (
+      reservation_record.product_id,
+      reservation_record.variant_id,
+      reservation_record.seller_account_id,
+      -reservation_record.quantity,
+      'sale',
+      reservation_record.reference
+    );
+  end if;
+end;
+$$;
+
 create or replace function public.finalize_order_stock(p_order_id uuid, p_outcome text)
 returns void
 language plpgsql

@@ -3,7 +3,7 @@ begin;
 
 set local search_path = extensions, public;
 
-select plan(4);
+select plan(7);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, created_at, updated_at)
 values ('00000000-0000-0000-0000-000000020101','00000000-0000-0000-0000-000000000000','authenticated','authenticated','stock-fixture@example.com','',now(),'{}'::jsonb,now(),now());
@@ -16,6 +16,13 @@ values ('00000000-0000-0000-0000-000000020301','00000000-0000-0000-0000-00000002
 
 insert into public.products (id, shop_id, seller_account_id, name, slug, currency, price_minor, status, inventory_policy, stock_quantity, reserved_quantity, published_at)
 values ('00000000-0000-0000-0000-000000020401','00000000-0000-0000-0000-000000020301','00000000-0000-0000-0000-000000020201','Stock Fixture Product','stock-fixture-product','GHS',5000,'active','track',10,0,now());
+
+-- Second fixture: a non-track product (continue_selling). reserve_product_stock
+-- never increments reserved_quantity for these, so finish_stock_reservation
+-- must not decrement it either, or reserved_quantity goes negative and trips
+-- products_stock_check the moment the order is finalized.
+insert into public.products (id, shop_id, seller_account_id, name, slug, currency, price_minor, status, inventory_policy, stock_quantity, reserved_quantity, published_at)
+values ('00000000-0000-0000-0000-000000020402','00000000-0000-0000-0000-000000020301','00000000-0000-0000-0000-000000020201','Stock Fixture Product Non-Track','stock-fixture-product-non-track','GHS',5000,'active','continue_selling',null,0,now());
 
 -- Reserve stock the same way create_guest_order does.
 select public.reserve_product_stock(
@@ -51,6 +58,34 @@ select is(
 select lives_ok(
   $$ select public.finalize_order_stock('00000000-0000-0000-0000-000000020501', 'consumed') $$,
   'calling finalize_order_stock twice for the same order does not error'
+);
+
+-- Reserve stock on the non-track product — reserve_product_stock's own
+-- inventory_policy = 'track' gate means reserved_quantity is left untouched.
+select public.reserve_product_stock(
+  '00000000-0000-0000-0000-000000020402', null, 2,
+  'order:00000000-0000-0000-0000-000000020502:00000000-0000-0000-0000-000000020402:base',
+  now() + interval '30 minutes'
+);
+
+select is(
+  (select reserved_quantity from public.products where id = '00000000-0000-0000-0000-000000020402'),
+  0,
+  'reserving stock on a non-track product leaves reserved_quantity at 0'
+);
+
+-- Finalizing that reservation must not attempt to decrement reserved_quantity
+-- below 0 (which would violate products_stock_check and, in production,
+-- roll back the whole apply_paystack_success transaction).
+select lives_ok(
+  $$ select public.finalize_order_stock('00000000-0000-0000-0000-000000020502', 'consumed') $$,
+  'finalizing a non-track product reservation does not raise a stock check violation'
+);
+
+select is(
+  (select reserved_quantity from public.products where id = '00000000-0000-0000-0000-000000020402'),
+  0,
+  'finalize_order_stock(consumed) leaves reserved_quantity at 0 for a non-track product'
 );
 
 select * from finish();
