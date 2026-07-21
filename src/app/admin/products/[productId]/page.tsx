@@ -38,7 +38,7 @@ export default async function AdminProductPage({
     admin
       .from("products")
       .select(
-        "id,name,sku,currency,price_minor,status,inventory_policy,stock_quantity,reserved_quantity,moderation_status,moderation_reason,moderated_at,created_at,seller_account_id,seller_accounts(id,contact_name,contact_email,shops(display_name))",
+        "id,name,sku,currency,price_minor,compare_at_price_minor,status,inventory_policy,stock_quantity,reserved_quantity,moderation_status,moderation_reason,moderated_at,created_at,seller_account_id,seller_accounts(id,contact_name,contact_email,shops(display_name))",
       )
       .eq("id", productId)
       .maybeSingle(),
@@ -107,6 +107,11 @@ export default async function AdminProductPage({
       <div className="mb-5 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         <Panel className="p-4">
           <p className="mb-1.5 text-[12px] font-semibold text-ink-muted">Price</p>
+          {product.compare_at_price_minor ? (
+            <p className="text-[13px] font-semibold text-ink-faint line-through">
+              {formatMoney(product.compare_at_price_minor, product.currency as CurrencyCode)}
+            </p>
+          ) : null}
           <p className="font-serif text-[22px] font-medium text-ink">
             {formatMoney(product.price_minor, product.currency as CurrencyCode)}
           </p>
