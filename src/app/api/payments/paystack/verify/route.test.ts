@@ -4,10 +4,15 @@ const mocks = vi.hoisted(() => ({
   verify: vi.fn(),
   rpc: vi.fn(),
   attempt: vi.fn(),
+  checkRateLimit: vi.fn(),
 }));
 
 vi.mock("@/lib/payments/paystack", () => ({
   paystackProvider: () => ({ verify: mocks.verify }),
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  checkRateLimit: mocks.checkRateLimit,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -34,6 +39,7 @@ function request(body: unknown, ip = "10.0.0.1") {
 describe("paystack verify route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.checkRateLimit.mockResolvedValue({ ok: true });
   });
 
   it("rejects invalid references", async () => {

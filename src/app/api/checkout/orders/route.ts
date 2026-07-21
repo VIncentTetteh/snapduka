@@ -19,7 +19,7 @@ function clientIp(request: Request): string {
 
 export async function POST(request: Request) {
   const ip = clientIp(request);
-  const rl = checkRateLimit(`checkout:order:${ip}`, CHECKOUT_LIMIT);
+  const rl = await checkRateLimit(`checkout:order:${ip}`, CHECKOUT_LIMIT);
   if (!rl.ok) {
     const retryAfter = Math.ceil(rl.retryAfterMs / 1000);
     return NextResponse.json(

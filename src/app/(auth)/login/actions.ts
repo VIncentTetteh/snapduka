@@ -91,7 +91,7 @@ export async function sendOtpAction(formData: FormData): Promise<never> {
   const next = authNextPath(formValue(formData, "next"));
   const ip = await clientIp();
 
-  const rl = checkRateLimit(`auth:send-otp:${ip}`, SEND_OTP_LIMIT);
+  const rl = await checkRateLimit(`auth:send-otp:${ip}`, SEND_OTP_LIMIT);
   if (!rl.ok) {
     const waitSec = Math.ceil(rl.retryAfterMs / 1000);
     loginRedirect("error", `Too many attempts. Try again in ${waitSec} seconds.`, next);
@@ -102,7 +102,7 @@ export async function sendOtpAction(formData: FormData): Promise<never> {
     loginRedirect("error", "Enter a valid email address or phone number.", next);
   }
 
-  const identifierRl = checkRateLimit(`auth:send-otp:target:${identifier.value}`, IDENTIFIER_SEND_LIMIT);
+  const identifierRl = await checkRateLimit(`auth:send-otp:target:${identifier.value}`, IDENTIFIER_SEND_LIMIT);
   if (!identifierRl.ok) {
     const waitSec = Math.ceil(identifierRl.retryAfterMs / 1000);
     loginRedirect("error", `Too many attempts. Try again in ${waitSec} seconds.`, next);
@@ -131,7 +131,7 @@ export async function verifyOtpAction(formData: FormData): Promise<never> {
   const rawIdentifier = formValue(formData, "identifier");
   const ip = await clientIp();
 
-  const rl = checkRateLimit(`auth:verify-otp:${ip}`, VERIFY_OTP_LIMIT);
+  const rl = await checkRateLimit(`auth:verify-otp:${ip}`, VERIFY_OTP_LIMIT);
   if (!rl.ok) {
     const waitSec = Math.ceil(rl.retryAfterMs / 1000);
     toCodeStep(rawIdentifier, next, "error", `Too many attempts. Try again in ${waitSec} seconds.`);
@@ -162,7 +162,7 @@ export async function resendOtpAction(formData: FormData): Promise<never> {
   const rawIdentifier = formValue(formData, "identifier");
   const ip = await clientIp();
 
-  const rl = checkRateLimit(`auth:resend-otp:${ip}`, RESEND_OTP_LIMIT);
+  const rl = await checkRateLimit(`auth:resend-otp:${ip}`, RESEND_OTP_LIMIT);
   if (!rl.ok) {
     const waitSec = Math.ceil(rl.retryAfterMs / 1000);
     toCodeStep(rawIdentifier, next, "error", `Too many attempts. Try again in ${waitSec} seconds.`);
@@ -173,7 +173,7 @@ export async function resendOtpAction(formData: FormData): Promise<never> {
     loginRedirect("error", "Enter a valid email address or phone number.", next);
   }
 
-  const identifierRl = checkRateLimit(`auth:send-otp:target:${identifier.value}`, IDENTIFIER_SEND_LIMIT);
+  const identifierRl = await checkRateLimit(`auth:send-otp:target:${identifier.value}`, IDENTIFIER_SEND_LIMIT);
   if (!identifierRl.ok) {
     const waitSec = Math.ceil(identifierRl.retryAfterMs / 1000);
     toCodeStep(identifier.value, next, "error", `Too many attempts. Try again in ${waitSec} seconds.`);
@@ -201,7 +201,7 @@ export async function signInWithSocial(formData: FormData): Promise<never> {
   const next = authNextPath(formValue(formData, "next"));
   const ip = await clientIp();
 
-  const rl = checkRateLimit(`auth:social:${ip}`, SOCIAL_LIMIT);
+  const rl = await checkRateLimit(`auth:social:${ip}`, SOCIAL_LIMIT);
   if (!rl.ok) {
     loginRedirect("error", "Too many requests. Please wait before trying again.", next);
   }

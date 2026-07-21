@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   if (actor.kind !== "seller") {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  const rl = checkRateLimit(`paystack:sub-verify:${actor.sellerAccountId}`, {
+  const rl = await checkRateLimit(`paystack:sub-verify:${actor.sellerAccountId}`, {
     limit: 10,
     windowMs: 5 * 60 * 1000,
   });

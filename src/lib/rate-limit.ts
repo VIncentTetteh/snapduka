@@ -1,13 +1,12 @@
 /**
- * In-memory sliding-window rate limiter.
+ * Postgres-backed sliding-window rate limiter.
  *
- * Single-process only. Swap `store` for a Redis/Upstash client to make
- * this work across multiple serverless instances in production.
+ * Backed by a `rate_limit_counters` table + `check_rate_limit` RPC, so
+ * counters are shared across every serverless instance — the prior
+ * in-memory Map reset per Vercel instance under concurrent load, making
+ * every limit in the app (OTP, checkout, Paystack, analytics, restock)
+ * trivially bypassable by a deliberate attacker.
  */
-
-type Entry = { count: number; resetAt: number };
-
-const store = new Map<string, Entry>();
 
 export type RateLimitConfig = {
   /** Maximum number of requests allowed within the window. */
@@ -24,29 +23,26 @@ export type RateLimitResult =
  * Check and increment the rate-limit counter for `key`.
  * Returns `{ ok: true }` when the request is allowed,
  * or `{ ok: false, retryAfterMs }` when the limit is exceeded.
+ *
+ * Fails open on a database error — a transient RPC failure must not turn
+ * into a full outage of login/checkout for every legitimate user.
  */
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   { limit, windowMs }: RateLimitConfig,
-): RateLimitResult {
-  const now = Date.now();
-  const entry = store.get(key);
-
-  // Window expired or no prior entry — start a fresh window.
-  if (!entry || entry.resetAt <= now) {
-    store.set(key, { count: 1, resetAt: now + windowMs });
+): Promise<RateLimitResult> {
+  // Lazy import: the admin client pulls in `server-only`, which client-adjacent
+  // test files can't load at module scope.
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("check_rate_limit", {
+    p_key: key,
+    p_limit: limit,
+    p_window_ms: windowMs,
+  });
+  if (error || !data || data.length === 0) {
     return { ok: true };
   }
-
-  if (entry.count >= limit) {
-    return { ok: false, retryAfterMs: entry.resetAt - now };
-  }
-
-  store.set(key, { count: entry.count + 1, resetAt: entry.resetAt });
-  return { ok: true };
-}
-
-/** Remove all entries — intended for use in tests only. */
-export function _resetRateLimitStore(): void {
-  store.clear();
+  const [{ allowed, retry_after_ms }] = data;
+  return allowed ? { ok: true } : { ok: false, retryAfterMs: Number(retry_after_ms) };
 }

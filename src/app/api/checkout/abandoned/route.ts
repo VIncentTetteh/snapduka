@@ -8,7 +8,7 @@ const schema = z.object({ campaignToken: z.string().max(64).optional(), cart: z.
 
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
-  if (!checkRateLimit(`abandoned:${ip}`, { limit: 10, windowMs: 10 * 60_000 }).ok) return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+  if (!(await checkRateLimit(`abandoned:${ip}`, { limit: 10, windowMs: 10 * 60_000 })).ok) return NextResponse.json({ error: "Too many requests." }, { status: 429 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid recovery request." }, { status: 400 });
   const admin = createAdminClient();

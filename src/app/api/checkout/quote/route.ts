@@ -16,7 +16,7 @@ const requestSchema = z.object({
 
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
-  if (!checkRateLimit(`checkout-quote:${ip}`, { limit: 30, windowMs: 60_000 }).ok) {
+  if (!(await checkRateLimit(`checkout-quote:${ip}`, { limit: 30, windowMs: 60_000 })).ok) {
     return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
   }
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));

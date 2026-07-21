@@ -17,7 +17,7 @@ const schema = z.object({ reference: z.string().min(8).max(120) });
  */
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const rl = checkRateLimit(`paystack:verify:${ip}`, { limit: 20, windowMs: 5 * 60 * 1000 });
+  const rl = await checkRateLimit(`paystack:verify:${ip}`, { limit: 20, windowMs: 5 * 60 * 1000 });
   if (!rl.ok) {
     return NextResponse.json({ error: "Too many requests." }, { status: 429 });
   }
