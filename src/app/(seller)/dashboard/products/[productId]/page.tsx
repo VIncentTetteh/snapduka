@@ -5,7 +5,11 @@ import { addVariantAction, archiveVariantAction, setProductVideoAction, updatePr
 import { ProductMediaManager } from "@/components/seller/product-media-manager";
 import { Req } from "@/components/ui/required-mark";
 import { FormActionButton, SubmitButton } from "@/components/ui/submit-button";
+import { MetricTile } from "@/components/ui/metric-tile";
+import { productProfitSummaries } from "@/lib/analytics/advanced";
 import { resolveServerActor } from "@/lib/auth/actor";
+import type { CurrencyCode } from "@/lib/countries/types";
+import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function EditProductPage({ params }: { params: Promise<{ productId: string }> }) {
@@ -13,8 +17,24 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
   if (actor.kind !== "seller") redirect("/login?next=/dashboard/products");
   const { productId } = await params;
   const supabase = await createClient();
-  const { data: product } = await supabase.from("products").select("id,name,description,currency,price_minor,sku,status,inventory_policy,stock_quantity,reserved_quantity,video_url,product_media(id,object_path,position),product_variants(id,name,sku,price_minor,inventory_policy,stock_quantity,reserved_quantity,active)").eq("id", productId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
+  const { data: product } = await supabase.from("products").select("id,name,description,currency,price_minor,cost_minor,compare_at_price_minor,sku,status,inventory_policy,stock_quantity,reserved_quantity,video_url,product_media(id,object_path,position),product_variants(id,name,sku,price_minor,inventory_policy,stock_quantity,reserved_quantity,active)").eq("id", productId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
   if (!product) notFound();
+
+  const { data: orderLines } = await supabase
+    .from("order_lines")
+    .select("product_id,product_name,quantity,line_total_minor,unit_cost_minor,orders!inner(seller_account_id,payment_status)")
+    .eq("product_id", productId)
+    .eq("orders.seller_account_id", actor.sellerAccountId)
+    .eq("orders.payment_status", "paid");
+  const [profit] = productProfitSummaries(
+    (orderLines ?? []).map((line) => ({
+      productId: line.product_id,
+      productName: line.product_name,
+      quantity: line.quantity,
+      lineTotalMinor: line.line_total_minor,
+      unitCostMinor: line.unit_cost_minor,
+    })),
+  );
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-24">
@@ -36,6 +56,8 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
         <label className="grid gap-1"><span className="field-label">Name<Req /></span><input className="field-input" defaultValue={product.name} minLength={2} name="name" required aria-required="true" /></label>
         <label className="grid gap-1"><span className="field-label">Description <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional)</span></span><textarea className="field-input" defaultValue={product.description} name="description" rows={4} /></label>
         <label className="grid gap-1"><span className="field-label">Price ({product.currency} minor units)<Req /></span><input className="field-input" defaultValue={product.price_minor} inputMode="numeric" name="price" pattern="[1-9][0-9]*" title="Whole number in minor units, greater than zero" required aria-required="true" /></label>
+        <label className="grid gap-1"><span className="field-label">Compare-at price ({product.currency} minor units) <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional)</span></span><input className="field-input" defaultValue={product.compare_at_price_minor ?? ""} inputMode="numeric" name="compareAtPrice" pattern="[0-9]*" title="Whole number in minor units, greater than your price" /></label>
+        <label className="grid gap-1"><span className="field-label">Your cost ({product.currency} minor units) <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional, never shown to buyers)</span></span><input className="field-input" defaultValue={product.cost_minor ?? ""} inputMode="numeric" name="costPrice" pattern="[0-9]*" title="Whole number in minor units" /></label>
         <label className="grid gap-1"><span className="field-label">SKU <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional)</span></span><input className="field-input" defaultValue={product.sku ?? ""} name="sku" /></label>
         <label className="grid gap-1"><span className="field-label">Availability</span><select className="field-input" defaultValue={product.inventory_policy} name="inventoryPolicy"><option value="track">Track finite stock</option><option value="continue_selling">Preorder</option><option value="deny_when_out_of_stock">Always available</option></select></label>
         <label className="grid gap-1"><span className="field-label">Stock quantity (at least {product.reserved_quantity} reserved)</span><input className="field-input" defaultValue={product.stock_quantity ?? ""} inputMode="numeric" min={product.reserved_quantity} name="stockQuantity" pattern="[0-9]*" title="Whole number" /></label>
@@ -49,6 +71,20 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
           Add up to a few photos — the main image is what customers see first on your storefront.
         </p>
         <ProductMediaManager media={product.product_media ?? []} productId={product.id} />
+      </section>
+
+      <section className="card grid gap-3">
+        <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Profit</h2>
+        {profit ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <MetricTile label="Units sold" value={String(profit.unitsSold)} />
+            <MetricTile label="Revenue" value={formatMoney(profit.revenueMinor, product.currency as CurrencyCode)} />
+            <MetricTile label="Cost" value={profit.costMinor == null ? "Unknown" : formatMoney(profit.costMinor, product.currency as CurrencyCode)} />
+            <MetricTile label="Profit" value={profit.profitMinor == null ? "Unknown" : formatMoney(profit.profitMinor, product.currency as CurrencyCode)} />
+          </div>
+        ) : (
+          <p className="m-0 text-sm" style={{ color: "var(--ink-2)" }}>No paid sales yet.</p>
+        )}
       </section>
 
       <section className="card grid gap-3">
