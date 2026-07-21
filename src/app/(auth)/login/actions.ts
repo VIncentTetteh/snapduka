@@ -144,6 +144,15 @@ export async function verifyOtpAction(formData: FormData): Promise<never> {
     toCodeStep(rawIdentifier, next, "error", "Enter the 6-digit code.");
   }
 
+  // Per-identifier limit, independent of requester IP — closes the gap where
+  // an attacker could brute-force a known phone/email's OTP code by
+  // distributing verify attempts across many IPs/serverless instances.
+  const identifierRl = await checkRateLimit(`auth:verify-otp:target:${identifier.value}`, VERIFY_OTP_LIMIT);
+  if (!identifierRl.ok) {
+    const waitSec = Math.ceil(identifierRl.retryAfterMs / 1000);
+    toCodeStep(identifier.value, next, "error", `Too many attempts. Try again in ${waitSec} seconds.`);
+  }
+
   const supabase = await createClient();
   const { error } =
     identifier.kind === "email"

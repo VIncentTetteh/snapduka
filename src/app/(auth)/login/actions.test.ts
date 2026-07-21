@@ -186,6 +186,22 @@ describe("verifyOtpAction", () => {
 
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
+
+  it("rate-limits verification attempts per target identifier, independent of IP", async () => {
+    mocks.checkRateLimit.mockImplementation(async (key: string): Promise<RateLimitResult> => {
+      if (key.startsWith("auth:verify-otp:target:")) return { ok: false, retryAfterMs: 45_000 };
+      return { ok: true };
+    });
+
+    await expect(
+      verifyOtpAction(formData({ identifier: "user@example.com", code: "123456", next: "/dashboard" })),
+    ).rejects.toThrow();
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      "auth:verify-otp:target:user@example.com",
+      expect.objectContaining({ limit: expect.any(Number), windowMs: expect.any(Number) }),
+    );
+  });
 });
 
 describe("resendOtpAction", () => {
