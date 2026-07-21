@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
+import { hasPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 
 export async function disconnectSocialAccountAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
   const provider = String(formData.get("provider") ?? "");
   if (!provider) return;
   const supabase = await createClient();
@@ -36,7 +37,7 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
   const destinationPath = String(formData.get("destinationPath") ?? "/");
   const label = String(formData.get("label") ?? "Storefront").slice(0, 80);
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
 
   const supabase = await createClient();
   const { data: shop } = await supabase

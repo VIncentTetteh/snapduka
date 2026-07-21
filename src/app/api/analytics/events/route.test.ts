@@ -17,12 +17,12 @@ function request(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.checkRateLimit.mockReturnValue({ ok: true });
+  mocks.checkRateLimit.mockResolvedValue({ ok: true });
 });
 
 describe("POST /api/analytics/events", () => {
   it("rejects when the rate limit is exceeded, before any database write", async () => {
-    mocks.checkRateLimit.mockReturnValue({ ok: false, retryAfterMs: 1_000 });
+    mocks.checkRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 1_000 });
 
     const response = await POST(
       request({

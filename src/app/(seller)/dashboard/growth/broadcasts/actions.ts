@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
+import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, withinPlanLimit } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,7 +25,7 @@ async function monthlyBroadcastUsage(
 
 export async function createBroadcast(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
   const channel = String(formData.get("channel"));
   const body = String(formData.get("body")).trim();
   const segmentId = String(formData.get("segmentId") ?? "");
@@ -57,7 +58,7 @@ export async function createBroadcast(formData: FormData) {
 
 export async function scheduleBroadcast(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
   const id = String(formData.get("id") ?? "");
   const scheduledInput = String(formData.get("scheduledAt") ?? "");
   const scheduledAt = scheduledInput ? new Date(scheduledInput) : new Date();
@@ -74,7 +75,7 @@ export async function scheduleBroadcast(formData: FormData) {
 
 export async function cancelBroadcast(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
   const supabase = await createClient();
   await supabase
     .from("marketing_broadcasts")

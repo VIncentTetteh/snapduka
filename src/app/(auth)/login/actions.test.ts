@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
-  checkRateLimit: vi.fn<(key: string) => RateLimitResult>(() => ({ ok: true })),
+  checkRateLimit: vi.fn<(key: string) => Promise<RateLimitResult>>(() => Promise.resolve({ ok: true })),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -34,7 +34,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.NEXT_PUBLIC_APP_URL = "https://snapduka.example";
   process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = "true";
-  mocks.checkRateLimit.mockReturnValue({ ok: true as const });
+  mocks.checkRateLimit.mockResolvedValue({ ok: true as const });
 });
 
 describe("sendOtpAction", () => {
@@ -81,7 +81,7 @@ describe("sendOtpAction", () => {
   });
 
   it("blocks sending when the rate limit is exceeded", async () => {
-    mocks.checkRateLimit.mockReturnValue({ ok: false, retryAfterMs: 30_000 } satisfies RateLimitResult);
+    mocks.checkRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 30_000 } satisfies RateLimitResult);
 
     await expect(
       sendOtpAction(formData({ identifier: "seller@example.com", next: "/dashboard" })),
@@ -94,7 +94,7 @@ describe("sendOtpAction", () => {
     // Per-IP check (auth:send-otp:<ip>) passes; per-identifier check
     // (auth:send-otp:target:<identifier>) is exhausted — simulates many
     // different IPs all targeting the same phone/email (SMS-pumping).
-    mocks.checkRateLimit.mockImplementation((key: string): RateLimitResult => {
+    mocks.checkRateLimit.mockImplementation(async (key: string): Promise<RateLimitResult> => {
       if (key.startsWith("auth:send-otp:target:")) {
         return { ok: false, retryAfterMs: 45_000 };
       }
@@ -176,7 +176,7 @@ describe("verifyOtpAction", () => {
   });
 
   it("blocks verification when the rate limit is exceeded", async () => {
-    mocks.checkRateLimit.mockReturnValue({ ok: false, retryAfterMs: 60_000 } satisfies RateLimitResult);
+    mocks.checkRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 60_000 } satisfies RateLimitResult);
 
     await expect(
       verifyOtpAction(
@@ -185,6 +185,22 @@ describe("verifyOtpAction", () => {
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits verification attempts per target identifier, independent of IP", async () => {
+    mocks.checkRateLimit.mockImplementation(async (key: string): Promise<RateLimitResult> => {
+      if (key.startsWith("auth:verify-otp:target:")) return { ok: false, retryAfterMs: 45_000 };
+      return { ok: true };
+    });
+
+    await expect(
+      verifyOtpAction(formData({ identifier: "user@example.com", code: "123456", next: "/dashboard" })),
+    ).rejects.toThrow();
+
+    expect(mocks.checkRateLimit).toHaveBeenCalledWith(
+      "auth:verify-otp:target:user@example.com",
+      expect.objectContaining({ limit: expect.any(Number), windowMs: expect.any(Number) }),
+    );
   });
 });
 
@@ -202,7 +218,7 @@ describe("resendOtpAction", () => {
   });
 
   it("blocks resend when the rate limit is exceeded", async () => {
-    mocks.checkRateLimit.mockReturnValue({ ok: false, retryAfterMs: 90_000 } satisfies RateLimitResult);
+    mocks.checkRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 90_000 } satisfies RateLimitResult);
 
     await expect(
       resendOtpAction(formData({ identifier: "seller@example.com", next: "/dashboard" })),
@@ -212,7 +228,7 @@ describe("resendOtpAction", () => {
   });
 
   it("blocks resend when the per-identifier rate limit is exceeded, even though the per-IP limit passes", async () => {
-    mocks.checkRateLimit.mockImplementation((key: string): RateLimitResult => {
+    mocks.checkRateLimit.mockImplementation(async (key: string): Promise<RateLimitResult> => {
       if (key.startsWith("auth:send-otp:target:")) {
         return { ok: false, retryAfterMs: 20_000 };
       }

@@ -7,6 +7,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const schema = z.object({ orderId: z.uuid(), amountMinor: z.number().int().positive().optional() });
 
+function mapInitialRefundStatus(providerStatus: string): "processing" | "completed" | "failed" {
+  if (providerStatus === "processed") return "completed";
+  if (providerStatus === "failed") return "failed";
+  return "processing";
+}
+
 export async function POST(request: Request) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller" && actor.kind !== "operator") return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -19,7 +25,7 @@ export async function POST(request: Request) {
   if (!order || order.payment_status !== "paid") return NextResponse.json({ error: "Order is not refundable." }, { status: 409 });
   const { data: attempt } = await admin.from("payment_attempts").select("id,reference").eq("order_id", order.id).eq("status", "paid").maybeSingle();
   if (!attempt) return NextResponse.json({ error: "Paid attempt not found." }, { status: 409 });
-  const { data: priorRefunds } = await admin.from("refunds").select("amount_minor").eq("order_id", order.id);
+  const { data: priorRefunds } = await admin.from("refunds").select("amount_minor").eq("order_id", order.id).neq("status", "failed");
   const alreadyRefundedMinor = (priorRefunds ?? []).reduce((sum, row) => sum + row.amount_minor, 0);
   const remainingMinor = order.total_minor - alreadyRefundedMinor;
   if (remainingMinor <= 0) return NextResponse.json({ error: "Order is already fully refunded." }, { status: 409 });
@@ -28,7 +34,8 @@ export async function POST(request: Request) {
   const result = await paystackProvider().refund({ reference: attempt.reference, amountMinor: amount });
   await admin.from("refunds").insert({
     order_id: order.id, payment_attempt_id: attempt.id, seller_account_id: order.seller_account_id,
-    amount_minor: amount, provider_refund_id: result.providerId, status: "processing",
+    amount_minor: amount, provider_refund_id: result.providerId, status: mapInitialRefundStatus(result.status),
   });
+  await admin.from("orders").update({ refund_status: "processing" }).eq("id", order.id).eq("refund_status", "none");
   return NextResponse.json({ status: "processing" }, { status: 202 });
 }

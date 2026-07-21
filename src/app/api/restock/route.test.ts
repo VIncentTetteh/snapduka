@@ -32,7 +32,7 @@ function adminMock(product: { seller_account_id: string; country: string } | nul
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.checkRateLimit.mockReturnValue({ ok: true });
+  mocks.checkRateLimit.mockResolvedValue({ ok: true });
 });
 
 describe("POST /api/restock", () => {

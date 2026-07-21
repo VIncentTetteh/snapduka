@@ -22,7 +22,7 @@ function clientIp(request: Request): string {
 
 export async function POST(request: Request) {
   const ip = clientIp(request);
-  const rl = checkRateLimit(`paystack:init:${ip}`, PAYSTACK_LIMIT);
+  const rl = await checkRateLimit(`paystack:init:${ip}`, PAYSTACK_LIMIT);
   if (!rl.ok) {
     const retryAfter = Math.ceil(rl.retryAfterMs / 1000);
     return NextResponse.json(

@@ -17,12 +17,12 @@ function request(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.checkRateLimit.mockReturnValue({ ok: true });
+  mocks.checkRateLimit.mockResolvedValue({ ok: true });
 });
 
 describe("POST /api/checkout/quote", () => {
   it("checks the rate limit before touching the database", async () => {
-    mocks.checkRateLimit.mockReturnValue({ ok: false, retryAfterMs: 5_000 });
+    mocks.checkRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 5_000 });
 
     const response = await POST(
       request({

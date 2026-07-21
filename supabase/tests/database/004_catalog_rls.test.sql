@@ -97,6 +97,13 @@ select lives_ok(
   'active seller can create a product'
 );
 
+-- reserve_product_stock is no longer directly callable by authenticated
+-- (Task 3 revoked that grant — it's meant to run only via
+-- create_guest_order's definer privileges). Exercise the underlying
+-- reservation logic as service_role, which still holds the grant.
+reset role;
+set local role service_role;
+
 select lives_ok(
   $$
     select public.reserve_product_stock(

@@ -14,7 +14,7 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
-  if (!checkRateLimit(`restock:${ip}`, { limit: 10, windowMs: 10 * 60_000 }).ok) return NextResponse.json({ error: "Too many requests. Please try later." }, { status: 429 });
+  if (!(await checkRateLimit(`restock:${ip}`, { limit: 10, windowMs: 10 * 60_000 })).ok) return NextResponse.json({ error: "Too many requests. Please try later." }, { status: 429 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a valid email or phone number and accept the alert." }, { status: 400 });
   const admin = createAdminClient();

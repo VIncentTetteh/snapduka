@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { resolveTxt } from "node:dns/promises";
 
 import { resolveServerActor } from "@/lib/auth/actor";
+import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
 import { normalizeHostname } from "@/lib/domains/verification";
 import { parseBranding } from "@/lib/shops/branding";
@@ -11,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function saveBranding(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage")) return;
   // Theme customization is a paid capability; the shop logo stays free.
   const plan = await getSellerPlan(actor.sellerAccountId);
   if (!planAllows(plan, "branding")) return;
@@ -30,7 +31,7 @@ export async function uploadShopLogoAction(
   dimensions: { height: number; width: number },
 ): Promise<{ success: boolean; message: string }> {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !["pending", "active"].includes(actor.status)) {
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage") || !["pending", "active"].includes(actor.status)) {
     return { success: false, message: "Sign in with an active seller account." };
   }
 
@@ -83,7 +84,7 @@ export async function uploadShopLogoAction(
 
 export async function removeShopLogoAction(): Promise<void> {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage")) return;
   const supabase = await createClient();
   const { data: shop } = await supabase
     .from("shops")
@@ -105,7 +106,7 @@ export async function removeShopLogoAction(): Promise<void> {
 
 export async function addCustomDomain(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage")) return;
   const plan = await getSellerPlan(actor.sellerAccountId);
   if (!planAllows(plan, "customDomain")) return;
   const hostname = normalizeHostname(String(formData.get("hostname") ?? ""));
@@ -118,7 +119,7 @@ export async function addCustomDomain(formData: FormData) {
 
 export async function verifyCustomDomain(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage")) return;
   const domainId = String(formData.get("domainId") ?? "");
   const supabase = await createClient();
   const { data: domain } = await supabase.from("custom_domains").select("id,hostname,verification_token").eq("id", domainId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();

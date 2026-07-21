@@ -41,7 +41,7 @@ export async function addWebhook(formData: FormData) {
   if (actor.kind !== "seller" || actor.role) return;
   const webhookPlan = await getSellerPlan(actor.sellerAccountId);
   if (planLimit(webhookPlan, "apiKeys") === 0) return;
-  const url = String(formData.get("url"));
+  const url = String(formData.get("url")).trim();
   if (!(await isSafeWebhookUrl(url))) return;
   const supabase = await createClient();
   await supabase.from("outbound_webhooks").insert({ seller_account_id: actor.sellerAccountId, url, secret_encrypted: String(formData.get("secret")), event_types: formData.getAll("event").map(String) });
