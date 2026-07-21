@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
+import { hasPermission } from "@/lib/auth/permissions";
 import { parseFulfillmentMethod } from "@/lib/fulfillment/schema";
 import { createClient } from "@/lib/supabase/server";
 
 export async function saveFulfillmentMethod(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !["pending", "active"].includes(actor.status)) return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage") || !["pending", "active"].includes(actor.status)) return;
   const input = Object.fromEntries(["type", "name", "feeMinor", "instructions"].map((key) => [key, String(formData.get(key) ?? "")]));
   const parsed = parseFulfillmentMethod(input);
   if (!parsed.success) {
@@ -39,7 +40,7 @@ export async function saveFulfillmentMethod(formData: FormData) {
 
 export async function updateFulfillmentFee(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !["pending", "active"].includes(actor.status)) return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage") || !["pending", "active"].includes(actor.status)) return;
   const methodId = String(formData.get("methodId") ?? "");
   const fee = String(formData.get("feeMinor") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
@@ -55,7 +56,7 @@ export async function updateFulfillmentFee(formData: FormData) {
 
 export async function toggleFulfillmentMethod(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !["pending", "active"].includes(actor.status)) return;
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage") || !["pending", "active"].includes(actor.status)) return;
   const methodId = String(formData.get("methodId") ?? "");
   const active = formData.get("active") === "true";
   if (!methodId) return;
