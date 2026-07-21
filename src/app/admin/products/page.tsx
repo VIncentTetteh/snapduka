@@ -52,7 +52,7 @@ export default async function AdminProductsPage({
   let query = admin
     .from("products")
     .select(
-      "id,name,sku,currency,price_minor,status,inventory_policy,stock_quantity,reserved_quantity,moderation_status,created_at,seller_account_id,product_media(object_path,position),seller_accounts(contact_name,shops(display_name))",
+      "id,name,sku,currency,price_minor,compare_at_price_minor,status,inventory_policy,stock_quantity,reserved_quantity,moderation_status,created_at,seller_account_id,product_media(object_path,position),seller_accounts(contact_name,shops(display_name))",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -122,6 +122,9 @@ export default async function AdminProductsPage({
       sellerName: shop?.display_name ?? sellerAccount?.contact_name ?? "Unknown seller",
       imageUrl: mainImageUrl(product.product_media),
       priceLabel: formatMoney(product.price_minor, product.currency as CurrencyCode),
+      compareAtPriceLabel: product.compare_at_price_minor
+        ? formatMoney(product.compare_at_price_minor, product.currency as CurrencyCode)
+        : null,
       stockLabel: outOfStock
         ? "Out of stock"
         : lowStock

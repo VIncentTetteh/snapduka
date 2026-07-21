@@ -50,7 +50,7 @@ export async function getPublicProducts(
   let query = client
     .from("products")
     .select(
-      "id, name, slug, description, currency, price_minor, status, inventory_policy, stock_quantity, reserved_quantity, product_media(object_path, alt_text, position)",
+      "id, name, slug, description, currency, price_minor, compare_at_price_minor, status, inventory_policy, stock_quantity, reserved_quantity, product_media(object_path, alt_text, position)",
     )
     .eq("shop_id", shopId)
     .eq("status", "active")
@@ -81,7 +81,7 @@ export async function getPublicProduct(shopId: string, productId: string) {
   const { data, error } = await publicClient()
     .from("products")
     .select(
-      "id, name, slug, description, currency, price_minor, inventory_policy, stock_quantity, reserved_quantity, video_url, video_provider, video_id, video_thumbnail_url, product_media(object_path, alt_text, position), product_variants(id, name, sku, price_minor, image_path, inventory_policy, stock_quantity, reserved_quantity)",
+      "id, name, slug, description, currency, price_minor, compare_at_price_minor, inventory_policy, stock_quantity, reserved_quantity, video_url, video_provider, video_id, video_thumbnail_url, product_media(object_path, alt_text, position), product_variants(id, name, sku, price_minor, image_path, inventory_policy, stock_quantity, reserved_quantity)",
     )
     .eq("shop_id", shopId)
     .eq("id", productId)

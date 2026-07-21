@@ -25,7 +25,7 @@ export default async function ProductsPage() {
     supabase.from("shops").select("currency").eq("seller_account_id", actor.sellerAccountId).single(),
     supabase
       .from("products")
-      .select("id,name,currency,price_minor,status,inventory_policy,stock_quantity,reserved_quantity,product_media(object_path,position)")
+      .select("id,name,currency,price_minor,compare_at_price_minor,status,inventory_policy,stock_quantity,reserved_quantity,product_media(object_path,position)")
       .eq("seller_account_id", actor.sellerAccountId)
       .order("created_at", { ascending: false }),
   ]);
@@ -116,6 +116,11 @@ export default async function ProductsPage() {
                     {product.name}
                   </span>
                   <span className="mt-0.5 flex flex-wrap items-center gap-2">
+                    {product.compare_at_price_minor ? (
+                      <span className="text-[12px] font-semibold text-ink-faint line-through">
+                        {formatMoney(product.compare_at_price_minor, product.currency as CurrencyCode)}
+                      </span>
+                    ) : null}
                     <span className="text-[13px] font-bold text-price">
                       {formatMoney(product.price_minor, product.currency as CurrencyCode)}
                     </span>

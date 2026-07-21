@@ -81,6 +81,12 @@ export default async function ProductPage({ params, searchParams }: Props) {
     product.currency === "XOF"
       ? `XOF ${product.price_minor.toLocaleString("en-US")}`
       : `${product.currency} ${(product.price_minor / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const compareAtPriceLabel =
+    product.compare_at_price_minor == null
+      ? null
+      : product.currency === "XOF"
+        ? `XOF ${product.compare_at_price_minor.toLocaleString("en-US")}`
+        : `${product.currency} ${(product.compare_at_price_minor / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const canonicalUrl = canonicalStorefrontUrl(await appOrigin(), slug, productId);
 
   return (
@@ -118,7 +124,12 @@ export default async function ProductPage({ params, searchParams }: Props) {
             <h1 className="mb-2 max-w-none font-serif text-[clamp(22px,3vw,28px)] font-medium tracking-[-0.01em]">
               {product.name}
             </h1>
-            <p className="mb-3.5 text-[20px] font-bold text-price">{priceLabel}</p>
+            <p className="mb-3.5 flex items-center gap-2.5">
+              {compareAtPriceLabel ? (
+                <span className="text-[15px] font-semibold text-ink-faint line-through">{compareAtPriceLabel}</span>
+              ) : null}
+              <span className="text-[20px] font-bold text-price">{priceLabel}</span>
+            </p>
             {product.description ? (
               <p className="mb-5 whitespace-pre-wrap text-[14px] leading-[1.65] text-ink-soft">
                 {product.description}

@@ -15,6 +15,7 @@ export type AdminProductRow = {
   sellerName: string;
   imageUrl: string | null;
   priceLabel: string;
+  compareAtPriceLabel: string | null;
   stockLabel: string;
   stockTone: "muted" | "warn" | "faint";
   status: string;
@@ -77,6 +78,11 @@ export function ProductListWithBulkActions({ products }: { products: AdminProduc
               <span className="block truncate text-[14px] font-semibold text-ink">{product.name}</span>
               <span className="mt-0.5 flex flex-wrap items-center gap-2">
                 <span className="text-[12.5px] text-ink-soft">{product.sellerName}</span>
+                {product.compareAtPriceLabel ? (
+                  <span className="text-[12px] font-semibold text-ink-faint line-through">
+                    {product.compareAtPriceLabel}
+                  </span>
+                ) : null}
                 <span className="text-[13px] font-bold text-price">{product.priceLabel}</span>
                 <span className={`text-[12px] font-semibold ${STOCK_TONE_CLASS[product.stockTone]}`}>
                   {product.stockLabel}

@@ -51,6 +51,12 @@ export async function createProductAction(
       "variantPrice",
       "variantSku",
       "variantStock",
+      "costPrice",
+      "compareAtPrice",
+      "videoUrl",
+      "imageDataUrl",
+      "imageWidth",
+      "imageHeight",
     ].map((name) => [name, value(formData, name)]),
   );
   const actor = await resolveServerActor();
@@ -114,6 +120,30 @@ export async function createProductAction(
     };
   }
 
+  let videoFields: {
+    video_url: string | null;
+    video_provider: string | null;
+    video_id: string | null;
+    video_thumbnail_url: string | null;
+  } = {
+    video_url: null,
+    video_provider: null,
+    video_id: null,
+    video_thumbnail_url: null,
+  };
+  if (parsed.data.videoUrl) {
+    const parsedVideo = parseVideoUrl(parsed.data.videoUrl);
+    const thumbnailUrl =
+      parsedVideo.thumbnailUrl ??
+      (parsedVideo.videoId ? await fetchOembedThumbnail(parsedVideo.provider, parsed.data.videoUrl) : null);
+    videoFields = {
+      video_url: parsed.data.videoUrl,
+      video_provider: parsedVideo.provider,
+      video_id: parsedVideo.videoId,
+      video_thumbnail_url: thumbnailUrl,
+    };
+  }
+
   const { data: product, error } = await supabase
     .from("products")
     .insert({
@@ -124,11 +154,14 @@ export async function createProductAction(
       description: parsed.data.description,
       currency: parsed.data.currency,
       price_minor: parsed.data.priceMinor,
+      cost_minor: parsed.data.costMinor,
+      compare_at_price_minor: parsed.data.compareAtPriceMinor,
       sku: parsed.data.sku || null,
       status: parsed.data.status,
       inventory_policy: parsed.data.inventoryPolicy,
       stock_quantity: parsed.data.stockQuantity,
       published_at: parsed.data.status === "active" ? new Date().toISOString() : null,
+      ...videoFields,
     })
     .select("id")
     .single();
@@ -169,14 +202,22 @@ export async function createProductAction(
     }
   }
 
+  let photoMessage = "";
+  const imageDataUrl = values.imageDataUrl;
+  if (imageDataUrl) {
+    const width = Number(values.imageWidth) || 0;
+    const height = Number(values.imageHeight) || 0;
+    const uploadResult = await uploadProductImageAction(product.id, imageDataUrl, { width, height });
+    photoMessage = uploadResult.success ? "" : " Photo upload failed — add it below.";
+  }
+
   revalidatePath("/dashboard/products");
   revalidatePath("/onboarding");
   return {
     status: "success",
     message:
-      parsed.data.status === "active"
-        ? "Product published. Add an image below."
-        : "Product saved as a draft. Add an image below.",
+      (parsed.data.status === "active" ? "Product published." : "Product saved as a draft.") +
+      (photoMessage || (imageDataUrl ? "" : " Add an image below.")),
     values: {},
     productId: product.id,
   };
@@ -366,6 +407,8 @@ export async function updateProductAction(formData: FormData): Promise<void> {
     inventoryPolicy: value(formData, "inventoryPolicy"),
     name: value(formData, "name"),
     price: value(formData, "price"),
+    costPrice: value(formData, "costPrice"),
+    compareAtPrice: value(formData, "compareAtPrice"),
     sku: value(formData, "sku"),
     status: value(formData, "status"),
     stockQuantity: value(formData, "stockQuantity"),
@@ -384,6 +427,8 @@ export async function updateProductAction(formData: FormData): Promise<void> {
     inventory_policy: parsed.data.inventoryPolicy,
     name: parsed.data.name,
     price_minor: parsed.data.priceMinor,
+    cost_minor: parsed.data.costMinor,
+    compare_at_price_minor: parsed.data.compareAtPriceMinor,
     published_at: parsed.data.status === "active" ? new Date().toISOString() : null,
     sku: parsed.data.sku || null,
     status: parsed.data.status,

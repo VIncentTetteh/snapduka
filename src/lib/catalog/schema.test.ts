@@ -21,11 +21,14 @@ describe("parseProductInput", () => {
         name: "Woven Bag",
         description: "Handmade in Accra.",
         priceMinor: 12500,
+        costMinor: null,
+        compareAtPriceMinor: null,
         currency: "GHS",
         inventoryPolicy: "track",
         stockQuantity: 4,
         sku: "BAG-1",
         status: "active",
+        videoUrl: "",
       },
     });
   });
@@ -101,6 +104,54 @@ describe("parseProductInput price/stock bounds", () => {
       stockQuantity: "9".repeat(20),
       status: "draft",
     });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("parseProductInput cost/compare-at/video", () => {
+  const base = {
+    name: "Test Product",
+    price: "15000",
+    currency: "GHS",
+    inventoryPolicy: "continue_selling",
+    status: "draft",
+  };
+
+  it("accepts an omitted cost, compare-at, and video URL", () => {
+    const result = parseProductInput(base);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.costMinor).toBeNull();
+      expect(result.data.compareAtPriceMinor).toBeNull();
+      expect(result.data.videoUrl).toBe("");
+    }
+  });
+
+  it("accepts a valid cost price, independent of the sale price", () => {
+    const result = parseProductInput({ ...base, costPrice: "20000" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.costMinor).toBe(20000);
+  });
+
+  it("accepts a compare-at price strictly greater than the sale price", () => {
+    const result = parseProductInput({ ...base, compareAtPrice: "18000" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.compareAtPriceMinor).toBe(18000);
+  });
+
+  it("rejects a compare-at price that is not strictly greater than the sale price", () => {
+    const result = parseProductInput({ ...base, compareAtPrice: "15000" });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a safe http(s) video URL", () => {
+    const result = parseProductInput({ ...base, videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.videoUrl).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  });
+
+  it("rejects an unsafe video URL scheme", () => {
+    const result = parseProductInput({ ...base, videoUrl: "javascript:alert(1)" });
     expect(result.success).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useActionState } from "react";
+import { useEffect, useState, useActionState } from "react";
 
 import {
   createProductAction,
@@ -8,6 +8,7 @@ import {
 } from "@/app/(seller)/dashboard/products/actions";
 import { ImageUploader } from "@/components/seller/image-uploader";
 import { Req } from "@/components/ui/required-mark";
+import { type PreparedImage, prepareImage, validateProductImage } from "@/lib/catalog/images";
 
 const initialState: ProductActionState = { status: "idle", values: {} };
 
@@ -35,6 +36,9 @@ function InputError({ id, message }: { id: string; message: string | undefined }
 export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
   const [state, action, pending] = useActionState(createProductAction, initialState);
   const [priceValue, setPriceValue] = useState(state.values.price ?? "");
+  const [compareAtValue, setCompareAtValue] = useState(state.values.compareAtPrice ?? "");
+  const [preparedImage, setPreparedImage] = useState<PreparedImage | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
   const symbol = currencySymbol[currency] ?? currency;
 
   const priceDisplay =
@@ -45,6 +49,34 @@ export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
   function inputClass(field: string) {
     return `field-input${fieldError(state, field) ? " error" : ""}`;
   }
+
+  async function handleImagePick(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const validation = validateProductImage(file);
+    if (!validation.valid) {
+      setImageError(validation.message);
+      setPreparedImage(null);
+      return;
+    }
+    setImageError(null);
+    try {
+      setPreparedImage(await prepareImage(file));
+    } catch {
+      setImageError("Could not prepare this image. Try another photo.");
+      setPreparedImage(null);
+    }
+  }
+
+  useEffect(() => {
+    if (state.status === "success") {
+      queueMicrotask(() => {
+        setPreparedImage(null);
+        setImageError(null);
+        setCompareAtValue("");
+      });
+    }
+  }, [state.status, state.productId]);
 
   return (
     <div className="grid gap-4">
@@ -110,6 +142,44 @@ export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
           <InputError id="price-error" message={fieldError(state, "price")} />
         </div>
 
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="compareAtPrice">
+            Compare-at price <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional — shown struck through next to your price)</span>
+          </label>
+          <input
+            aria-describedby={fieldError(state, "compareAtPrice") ? "compare-at-error" : undefined}
+            className={inputClass("compareAtPrice")}
+            id="compareAtPrice"
+            inputMode="numeric"
+            name="compareAtPrice"
+            onChange={(e) => setCompareAtValue(e.target.value.replace(/[^0-9]/g, ""))}
+            pattern="[0-9]*"
+            title="Whole number in minor units, greater than your price"
+            value={compareAtValue}
+          />
+          {compareAtValue && /^\d+$/.test(compareAtValue) ? (
+            <p className="field-help m-0">= {symbol}{(Number(compareAtValue) / 100).toFixed(2)}</p>
+          ) : null}
+          <InputError id="compare-at-error" message={fieldError(state, "compareAtPrice")} />
+        </div>
+
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="costPrice">
+            Your cost <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional — never shown to buyers, used to track profit)</span>
+          </label>
+          <input
+            aria-describedby={fieldError(state, "costPrice") ? "cost-error" : undefined}
+            className={inputClass("costPrice")}
+            defaultValue={state.values.costPrice}
+            id="costPrice"
+            inputMode="numeric"
+            name="costPrice"
+            pattern="[0-9]*"
+            title="Whole number in minor units"
+          />
+          <InputError id="cost-error" message={fieldError(state, "costPrice")} />
+        </div>
+
         <input name="currency" type="hidden" value={currency} />
 
         <div className="grid gap-1">
@@ -153,6 +223,47 @@ export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
             title="Whole number"
           />
           <InputError id="stock-quantity-error" message={fieldError(state, "stockQuantity")} />
+        </div>
+
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="videoUrl">
+            Product video <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional — YouTube, TikTok, Instagram Reels…)</span>
+          </label>
+          <input
+            aria-describedby={fieldError(state, "videoUrl") ? "video-url-error" : undefined}
+            className={inputClass("videoUrl")}
+            defaultValue={state.values.videoUrl}
+            id="videoUrl"
+            name="videoUrl"
+            placeholder="https://www.youtube.com/watch?v=..."
+            type="url"
+          />
+          <InputError id="video-url-error" message={fieldError(state, "videoUrl")} />
+        </div>
+
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="productImage">
+            Photo <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional — JPEG, PNG, or WebP)</span>
+          </label>
+          <input
+            accept="image/jpeg,image/png,image/webp"
+            className="text-sm"
+            id="productImage"
+            onChange={handleImagePick}
+            style={{ color: "var(--ink-2)" }}
+            type="file"
+          />
+          {preparedImage ? (
+            <div className="flex items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="Photo preview" className="h-16 w-16 rounded-xl border object-cover" src={preparedImage.dataUrl} style={{ borderColor: "var(--border)" }} />
+              <p className="field-help m-0">Ready — will be attached when you save.</p>
+            </div>
+          ) : null}
+          {imageError ? <p className="field-error m-0">{imageError}</p> : null}
+          <input name="imageDataUrl" type="hidden" value={preparedImage?.dataUrl ?? ""} />
+          <input name="imageWidth" type="hidden" value={preparedImage?.width ?? ""} />
+          <input name="imageHeight" type="hidden" value={preparedImage?.height ?? ""} />
         </div>
 
         <fieldset
