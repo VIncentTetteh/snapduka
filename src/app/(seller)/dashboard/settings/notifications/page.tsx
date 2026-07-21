@@ -30,6 +30,10 @@ export default async function NotificationSettings() {
           <input defaultChecked={data?.order_whatsapp ?? false} name="whatsapp" type="checkbox" />
           Consent-based WhatsApp
         </label>
+        <label className="flex items-center gap-3 text-sm font-semibold" style={{ color: "var(--ink)" }}>
+          <input defaultChecked={data?.order_sms ?? false} name="sms" type="checkbox" />
+          Consent-based SMS
+        </label>
         <div className="grid gap-1">
           <label className="field-label" htmlFor="frequency">Digest frequency</label>
           <select

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { sendEmail } from "@/lib/notifications/email";
 import { nextAttemptAt } from "@/lib/notifications/outbox";
 import { sendPush } from "@/lib/notifications/push";
+import { sendSms } from "@/lib/notifications/sms";
 import { orderUpdateTemplate } from "@/lib/notifications/templates";
 import { sendWhatsApp } from "@/lib/notifications/whatsapp";
 import { appOrigin } from "@/lib/app-url";
@@ -39,6 +40,9 @@ export async function POST(request: Request) {
         if (!result.delivered) throw new Error(result.reason);
       } else if (claimed.channel === "push") {
         const result = await sendPush(claimed.recipient, template.subject, template.text, String(trackingUrl));
+        if (!result.delivered) throw new Error(result.reason);
+      } else if (claimed.channel === "sms") {
+        const result = await sendSms(claimed.recipient, template.text);
         if (!result.delivered) throw new Error(result.reason);
       } else if (claimed.channel !== "in_app") {
         throw new Error(`Unsupported notification channel: ${claimed.channel}`);
