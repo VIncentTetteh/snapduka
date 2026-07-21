@@ -10,6 +10,7 @@ type Product = {
   description: string;
   currency: "GHS" | "NGN" | "XOF";
   price_minor: number;
+  compare_at_price_minor: number | null;
   inventory_policy: "track" | "continue_selling" | "deny_when_out_of_stock";
   stock_quantity: number | null;
   reserved_quantity: number;
@@ -102,8 +103,15 @@ export function ProductGrid({
               <span className="mb-1 block truncate text-[13.5px] font-semibold text-ink">
                 {product.name}
               </span>
-              <span className="block text-[13.5px] font-bold text-price">
-                {sym} {price}
+              <span className="flex items-center gap-1.5">
+                {product.compare_at_price_minor ? (
+                  <span className="text-[12px] font-semibold text-ink-faint line-through">
+                    {sym} {priceDisplay(product.compare_at_price_minor, product.currency)}
+                  </span>
+                ) : null}
+                <span className="block text-[13.5px] font-bold text-price">
+                  {sym} {price}
+                </span>
               </span>
             </span>
           </Link>
