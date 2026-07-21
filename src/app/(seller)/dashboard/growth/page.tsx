@@ -33,6 +33,11 @@ const TOOLS = [
     body: "Deeper analytics across products, channels and repeat buyers.",
   },
   {
+    href: "/dashboard/growth/profit",
+    label: "Profit",
+    body: "Revenue, cost, and margin per product.",
+  },
+  {
     href: "/dashboard/share",
     label: "Share Studio",
     body: "Short links, captions and story cards for every channel.",
