@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   parseVideoUrl: vi.fn(),
   fetchOembedThumbnail: vi.fn(),
   isSafeHttpUrl: vi.fn(),
+  getSellerPlan: vi.fn(),
+  withinPlanLimit: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/actor", () => ({
@@ -27,7 +29,13 @@ vi.mock("@/lib/catalog/video", () => ({
   isSafeHttpUrl: mocks.isSafeHttpUrl,
 }));
 
-import { setProductVideoAction, updateProductAction } from "./actions";
+vi.mock("@/lib/billing/resolve", () => ({
+  getSellerPlan: mocks.getSellerPlan,
+  planLimit: vi.fn().mockReturnValue(50),
+  withinPlanLimit: mocks.withinPlanLimit,
+}));
+
+import { createProductAction, setProductVideoAction, updateProductAction } from "./actions";
 
 function formData(values: Record<string, string>) {
   const data = new FormData();
@@ -210,5 +218,185 @@ describe("updateProductAction", () => {
 
     expect(shopsEq).toHaveBeenCalledWith("seller_account_id", SELLER_ACTOR.sellerAccountId);
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Builds a full success-path Supabase mock for createProductAction, which
+ * (unlike the other actions in this file) touches three tables in one call:
+ * `shops` (currency check), `products` (plan-limit count, then insert, then
+ * — via the in-process uploadProductImageAction call — a lookup), and
+ * `product_media` (image insert). `overrides.uploadError`/`mediaError` let
+ * individual tests force a failure partway through the photo-upload path.
+ */
+function buildCreateProductSupabaseMock(
+  overrides: { uploadError?: boolean; mediaError?: boolean } = {},
+) {
+  const shopSingle = vi
+    .fn()
+    .mockResolvedValue({ data: { id: "shop-1", currency: "GHS" }, error: null });
+  const shopEq = vi.fn().mockReturnValue({ single: shopSingle });
+  const shopSelect = vi.fn().mockReturnValue({ eq: shopEq });
+
+  // products.select("id", { count, head }).eq(...).neq(...) — plan-limit count query
+  const countNeq = vi.fn().mockResolvedValue({ count: 0, error: null });
+  const countEq = vi.fn().mockReturnValue({ neq: countNeq });
+
+  // products.select("id").eq(...).eq(...).single() — uploadProductImageAction's own lookup
+  const lookupSingle = vi.fn().mockResolvedValue({ data: { id: "product-1" } });
+  const lookupEq2 = vi.fn().mockReturnValue({ single: lookupSingle });
+  const lookupEq1 = vi.fn().mockReturnValue({ eq: lookupEq2 });
+
+  const productsSelect = vi.fn((_column: string, opts?: { count?: string; head?: boolean }) => {
+    if (opts?.count) return { eq: countEq };
+    return { eq: lookupEq1 };
+  });
+
+  const insertSingle = vi.fn().mockResolvedValue({ data: { id: "product-1" }, error: null });
+  const insertSelect = vi.fn().mockReturnValue({ single: insertSingle });
+  const productsInsert = vi.fn().mockReturnValue({ select: insertSelect });
+  const productsDeleteEq = vi.fn().mockResolvedValue({});
+  const productsDelete = vi.fn().mockReturnValue({ eq: productsDeleteEq });
+
+  const mediaMaybeSingle = vi.fn().mockResolvedValue({ data: null });
+  const mediaLimit = vi.fn().mockReturnValue({ maybeSingle: mediaMaybeSingle });
+  const mediaOrder = vi.fn().mockReturnValue({ limit: mediaLimit });
+  const mediaEq = vi.fn().mockReturnValue({ order: mediaOrder });
+  const mediaSelect = vi.fn().mockReturnValue({ eq: mediaEq });
+  const mediaInsert = vi
+    .fn()
+    .mockResolvedValue({ error: overrides.mediaError ? new Error("media insert failed") : null });
+
+  const storageUpload = vi
+    .fn()
+    .mockResolvedValue({ error: overrides.uploadError ? new Error("upload failed") : null });
+  const storageRemove = vi.fn().mockResolvedValue({});
+  const storageFrom = vi.fn().mockReturnValue({ upload: storageUpload, remove: storageRemove });
+
+  const from = vi.fn((table: string) => {
+    if (table === "shops") return { select: shopSelect };
+    if (table === "products") {
+      return { select: productsSelect, insert: productsInsert, delete: productsDelete };
+    }
+    if (table === "product_media") return { select: mediaSelect, insert: mediaInsert };
+    throw new Error(`unexpected table ${table}`);
+  });
+
+  return { from, storage: { from: storageFrom }, productsInsert, mediaInsert, storageUpload };
+}
+
+const CREATE_PRODUCT_REQUIRED_FIELDS = {
+  name: "Test Product",
+  description: "",
+  price: "10000",
+  currency: "GHS",
+  inventoryPolicy: "continue_selling",
+  stockQuantity: "",
+  sku: "",
+  status: "draft",
+};
+
+describe("createProductAction — cost, compare-at, video, and photo", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    mocks.getSellerPlan.mockResolvedValue({});
+    mocks.withinPlanLimit.mockReturnValue(true);
+    mocks.isSafeHttpUrl.mockReturnValue(true);
+  });
+
+  it("stores cost_minor and compare_at_price_minor on the inserted row", async () => {
+    const { from, productsInsert } = buildCreateProductSupabaseMock();
+    mocks.createClient.mockResolvedValue({ from, storage: { from: vi.fn() } });
+
+    const state = await createProductAction(
+      { status: "idle", values: {} },
+      formData({
+        ...CREATE_PRODUCT_REQUIRED_FIELDS,
+        costPrice: "8000",
+        compareAtPrice: "18000",
+      }),
+    );
+
+    expect(productsInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ cost_minor: 8000, compare_at_price_minor: 18000 }),
+    );
+    expect(state.status).toBe("success");
+  });
+
+  it("parses and stores video fields when a videoUrl is submitted", async () => {
+    mocks.parseVideoUrl.mockReturnValue({
+      provider: "youtube",
+      videoId: "abc123",
+      thumbnailUrl: "https://i.ytimg.com/vi/abc123/hqdefault.jpg",
+    });
+
+    const { from, productsInsert } = buildCreateProductSupabaseMock();
+    mocks.createClient.mockResolvedValue({ from, storage: { from: vi.fn() } });
+
+    const state = await createProductAction(
+      { status: "idle", values: {} },
+      formData({
+        ...CREATE_PRODUCT_REQUIRED_FIELDS,
+        videoUrl: "https://www.youtube.com/watch?v=abc123",
+      }),
+    );
+
+    expect(productsInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video_url: "https://www.youtube.com/watch?v=abc123",
+        video_provider: "youtube",
+        video_id: "abc123",
+        video_thumbnail_url: "https://i.ytimg.com/vi/abc123/hqdefault.jpg",
+      }),
+    );
+    expect(mocks.fetchOembedThumbnail).not.toHaveBeenCalled();
+    expect(state.status).toBe("success");
+  });
+
+  it("calls uploadProductImageAction with the created product's id when imageDataUrl is submitted", async () => {
+    const { from, storage, storageUpload, mediaInsert } = buildCreateProductSupabaseMock();
+    mocks.createClient.mockResolvedValue({ from, storage });
+
+    const state = await createProductAction(
+      { status: "idle", values: {} },
+      formData({
+        ...CREATE_PRODUCT_REQUIRED_FIELDS,
+        imageDataUrl: "data:image/jpeg;base64,AAAA",
+        imageWidth: "800",
+        imageHeight: "600",
+      }),
+    );
+
+    expect(storageUpload).toHaveBeenCalledWith(
+      expect.stringContaining("product-1"),
+      expect.any(Buffer),
+      expect.objectContaining({ contentType: "image/jpeg" }),
+    );
+    expect(mediaInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ product_id: "product-1", width: 800, height: 600 }),
+    );
+    expect(state.status).toBe("success");
+    expect(state.productId).toBe("product-1");
+    expect(state.message).not.toContain("Photo upload failed");
+  });
+
+  it("still succeeds creating the product when imageDataUrl is present but the image upload fails", async () => {
+    const { from, storage } = buildCreateProductSupabaseMock({ uploadError: true });
+    mocks.createClient.mockResolvedValue({ from, storage });
+
+    const state = await createProductAction(
+      { status: "idle", values: {} },
+      formData({
+        ...CREATE_PRODUCT_REQUIRED_FIELDS,
+        imageDataUrl: "data:image/jpeg;base64,AAAA",
+        imageWidth: "800",
+        imageHeight: "600",
+      }),
+    );
+
+    expect(state.status).toBe("success");
+    expect(state.productId).toBe("product-1");
+    expect(state.message).toContain("Photo upload failed");
   });
 });
