@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   }
   const payload = JSON.parse(new TextDecoder().decode(raw));
   const admin = createAdminClient();
-  const eventKey = String(payload.data?.id ?? createHash("sha256").update(raw).digest("hex"));
+  const eventKey = `${payload.event}:${String(payload.data?.id ?? createHash("sha256").update(raw).digest("hex"))}`;
 
   if (payload.event === "charge.success") {
     const reference = payload.data?.reference;
