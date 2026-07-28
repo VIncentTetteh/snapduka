@@ -55,12 +55,14 @@ describe("sendOtpAction", () => {
     );
   });
 
-  it("sends an SMS OTP when the identifier is a phone number", async () => {
+  it("sends an SMS OTP when the phone tab is used", async () => {
     const signInWithOtp = vi.fn().mockResolvedValue({ error: null });
     mocks.createClient.mockResolvedValue({ auth: { signInWithOtp } });
 
     await expect(
-      sendOtpAction(formData({ identifier: "+233241234567", next: "/dashboard" })),
+      sendOtpAction(
+        formData({ identifier: "+233241234567", mode: "phone", region: "GH", next: "/dashboard" }),
+      ),
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(signInWithOtp).toHaveBeenCalledWith({
@@ -69,15 +71,78 @@ describe("sendOtpAction", () => {
     });
   });
 
-  it("rejects an identifier that is neither a valid email nor phone", async () => {
+  it("normalizes a locally-typed phone number to E.164 before sending", async () => {
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null });
+    mocks.createClient.mockResolvedValue({ auth: { signInWithOtp } });
+
     await expect(
-      sendOtpAction(formData({ identifier: "not valid", next: "/dashboard" })),
+      sendOtpAction(
+        formData({ identifier: "024 123 4567", mode: "phone", region: "GH", next: "/dashboard" }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: "+233241234567",
+      options: { channel: "sms" },
+    });
+  });
+
+  it("re-validates server-side, so a bad value never reaches Supabase even if the client allowed it", async () => {
+    await expect(
+      sendOtpAction(formData({ identifier: "not valid", mode: "email", next: "/dashboard" })),
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(mocks.createClient).not.toHaveBeenCalled();
     expect(mocks.redirect).toHaveBeenCalledWith(
-      expect.stringContaining("Enter+a+valid+email+address+or+phone+number"),
+      expect.stringContaining("Enter+a+valid+email+address"),
     );
+  });
+
+  it("rejects a phone number submitted under the email tab", async () => {
+    await expect(
+      sendOtpAction(formData({ identifier: "+233241234567", mode: "email", next: "/dashboard" })),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  it("rejects a wrong-length number for the submitted region", async () => {
+    await expect(
+      sendOtpAction(
+        formData({ identifier: "2412345", mode: "phone", region: "GH", next: "/dashboard" }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("9+digits"));
+  });
+
+  it("falls back to safe defaults when mode and region are tampered with", async () => {
+    // A hand-crafted POST can send anything; unknown values must not widen
+    // validation. Unknown mode -> email, so a phone value is rejected.
+    await expect(
+      sendOtpAction(
+        formData({ identifier: "+233241234567", mode: "sms", region: "US", next: "/dashboard" }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  it("accepts any E.164 number when the region is Other", async () => {
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null });
+    mocks.createClient.mockResolvedValue({ auth: { signInWithOtp } });
+
+    await expect(
+      sendOtpAction(
+        formData({ identifier: "+254712345678", mode: "phone", region: "OTHER", next: "/dashboard" }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      phone: "+254712345678",
+      options: { channel: "sms" },
+    });
   });
 
   it("blocks sending when the rate limit is exceeded", async () => {
@@ -102,7 +167,9 @@ describe("sendOtpAction", () => {
     });
 
     await expect(
-      sendOtpAction(formData({ identifier: "+233241234567", next: "/dashboard" })),
+      sendOtpAction(
+        formData({ identifier: "+233241234567", mode: "phone", region: "GH", next: "/dashboard" }),
+      ),
     ).rejects.toThrow("NEXT_REDIRECT");
 
     expect(mocks.checkRateLimit).toHaveBeenCalledWith(

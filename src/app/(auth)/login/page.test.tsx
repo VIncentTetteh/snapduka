@@ -11,11 +11,13 @@ describe("LoginPage", () => {
     delete process.env.NEXT_PUBLIC_AUTH_APPLE_ENABLED;
   });
 
-  it("shows a single identifier field and no password field on the default step", async () => {
+  it("shows Email/Phone tabs and no password field on the default step", async () => {
     const page = await LoginPage({ searchParams: Promise.resolve({}) });
     render(page);
 
-    expect(screen.getByLabelText(/email or phone number/i)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Email" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Phone" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send me a code/i })).toBeInTheDocument();
   });

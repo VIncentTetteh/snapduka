@@ -26,3 +26,9 @@ export function isValidPhoneForCountry(normalizedPhone: string, country: Country
 export function phoneExampleFor(country: CountryCode): string {
   return PHONE_RULES[country].example;
 }
+
+/** Digits expected after the calling code. Lets callers write an exact
+ * error ("Ghana numbers have 9 digits after +233") instead of a vague one. */
+export function phoneLocalDigitsFor(country: CountryCode): number {
+  return PHONE_RULES[country].localDigits;
+}

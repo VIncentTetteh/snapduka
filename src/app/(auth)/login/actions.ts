@@ -5,7 +5,15 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { appOrigin } from "@/lib/app-url";
-import { classifyIdentifier } from "@/lib/auth/identifier";
+import {
+  DEFAULT_PHONE_REGION,
+  classifyIdentifier,
+  isIdentifierMode,
+  isPhoneRegion,
+  validateIdentifier,
+  type IdentifierMode,
+  type PhoneRegion,
+} from "@/lib/auth/identifier";
 import { safeNextPath } from "@/lib/auth/redirect";
 import { isSocialProviderEnabled } from "@/lib/auth/social";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -97,10 +105,19 @@ export async function sendOtpAction(formData: FormData): Promise<never> {
     loginRedirect("error", `Too many attempts. Try again in ${waitSec} seconds.`, next);
   }
 
-  const identifier = classifyIdentifier(formValue(formData, "identifier"));
-  if (identifier.kind === "invalid") {
-    loginRedirect("error", "Enter a valid email address or phone number.", next);
+  // Re-run the form's own validation here rather than trusting it. The client
+  // sends mode/region as plain fields, so both are treated as untrusted input
+  // and fall back to safe defaults when absent or tampered with.
+  const rawMode = formValue(formData, "mode");
+  const mode: IdentifierMode = isIdentifierMode(rawMode) ? rawMode : "email";
+  const rawRegion = formValue(formData, "region");
+  const region: PhoneRegion = isPhoneRegion(rawRegion) ? rawRegion : DEFAULT_PHONE_REGION;
+
+  const validated = validateIdentifier(mode, formValue(formData, "identifier"), region);
+  if (!validated.ok) {
+    loginRedirect("error", validated.message, next);
   }
+  const identifier = { kind: validated.kind, value: validated.value };
 
   const identifierRl = await checkRateLimit(`auth:send-otp:target:${identifier.value}`, IDENTIFIER_SEND_LIMIT);
   if (!identifierRl.ok) {

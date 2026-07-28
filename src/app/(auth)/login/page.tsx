@@ -7,6 +7,7 @@ import { safeNextPath } from "@/lib/auth/redirect";
 import { isSocialProviderEnabled } from "@/lib/auth/social";
 
 import { resendOtpAction, sendOtpAction, signInWithSocial, verifyOtpAction } from "./actions";
+import { IdentifierForm } from "./identifier-form";
 import { SubmitButton } from "./submit-button";
 
 export const metadata: Metadata = {
@@ -73,7 +74,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <p className="mb-6.5 text-[14px] leading-[1.6] text-ink-soft">
             {isCodeStep
               ? "We sent a 6-digit code — enter it below to continue."
-              : "One account for your storefront, orders and payouts. Enter your email or phone — no password needed."}
+              : "One account for your storefront, orders and payouts."}
           </p>
 
           {error ? (
@@ -146,27 +147,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             </>
           ) : (
             <>
-              <form action={sendOtpAction} className="grid gap-3.5">
-                <input name="next" type="hidden" value={next} />
-                <label className="grid gap-1.5 text-[12.5px] font-semibold" htmlFor="auth-identifier">
-                  <span>Email or phone number<Req /></span>
-                  <input
-                    autoComplete="username"
-                    className={INPUT_CLASSES}
-                    id="auth-identifier"
-                    name="identifier"
-                    placeholder="you@example.com or +233201234567"
-                    required
-                    type="text"
-                  />
-                </label>
-                <SubmitButton
-                  className="h-[50px] cursor-pointer rounded-[11px] border-none bg-accent text-[15px] font-bold text-white transition-colors hover:bg-accent-deep disabled:cursor-wait disabled:bg-[#C08B6E]"
-                  pendingLabel="Sending code…"
-                >
-                  Send me a code
-                </SubmitButton>
-              </form>
+              <IdentifierForm action={sendOtpAction} next={next} />
 
               {googleEnabled ? (
                 <>
