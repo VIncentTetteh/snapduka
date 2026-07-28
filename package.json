@@ -27,6 +27,7 @@
     "supabase:stop": "supabase stop",
     "create:operator": "node scripts/local-supabase-env.mjs node scripts/create-operator.mjs",
     "email:test": "node scripts/send-test-email.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db"
   },
