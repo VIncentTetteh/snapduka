@@ -26,6 +26,7 @@
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "create:operator": "node scripts/local-supabase-env.mjs node scripts/create-operator.mjs",
+    "email:test": "node scripts/send-test-email.mjs",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db"
   },
@@ -33,6 +34,7 @@
     "@supabase/ssr": "0.12.0",
     "@supabase/supabase-js": "2.108.1",
     "next": "16.2.9",
+    "nodemailer": "7.0.10",
     "qrcode": "^1.5.4",
     "react": "19.2.7",
     "react-dom": "19.2.7",
@@ -47,6 +49,7 @@
     "@testing-library/react": "16.3.2",
     "@testing-library/user-event": "14.6.1",
     "@types/node": "22.19.15",
+    "@types/nodemailer": "7.0.4",
     "@types/qrcode": "^1.5.6",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",

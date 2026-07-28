@@ -1,7 +1,23 @@
+/**
+ * Whether the Techieszon credentials are present, without making a request.
+ *
+ * Lets callers that must answer before sending — the Supabase Send SMS hook,
+ * which has a hard 5s budget — reject an unconfigured provider up front
+ * instead of discovering it after the response has already gone out.
+ */
+export function isSmsConfigured(): boolean {
+  return Boolean(
+    process.env.TECHIESZON_SMS_API_KEY &&
+      process.env.TECHIESZON_SMS_API_URL &&
+      process.env.TECHIESZON_SMS_SENDER_ID,
+  );
+}
+
 export async function sendSms(recipient: string, text: string) {
   const apiKey = process.env.TECHIESZON_SMS_API_KEY;
   const apiUrl = process.env.TECHIESZON_SMS_API_URL;
   const senderId = process.env.TECHIESZON_SMS_SENDER_ID;
+  // Inline rather than via isSmsConfigured() so TypeScript narrows all three.
   if (!apiKey || !apiUrl || !senderId) return { delivered: false, reason: "not_configured" };
   const url = new URL(`${apiUrl}?action=send-sms`);
   url.searchParams.set("api_key", apiKey);

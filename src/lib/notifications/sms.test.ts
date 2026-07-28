@@ -1,6 +1,45 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { sendSms } from "@/lib/notifications/sms";
+import { isSmsConfigured, sendSms } from "@/lib/notifications/sms";
+
+describe("isSmsConfigured", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is true only when all three Techieszon vars are present", () => {
+    vi.stubEnv("TECHIESZON_SMS_API_KEY", "test-key");
+    vi.stubEnv("TECHIESZON_SMS_API_URL", "https://smsapp.techieszon.com/sms/api");
+    vi.stubEnv("TECHIESZON_SMS_SENDER_ID", "Techieszon");
+
+    expect(isSmsConfigured()).toBe(true);
+  });
+
+  it.each(["TECHIESZON_SMS_API_KEY", "TECHIESZON_SMS_API_URL", "TECHIESZON_SMS_SENDER_ID"])(
+    "is false when %s is missing",
+    (missing) => {
+      vi.stubEnv("TECHIESZON_SMS_API_KEY", "test-key");
+      vi.stubEnv("TECHIESZON_SMS_API_URL", "https://smsapp.techieszon.com/sms/api");
+      vi.stubEnv("TECHIESZON_SMS_SENDER_ID", "Techieszon");
+      vi.stubEnv(missing, "");
+
+      expect(isSmsConfigured()).toBe(false);
+    },
+  );
+
+  it("makes no network request", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("TECHIESZON_SMS_API_KEY", "test-key");
+    vi.stubEnv("TECHIESZON_SMS_API_URL", "https://smsapp.techieszon.com/sms/api");
+    vi.stubEnv("TECHIESZON_SMS_SENDER_ID", "Techieszon");
+
+    isSmsConfigured();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
 
 describe("sendSms", () => {
   afterEach(() => {
