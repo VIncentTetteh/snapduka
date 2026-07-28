@@ -2,19 +2,21 @@ import Link from "next/link";
 
 import { appHost } from "@/lib/app-url";
 
+import { AccountMenu } from "@/components/seller/account-menu";
 import { NotificationsBell } from "@/components/seller/notifications-bell";
-import { InitialsAvatar } from "@/components/ui/gradient-placeholder";
 import { LogoMark } from "@/components/ui/logo";
 
-/** Top bar of the seller app: store-link pill, notifications, avatar. */
+/** Top bar of the seller app: store-link pill, notifications, account menu. */
 export async function DashboardHeader({
   slug,
   isPublished,
   ownerName,
+  shopName,
 }: {
   slug: string | null;
   isPublished: boolean;
   ownerName: string;
+  shopName: string;
 }) {
   const host = await appHost();
   return (
@@ -42,13 +44,7 @@ export async function DashboardHeader({
         ) : null}
         <div className="flex-1" />
         <NotificationsBell />
-        <Link
-          href="/dashboard/settings"
-          aria-label="Account settings"
-          className="no-underline"
-        >
-          <InitialsAvatar name={ownerName} className="h-10 w-10 text-[13px]" />
-        </Link>
+        <AccountMenu ownerName={ownerName} shopName={shopName} />
       </div>
     </header>
   );

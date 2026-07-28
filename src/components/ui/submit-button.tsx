@@ -8,6 +8,8 @@ type SubmitButtonProps = {
   pendingLabel?: string;
   className?: string;
   disabled?: boolean;
+  /** ARIA role override, e.g. "menuitem" inside a role="menu" container. */
+  role?: string;
 };
 
 /**
@@ -15,10 +17,16 @@ type SubmitButtonProps = {
  * (or `children` if omitted) and disables itself while the enclosing
  * <form>'s action is in flight.
  */
-export function SubmitButton({ children, pendingLabel, className, disabled }: SubmitButtonProps) {
+export function SubmitButton({ children, pendingLabel, className, disabled, role }: SubmitButtonProps) {
   const { pending } = useFormStatus();
   return (
-    <button aria-disabled={pending || disabled} className={className} disabled={pending || disabled} type="submit">
+    <button
+      aria-disabled={pending || disabled}
+      className={className}
+      disabled={pending || disabled}
+      role={role}
+      type="submit"
+    >
       {pending ? (pendingLabel ?? children) : children}
     </button>
   );

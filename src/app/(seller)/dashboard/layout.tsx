@@ -40,6 +40,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <DashboardHeader
           isPublished={shop?.status === "published"}
           ownerName={ownerName}
+          shopName={shopName}
           slug={shop?.slug ?? null}
         />
         <div className="pb-24 md:pb-8">{children}</div>

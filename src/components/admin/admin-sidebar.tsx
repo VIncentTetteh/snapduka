@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { SignOutForm } from "@/components/ui/sign-out-form";
+
 function StrokeIcon({ d }: { d: string }) {
   return (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -120,8 +122,9 @@ export function AdminSidebar({
 
       {/* Operator */}
       <div className="border-t border-paper/12 px-4.5 py-4">
-        <p className="text-[12.5px] font-semibold text-paper">{operatorName}</p>
+        <p className="truncate text-[12.5px] font-semibold text-paper">{operatorName}</p>
         <p className="text-[11px] text-[#B8AEA1]">Operator</p>
+        <SignOutForm className="mt-2.5 w-full cursor-pointer rounded-[8px] border border-paper/20 bg-transparent px-2.5 py-1.5 text-[12px] font-semibold text-paper transition-colors hover:bg-paper/10" />
       </div>
     </aside>
   );
