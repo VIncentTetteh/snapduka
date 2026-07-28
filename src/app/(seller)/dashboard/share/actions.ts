@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
+import { generateCampaignToken, isUniqueViolation } from "@/lib/campaigns/tokens";
 import { createClient } from "@/lib/supabase/server";
 
 export async function disconnectSocialAccountAction(formData: FormData): Promise<void> {
@@ -28,8 +29,10 @@ const CHANNEL_SUFFIX: Record<(typeof CHANNELS)[number], string> = {
   whatsapp: "w",
 };
 
+// Was Math.random().toString(36).slice(2, 6): a ~1.7M keyspace on a globally
+// unique column, enumerable by anyone who wanted another seller's links.
 function shortCode(): string {
-  return Math.random().toString(36).slice(2, 6);
+  return generateCampaignToken(6);
 }
 
 /** Creates the per-channel tracked short links for a destination if missing. */
@@ -66,8 +69,15 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
     active: true,
   }));
 
-  if (rows.length > 0) {
-    await supabase.from("campaign_links").insert(rows);
+  // Retry the whole batch on a token collision rather than swallowing the
+  // error, which used to look to the seller like links that never appeared.
+  for (let attempt = 0; rows.length > 0 && attempt < 5; attempt++) {
+    const prefix = attempt === 0 ? base : shortCode();
+    const { error } = await supabase
+      .from("campaign_links")
+      .insert(rows.map((row) => ({ ...row, token: `${prefix}-${row.token.split("-").pop()}` })));
+    if (!error) break;
+    if (!isUniqueViolation(error)) break;
   }
 
   revalidatePath("/dashboard/share");

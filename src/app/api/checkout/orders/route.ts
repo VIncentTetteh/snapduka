@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { ATTRIBUTION_COOKIE, decodeAttribution } from "@/lib/campaigns/attribution";
 import { parseGuestOrder } from "@/lib/commerce/order";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -38,6 +40,14 @@ export async function POST(request: Request) {
   }
 
   const growth = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+
+  // Attribution decides who earns commission, so it is taken from the signed
+  // cookie the /l/ redirect set — not from the request body, which any caller
+  // can put any token in. The body token stays as a fallback for browsers that
+  // dropped the cookie, and is recorded as such by the RPC.
+  const attribution = decodeAttribution((await cookies()).get(ATTRIBUTION_COOKIE)?.value);
+  const bodyToken = typeof growth.campaignToken === "string" ? growth.campaignToken : null;
+
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("create_guest_order_growth", {
     p_shop_id: parsed.data.shopId,
@@ -47,7 +57,8 @@ export async function POST(request: Request) {
     p_idempotency_key: parsed.data.idempotencyKey,
     p_payment_method: parsed.data.paymentMethod,
     p_promotion_code: typeof growth.promotionCode === "string" ? growth.promotionCode : null,
-    p_campaign_token: typeof growth.campaignToken === "string" ? growth.campaignToken : null,
+    p_campaign_token: attribution?.token ?? bodyToken,
+    p_click_id: attribution?.clickId ?? null,
   });
 
   if (error) {

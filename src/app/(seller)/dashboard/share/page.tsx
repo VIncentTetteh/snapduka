@@ -73,7 +73,7 @@ export default async function ShareStudioPage({
         .order("created_at", { ascending: false }),
       supabase
         .from("campaign_attributions")
-        .select("campaign_id,order_id")
+        .select("campaign_id,order_id,click_count")
         .eq("seller_account_id", actor.sellerAccountId),
       supabase
         .from("analytics_events")
@@ -110,11 +110,13 @@ export default async function ShareStudioPage({
   const storeUrl = `${origin}/${shop.slug}`;
   const targetUrl = selectedProduct ? `${origin}${destinationPath}` : storeUrl;
 
+  // A row with an order_id is a conversion, not a click. Counting every row as
+  // a click meant each order silently incremented the click total too.
   const clicksByCampaign = (attributions ?? []).reduce<Record<string, { clicks: number; orders: number }>>(
     (acc, attribution) => {
       const entry = (acc[attribution.campaign_id] ??= { clicks: 0, orders: 0 });
-      entry.clicks += 1;
       if (attribution.order_id) entry.orders += 1;
+      else entry.clicks += attribution.click_count ?? 1;
       return acc;
     },
     {},
@@ -127,7 +129,9 @@ export default async function ShareStudioPage({
 
   const qrDataUrl = await QRCode.toDataURL(targetUrl, { width: 480, margin: 2 });
 
-  const totalClicks = (attributions ?? []).length;
+  const totalClicks = (attributions ?? [])
+    .filter((attribution) => !attribution.order_id)
+    .reduce((sum, attribution) => sum + (attribution.click_count ?? 1), 0);
   const visits = events?.filter((e) => e.event_type === "visit").length ?? 0;
   const checkoutStarts = events?.filter((e) => e.event_type === "checkout_start").length ?? 0;
 
