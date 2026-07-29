@@ -67,6 +67,11 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
         icon: <StrokeIcon d="M13.5 6.5 6.8 9.6m0 .9 6.7 3M16 5a2.2 2.2 0 1 1-4.4 0A2.2 2.2 0 0 1 16 5ZM8.4 10a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0Zm7.6 5a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0Z" />,
       },
       {
+        href: "/dashboard/creators",
+        label: "Creators",
+        icon: <StrokeIcon d="M12.5 6.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm4.5 10c-.4-2.3-2.6-3.5-5-3.5m-7 3.5c.4-2.3 2.6-3.5 5-3.5M16 8.5a1.8 1.8 0 1 1-3.5 0 1.8 1.8 0 0 1 3.5 0Z" />,
+      },
+      {
         href: "/dashboard/growth",
         label: "Growth",
         icon: <StrokeIcon d="M3.5 16.5v-13M3.5 16.5h13M7 13.5v-3m3.5 3v-6m3.5 6v-4.5" />,
