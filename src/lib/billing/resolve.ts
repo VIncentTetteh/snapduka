@@ -29,6 +29,8 @@ export const FREE_PLAN_FALLBACK: Record<string, EntitlementValue> = {
   automationRules: 0,
   apiKeys: 0,
   discovery: true,
+  creatorProgram: false,
+  creatorPartnerships: 0,
 };
 
 /** States that grant the paid plan's entitlements. "trialing" is only a

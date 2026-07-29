@@ -191,6 +191,12 @@ export default async function OnboardingPage() {
     redirect(`/login?${new URLSearchParams({ next: "/onboarding" })}`);
   }
 
+  // A creator signing in has no seller account, so without this they would be
+  // walked through seller onboarding instead of reaching their own dashboard.
+  if (actor.kind === "creator") {
+    redirect("/creator");
+  }
+
   if (actor.kind === "operator") {
     return statePage(
       "Seller onboarding unavailable",

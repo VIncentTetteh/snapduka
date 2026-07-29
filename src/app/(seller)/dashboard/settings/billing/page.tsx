@@ -51,6 +51,9 @@ function featureBullets(entitlements: Record<string, EntitlementValue>): string[
         : "Owner account only"
       : null,
     n("campaigns") === true ? "Tracked share links" : null,
+    n("creatorProgram") === true && typeof n("creatorPartnerships") === "number"
+      ? `Pay up to ${n("creatorPartnerships")} creators on commission`
+      : null,
     n("promotions") === true ? "Discount promotions" : null,
     typeof n("customerSegments") === "number" && Number(n("customerSegments")) > 0
       ? `${n("customerSegments")} customer segments`

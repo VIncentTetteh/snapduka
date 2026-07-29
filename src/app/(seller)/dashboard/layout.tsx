@@ -13,6 +13,9 @@ export const dynamic = "force-dynamic";
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const actor = await resolveServerActor();
   if (actor.kind === "unprovisioned") redirect("/onboarding");
+  // Without this a signed-in creator is bounced to /login, which then signs
+  // them straight back in — a loop rather than a redirect.
+  if (actor.kind === "creator") redirect("/creator");
   if (actor.kind !== "seller") redirect("/login?next=/dashboard");
 
   const supabase = await createClient();

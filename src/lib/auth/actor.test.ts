@@ -113,3 +113,103 @@ describe("resolveServerActor", () => {
     });
   });
 });
+
+describe("resolveActor — creator", () => {
+  const user: VerifiedAuthUser = {
+    id: "user-creator",
+    email: "ama@example.com",
+    appMetadata: {},
+  };
+  const creator = { id: "creator-1", handle: "ama_sika", country: "GH" as const };
+
+  it("resolves a creator when there is no seller account or membership", async () => {
+    const deps: ActorResolverDependencies = {
+      getVerifiedUser: vi.fn().mockResolvedValue(user),
+      getSellerByAuthUserId: vi.fn().mockResolvedValue(null),
+      getMembershipByAuthUserId: vi.fn().mockResolvedValue(null),
+      getCreatorByAuthUserId: vi.fn().mockResolvedValue(creator),
+    };
+
+    await expect(resolveActor(deps)).resolves.toEqual({
+      kind: "creator",
+      authenticated: true,
+      userId: "user-creator",
+      email: "ama@example.com",
+      creatorId: "creator-1",
+      handle: "ama_sika",
+      country: "GH",
+    });
+  });
+
+  // The precedence that keeps every existing `actor.kind !== "seller"` guard
+  // correct without touching a single one of them.
+  it("resolves a seller first when the same user is both", async () => {
+    const getCreator = vi.fn().mockResolvedValue(creator);
+    const deps: ActorResolverDependencies = {
+      getVerifiedUser: vi.fn().mockResolvedValue(user),
+      getSellerByAuthUserId: vi
+        .fn()
+        .mockResolvedValue({ id: "seller-1", country: "GH", status: "active" }),
+      getCreatorByAuthUserId: getCreator,
+    };
+
+    const actor = await resolveActor(deps);
+
+    expect(actor.kind).toBe("seller");
+    expect(getCreator).not.toHaveBeenCalled();
+  });
+
+  it("resolves a team member before a creator", async () => {
+    const getCreator = vi.fn().mockResolvedValue(creator);
+    const deps: ActorResolverDependencies = {
+      getVerifiedUser: vi.fn().mockResolvedValue(user),
+      getSellerByAuthUserId: vi.fn().mockResolvedValue(null),
+      getMembershipByAuthUserId: vi
+        .fn()
+        .mockResolvedValue({ id: "seller-2", country: "GH", status: "active", role: "catalog" }),
+      getCreatorByAuthUserId: getCreator,
+    };
+
+    const actor = await resolveActor(deps);
+
+    expect(actor.kind).toBe("seller");
+    expect(getCreator).not.toHaveBeenCalled();
+  });
+
+  it("still resolves unprovisioned when the user is not a creator either", async () => {
+    const deps: ActorResolverDependencies = {
+      getVerifiedUser: vi.fn().mockResolvedValue(user),
+      getSellerByAuthUserId: vi.fn().mockResolvedValue(null),
+      getCreatorByAuthUserId: vi.fn().mockResolvedValue(null),
+    };
+
+    await expect(resolveActor(deps)).resolves.toMatchObject({ kind: "unprovisioned" });
+  });
+
+  // Back-compat: callers that predate the creator program inject only the two
+  // seller dependencies and must keep working.
+  it("falls back to unprovisioned when the creator dependency is not injected", async () => {
+    const deps: ActorResolverDependencies = {
+      getVerifiedUser: vi.fn().mockResolvedValue(user),
+      getSellerByAuthUserId: vi.fn().mockResolvedValue(null),
+    };
+
+    await expect(resolveActor(deps)).resolves.toMatchObject({ kind: "unprovisioned" });
+  });
+
+  it("keeps operator resolution ahead of everything", async () => {
+    const getCreator = vi.fn().mockResolvedValue(creator);
+    const deps: ActorResolverDependencies = {
+      getVerifiedUser: vi
+        .fn()
+        .mockResolvedValue({ ...user, appMetadata: { snapduka_role: "operator" } }),
+      getSellerByAuthUserId: vi.fn().mockResolvedValue(null),
+      getCreatorByAuthUserId: getCreator,
+    };
+
+    const actor = await resolveActor(deps);
+
+    expect(actor.kind).toBe("operator");
+    expect(getCreator).not.toHaveBeenCalled();
+  });
+});

@@ -23,6 +23,16 @@ export type SellerActor = {
   role?: "manager" | "catalog" | "fulfillment" | "support" | "analyst";
 };
 
+export type CreatorActor = {
+  kind: "creator";
+  authenticated: true;
+  userId: string;
+  email: string | null;
+  creatorId: string;
+  handle: string;
+  country: "GH" | "NG" | "CI";
+};
+
 export type OperatorActor = {
   kind: "operator";
   authenticated: true;
@@ -35,12 +45,19 @@ export type Actor =
   | AnonymousActor
   | UnprovisionedActor
   | SellerActor
+  | CreatorActor
   | OperatorActor;
 
 export type VerifiedAuthUser = {
   id: string;
   email: string | null;
   appMetadata: Record<string, unknown>;
+};
+
+export type CreatorIdentity = {
+  id: string;
+  handle: string;
+  country: "GH" | "NG" | "CI";
 };
 
 export type SellerAccountIdentity = {
@@ -55,6 +72,8 @@ export type ActorResolverDependencies = {
     authUserId: string,
   ) => Promise<SellerAccountIdentity | null>;
   getMembershipByAuthUserId?: (authUserId: string) => Promise<(SellerAccountIdentity & { role: NonNullable<SellerActor["role"]> }) | null>;
+  /** Optional so existing callers that only inject the seller deps still typecheck. */
+  getCreatorByAuthUserId?: (authUserId: string) => Promise<CreatorIdentity | null>;
 };
 
 export async function resolveActor(
@@ -83,6 +102,22 @@ export async function resolveActor(
   const membership = seller ? null : await dependencies.getMembershipByAuthUserId?.(user.id);
 
   if (!seller && !membership) {
+    // Checked after seller and team membership, so a user who is both keeps
+    // resolving as a seller and every `actor.kind !== "seller"` guard in the
+    // dashboard keeps rejecting creators with no edit.
+    const creator = await dependencies.getCreatorByAuthUserId?.(user.id);
+    if (creator) {
+      return {
+        kind: "creator",
+        authenticated: true,
+        userId: user.id,
+        email: user.email,
+        creatorId: creator.id,
+        handle: creator.handle,
+        country: creator.country,
+      };
+    }
+
     return {
       kind: "unprovisioned",
       authenticated: true,
@@ -142,6 +177,17 @@ async function createSupabaseDependencies(): Promise<ActorResolverDependencies> 
       if (error || !data?.seller_accounts) return null;
       const seller=data.seller_accounts as unknown as SellerAccountIdentity;
       return {...seller,role:data.role as NonNullable<SellerActor["role"]>};
+    },
+    async getCreatorByAuthUserId(authUserId) {
+      const { data, error } = await supabase
+        .from("creators")
+        .select("id, handle, country")
+        .eq("auth_user_id", authUserId)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (error) return null;
+      return data as CreatorIdentity | null;
     },
   };
 }
