@@ -283,3 +283,26 @@ export const PROMOTIONS = [
     ends_days_ahead: -80,
   },
 ];
+
+/**
+ * Demo creator for the Sika Threads shop.
+ *
+ * Needs its own auth user because a creator is a distinct actor — the seeder
+ * creates one via the admin API. The handle and ids are fixed like everything
+ * else here so re-running updates in place.
+ */
+export const CREATOR = {
+  id: "c0000000-0000-4000-8000-000000000001",
+  partnershipId: "c0000000-0000-4000-8000-000000000002",
+  linkId: "c0000000-0000-4000-8000-000000000003",
+  email: "vincentgtetteh+akua@gmail.com",
+  handle: "akua_creates",
+  displayName: "Akua Creates",
+  contactPhone: "+233246110284",
+  country: "GH",
+  // 12.5% is a realistic micro-influencer rate for this market.
+  rateBps: 1250,
+  holdDays: 14,
+  linkToken: "akuademo",
+  momoName: "Akua Mensah",
+};

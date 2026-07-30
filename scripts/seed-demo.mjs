@@ -25,6 +25,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   AUTH_USER_ID,
   CATEGORIES,
+  CREATOR,
   COLLECTIONS,
   CUSTOMERS,
   FULFILLMENT,
@@ -153,6 +154,14 @@ async function purge() {
       console.error("  Then re-run --purge. Everything else below is still being removed.");
     }
   }
+  // Creator chain first: commissions reference orders and partnerships.
+  await db.from("creator_commission_adjustments").delete().eq("seller_account_id", SELLER_ID);
+  await db.from("creator_commissions").delete().eq("seller_account_id", SELLER_ID);
+  await db.from("creator_commission_payments").delete().eq("seller_account_id", SELLER_ID);
+  await db.from("creator_partnerships").delete().eq("seller_account_id", SELLER_ID);
+  await db.from("creator_invitations").delete().eq("seller_account_id", SELLER_ID);
+  await db.from("creators").delete().eq("id", CREATOR.id);
+
   // Ordered child-first so foreign keys never block the delete.
   for (const [table, column] of [
     ["analytics_events", "shop_id"],
@@ -783,6 +792,170 @@ async function seedMarketing() {
   console.log(`  ${inserted === events.length ? "✓" : "✗"} ${inserted}/${events.length} analytics events`);
 }
 
+
+/**
+ * Seeds the demo creator, their partnership and their tracked link, then walks
+ * a few of the shop's existing paid orders through the commission engine so the
+ * creator pages show real numbers instead of an empty state.
+ *
+ * The commission rows are produced by the accrual trigger rather than inserted
+ * here — seeding them directly would let the demo drift from what the engine
+ * actually does.
+ */
+async function seedCreator(orders) {
+  console.log("\nCreator");
+
+  // A creator is a distinct actor, so they need their own auth user.
+  const { data: existing } = await db.auth.admin.listUsers();
+  let authUserId = existing?.users?.find((user) => user.email === CREATOR.email)?.id;
+  if (!authUserId) {
+    const { data: created, error } = await db.auth.admin.createUser({
+      email: CREATOR.email,
+      email_confirm: true,
+    });
+    if (error) {
+      console.error(`  ✗ creator auth user: ${error.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    authUserId = created.user.id;
+  }
+  console.log("  ✓ creator auth user");
+
+  await must(
+    "creator profile",
+    db.from("creators").upsert({
+      id: CREATOR.id,
+      auth_user_id: authUserId,
+      handle: CREATOR.handle,
+      display_name: CREATOR.displayName,
+      contact_email: CREATOR.email,
+      contact_phone: CREATOR.contactPhone,
+      country: CREATOR.country,
+      status: "active",
+      payout_details: { momoName: CREATOR.momoName },
+    }),
+  );
+
+  await must(
+    "partnership",
+    db.from("creator_partnerships").upsert({
+      id: CREATOR.partnershipId,
+      seller_account_id: SELLER_ID,
+      creator_id: CREATOR.id,
+      status: "active",
+      rate_bps: CREATOR.rateBps,
+      hold_days: CREATOR.holdDays,
+      currency: CURRENCY,
+      accepted_at: iso(daysAgo(60)),
+      invited_at: iso(daysAgo(62)),
+    }),
+  );
+
+  await must(
+    "creator link",
+    db.from("campaign_links").upsert({
+      id: CREATOR.linkId,
+      seller_account_id: SELLER_ID,
+      shop_id: SHOP_ID,
+      name: `${CREATOR.displayName} · creator link`,
+      token: CREATOR.linkToken,
+      channel: "tiktok",
+      destination_path: `/${SHOP_SLUG}`,
+      creator_partnership_id: CREATOR.partnershipId,
+      active: true,
+    }),
+  );
+
+  // Clear the ledger before re-accruing. The accrual trigger inserts with
+  // `on conflict (order_id) do nothing`, so any existing row — including one
+  // already marked paid — would survive the bounce below and the lifecycle
+  // states would accumulate instead of converging.
+  await db.from("creator_commission_adjustments").delete().eq("creator_id", CREATOR.id);
+  await db.from("creator_commissions").delete().eq("creator_id", CREATOR.id);
+  await db.from("creator_commission_payments").delete().eq("creator_id", CREATOR.id);
+
+  // Attribute a slice of the paid history to the creator, then let the trigger
+  // do the arithmetic. Deterministic slice so re-runs stay stable.
+  const attributable = orders
+    .filter((order) => order.payment_status === "paid")
+    .slice(0, 6);
+
+  let accrued = 0;
+  for (const order of attributable) {
+    await db
+      .from("orders")
+      .update({
+        campaign_snapshot: {
+          id: CREATOR.linkId,
+          name: `${CREATOR.displayName} · creator link`,
+          token: CREATOR.linkToken,
+          channel: "tiktok",
+        },
+      })
+      .eq("id", order.id);
+
+    // The accrual trigger fires on the unpaid -> paid edge, so bounce it.
+    await db.from("orders").update({ payment_status: "unpaid" }).eq("id", order.id);
+    const { error } = await db.from("orders").update({ payment_status: "paid" }).eq("id", order.id);
+    if (!error) accrued += 1;
+  }
+  console.log(`  ✓ ${accrued} orders attributed to the creator`);
+
+  // Mature four of six, then settle two of those, so the demo shows every
+  // stage at once: on hold, ready to be paid, and paid-and-confirmed.
+  const { data: commissions } = await db
+    .from("creator_commissions")
+    .select("id,amount_minor,currency")
+    .eq("creator_id", CREATOR.id)
+    .order("order_placed_at", { ascending: true });
+  const matured = (commissions ?? []).slice(0, 4);
+  if (matured.length) {
+    await db
+      .from("creator_commissions")
+      .update({ payable_at: iso(daysAgo(1)) })
+      .in("id", matured.map((row) => row.id));
+    const { data: released } = await db.rpc("release_due_creator_commissions");
+    console.log(`  ✓ ${released ?? 0} commissions released as payable`);
+  }
+
+  const settled = matured.slice(0, 2);
+  if (settled.length) {
+    // Written directly rather than through record_creator_commission_payment:
+    // that function derives the seller from the caller's session, and the
+    // seeder has no session. The resulting rows are identical.
+    const amount = settled.reduce((sum, row) => sum + row.amount_minor, 0);
+    const { data: payment, error } = await db
+      .from("creator_commission_payments")
+      .insert({
+        seller_account_id: SELLER_ID,
+        creator_id: CREATOR.id,
+        amount_minor: amount,
+        currency: CURRENCY,
+        method: "mobile_money",
+        external_reference: "MOMO-DEMO-8841",
+        marked_by: AUTH_USER_ID,
+        marked_at: iso(daysAgo(3)),
+        // Confirmed by the creator, so the demo shows the trust loop closed
+        // rather than a one-sided claim.
+        confirmed_at: iso(daysAgo(2)),
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error(`  ✗ recorded payment: ${error.message}`);
+      process.exitCode = 1;
+    } else {
+      await db
+        .from("creator_commissions")
+        .update({ status: "paid", paid_at: iso(daysAgo(3)), payment_id: payment.id })
+        .in("id", settled.map((row) => row.id));
+      console.log(`  ✓ 1 payment recorded and confirmed (${settled.length} commissions)`);
+    }
+  }
+}
+
 async function main() {
   if (process.argv.includes("--purge")) {
     await purge();
@@ -796,6 +969,7 @@ async function main() {
   const orders = await seedOrders();
   await seedInventory(orders);
   await seedMarketing();
+  await seedCreator(orders);
   console.log(`\nDone. Storefront: /${SHOP_SLUG}`);
 }
 

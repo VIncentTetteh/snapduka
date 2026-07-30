@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 const NAV = [
   { href: "/creator", label: "Earnings", exact: true },
   { href: "/creator/links", label: "My links" },
+  { href: "/creator/payments", label: "Payments" },
   { href: "/creator/partners", label: "Shops" },
   { href: "/creator/settings", label: "Settings" },
 ];
