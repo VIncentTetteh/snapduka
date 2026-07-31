@@ -94,7 +94,7 @@ export default async function BillingPage({
     supabase
       .from("seller_subscriptions")
       .select(
-        "state,current_period_end,grace_ends_at,cancelled_at,pending_change_type,plans!plan_id(code,name),pending_plan:plans!pending_plan_id(name)",
+        "state,current_period_end,grace_ends_at,cancelled_at,pending_change_type,plans!plan_id(code,name),pending_plan:plans!pending_plan_id(name),plan_prices!price_id(interval)",
       )
       .eq("seller_account_id", actor.sellerAccountId)
       .maybeSingle(),
@@ -118,6 +118,9 @@ export default async function BillingPage({
 
   const pendingPlanRow = subscription?.pending_plan as { name?: string } | { name?: string }[] | null;
   const pendingPlanName = Array.isArray(pendingPlanRow) ? pendingPlanRow[0]?.name : pendingPlanRow?.name;
+  const currentPriceRow = subscription?.plan_prices as { interval?: string } | { interval?: string }[] | null;
+  const currentInterval =
+    (Array.isArray(currentPriceRow) ? currentPriceRow[0]?.interval : currentPriceRow?.interval) ?? "monthly";
   const isPendingUpgrade = subscription?.pending_change_type === "upgrade";
   const pendingLabel =
     !isPendingUpgrade && subscription?.pending_change_type && renewsAt
@@ -295,9 +298,34 @@ export default async function BillingPage({
 
                 <div className="mt-4">
                   {isCurrent ? (
-                    <p className="grid min-h-11 place-items-center rounded-[10px] bg-line-soft text-[13px] font-bold text-ink-muted">
-                      Your plan
-                    </p>
+                    // A seller on monthly could not previously reach yearly at
+                    // all — "Your plan" was a dead end on the only card that
+                    // could offer it.
+                    isEntitled && row.code !== "free" && monthly && yearly ? (
+                      <form action={changePlan} className="grid gap-2">
+                        <input name="planCode" type="hidden" value={row.code} />
+                        <input
+                          name="interval"
+                          type="hidden"
+                          value={currentInterval === "yearly" ? "monthly" : "yearly"}
+                        />
+                        <p className="text-center text-[12px] text-ink-muted">
+                          Billed {currentInterval}
+                        </p>
+                        <SubmitButton
+                          className="min-h-11 w-full cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13px] font-semibold text-ink transition-colors hover:border-[#B9AC98] disabled:cursor-wait disabled:opacity-60"
+                          pendingLabel={currentInterval === "yearly" ? "Switching…" : "Redirecting to payment…"}
+                        >
+                          {currentInterval === "yearly"
+                            ? `Switch to monthly — takes effect ${renewsAt ?? "at period end"}`
+                            : `Switch to yearly — save ${formatMoney(monthly.amount_minor * 12 - yearly.amount_minor, yearly.currency as CurrencyCode)}`}
+                        </SubmitButton>
+                      </form>
+                    ) : (
+                      <p className="grid min-h-11 place-items-center rounded-[10px] bg-line-soft text-[13px] font-bold text-ink-muted">
+                        Your plan
+                      </p>
+                    )
                   ) : isPendingThisRow ? (
                     <p className="text-[12px] text-ink-muted">{pendingLabel}</p>
                   ) : row.code === "free" ? (

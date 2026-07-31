@@ -238,7 +238,103 @@ describe("changePlan", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/dashboard/settings/billing");
   });
 
-  it("already on this plan is rejected", async () => {
+  /**
+   * Monthly -> yearly is more money committed, so it is charged now like any
+   * other upgrade. Previously "You are already on this plan" blocked it and
+   * there was no way to reach yearly billing at all.
+   */
+  it("switching monthly to yearly on the same plan is charged as an upgrade", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    const existing = {
+      id: "sub-1", state: "active", grace_ends_at: null, current_period_end: "2026-08-01T00:00:00Z",
+      provider_subscription_code: "SUB_old", provider_email_token: "tok_old",
+      plans: { code: "growth" }, plan_prices: { interval: "monthly" },
+    };
+    const fromRead = vi.fn((table: string) => {
+      if (table === "seller_subscriptions") return queryMock({ data: existing });
+      if (table === "plans") return queryMock({ data: { id: "plan-growth", name: "Growth", version: 2 } });
+      if (table === "plan_prices") {
+        return queryMock({
+          data: { id: "price-growth-yearly", amount_minor: 60000, currency: "GHS", interval: "yearly", provider_plan_code: "PLN_growth_y" },
+        });
+      }
+      return queryMock({ data: null });
+    });
+    mocks.createClient.mockResolvedValue({ from: fromRead });
+    const update = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }));
+    mocks.createAdminClient.mockReturnValue({ from: () => ({ update, upsert: vi.fn(), delete: () => ({ eq: () => ({ eq: vi.fn() }) }) }) });
+    mocks.initializeSubscription.mockResolvedValue({ authorizationUrl: "https://checkout.paystack.com/yr", reference: "ref-y" });
+
+    await expect(changePlan(formData({ planCode: "growth", interval: "yearly" }))).rejects.toThrow(
+      "NEXT_REDIRECT:https://checkout.paystack.com/yr",
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ pending_change_type: "upgrade", pending_price_id: "price-growth-yearly" }),
+    );
+    // Still an upgrade, so the paid monthly plan keeps running until it clears.
+    expect(mocks.disableSubscription).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Yearly -> monthly is less commitment, so it waits for the paid year to
+   * finish rather than refunding it.
+   */
+  it("switching yearly to monthly on the same plan is scheduled, not charged", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    const existing = {
+      id: "sub-1", state: "active", grace_ends_at: null, current_period_end: "2027-01-01T00:00:00Z",
+      provider_subscription_code: "SUB_old", provider_email_token: "tok_old",
+      plans: { code: "growth" }, plan_prices: { interval: "yearly" },
+    };
+    const priceQuery = queryMock({ data: { id: "price-growth-monthly" } });
+    const fromRead = vi.fn((table: string) => {
+      if (table === "seller_subscriptions") return queryMock({ data: existing });
+      if (table === "plans") return queryMock({ data: { id: "plan-growth", version: 2 } });
+      if (table === "plan_prices") return priceQuery;
+      return queryMock({ data: null });
+    });
+    mocks.createClient.mockResolvedValue({ from: fromRead });
+    const update = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }));
+    mocks.createAdminClient.mockReturnValue({ from: () => ({ update }) });
+    mocks.disableSubscription.mockResolvedValue(undefined);
+
+    await changePlan(formData({ planCode: "growth", interval: "monthly" }));
+
+    expect(mocks.initializeSubscription).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ pending_change_type: "downgrade", pending_price_id: "price-growth-monthly" }),
+    );
+    // The scheduled price must be the interval the seller asked for, not the
+    // one they are currently billed on.
+    expect(priceQuery.eq).toHaveBeenCalledWith("interval", "monthly");
+  });
+
+  it("a tier downgrade keeps the seller's existing interval", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    const existing = {
+      id: "sub-1", state: "active", grace_ends_at: null, current_period_end: "2027-01-01T00:00:00Z",
+      provider_subscription_code: null, provider_email_token: null,
+      plans: { code: "scale" }, plan_prices: { interval: "yearly" },
+    };
+    const priceQuery = queryMock({ data: { id: "price-growth-yearly" } });
+    const fromRead = vi.fn((table: string) => {
+      if (table === "seller_subscriptions") return queryMock({ data: existing });
+      if (table === "plans") return queryMock({ data: { id: "plan-growth", version: 2 } });
+      if (table === "plan_prices") return priceQuery;
+      return queryMock({ data: null });
+    });
+    mocks.createClient.mockResolvedValue({ from: fromRead });
+    mocks.createAdminClient.mockReturnValue({ from: () => ({ update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }) });
+
+    // The UI sends no interval for a tier downgrade, so it defaults to monthly
+    // — which must NOT silently move a yearly seller onto monthly pricing.
+    await changePlan(formData({ planCode: "growth" }));
+
+    expect(priceQuery.eq).toHaveBeenCalledWith("interval", "yearly");
+  });
+
+  it("already on this plan AND interval is rejected", async () => {
     mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
     const existing = {
       id: "sub-1", state: "active", grace_ends_at: null, current_period_end: "2026-08-01T00:00:00Z",

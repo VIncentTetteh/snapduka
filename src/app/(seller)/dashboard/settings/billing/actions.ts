@@ -16,6 +16,9 @@ function fail(message: string): never {
 }
 
 const TIER: Record<string, number> = { free: 0, growth: 1, scale: 2 };
+// Yearly is the bigger commitment, so moving to it is charged now like any
+// other upgrade, and moving off it waits for the paid year to finish.
+const INTERVAL_RANK: Record<string, number> = { monthly: 0, yearly: 1 };
 
 export async function changePlan(formData: FormData) {
   const actor = await resolveServerActor();
@@ -54,12 +57,29 @@ export async function changePlan(formData: FormData) {
     : "expired";
   const isEntitled = existingState === "active" || existingState === "grace";
 
-  if (isEntitled && existingPlanCode === planCode) fail("You are already on this plan.");
+  // Same plan AND same interval is genuinely a no-op; same plan on a different
+  // interval is a real change the seller could not previously make at all.
+  const isIntervalChange =
+    isEntitled && planCode !== "free" && existingPlanCode === planCode && interval !== existingInterval;
+  if (isEntitled && existingPlanCode === planCode && !isIntervalChange) {
+    fail("You are already on this plan.");
+  }
   if (!isEntitled && planCode === "free") fail("Nothing to cancel — you are already on Free.");
 
   const targetTier = TIER[planCode];
   const currentTier = isEntitled ? TIER[existingPlanCode] : 0;
-  const isUpgrade = planCode !== "free" && (!isEntitled || targetTier > currentTier);
+  const isUpgrade =
+    planCode !== "free" &&
+    (!isEntitled ||
+      targetTier > currentTier ||
+      // Monthly -> yearly on the same plan: charge now, like any upgrade.
+      (targetTier === currentTier &&
+        (INTERVAL_RANK[interval] ?? 0) > (INTERVAL_RANK[existingInterval] ?? 0)));
+
+  // Yearly -> monthly must not refund the remainder of a paid year, so it is
+  // scheduled. Every other scheduled change keeps whatever interval the seller
+  // is already billed on.
+  const scheduledInterval = isIntervalChange ? interval : existingInterval;
 
   if (!isUpgrade) {
     // Downgrade or cancel: keep current entitlements until current_period_end,
@@ -102,7 +122,7 @@ export async function changePlan(formData: FormData) {
         .select("id")
         .eq("plan_id", plan.id)
         .eq("country", actor.country)
-        .eq("interval", existingInterval)
+        .eq("interval", scheduledInterval)
         .eq("active", true)
         .maybeSingle();
       if (!price) fail("This plan is not priced for your billing interval yet.");
