@@ -23,6 +23,22 @@ import { createClient } from "@/lib/supabase/server";
 
 const SELLER_POLICY_KEY = "seller_terms";
 const SELLER_POLICY_VERSION = "2026-06-12";
+/**
+ * UNVERIFIED — do not change this number until the direction is confirmed.
+ *
+ * This is sent as `percentage_charge` when a seller's Paystack subaccount is
+ * created (see createSubaccount in src/lib/payments/subaccounts.ts). Paystack's
+ * meaning of the field depends on `bearer_type` / the `subaccount` split
+ * configuration on each transaction, and nothing in this codebase pins either.
+ * So 10 is currently ambiguous between "SnapDuka keeps 10%" and "the subaccount
+ * keeps 10% and SnapDuka keeps 90%" — a 9x difference in what a seller receives.
+ *
+ * To resolve it: run one live transaction against the seller's subaccount, then
+ * read the split on Paystack's transaction dashboard. Until then no SnapDuka
+ * screen publishes a net-of-split figure (src/lib/payouts/balance.ts shows
+ * gross paid orders and says explicitly that Paystack's charges come off), and
+ * no platform revenue is modelled from this rate.
+ */
 const PAYSTACK_PERCENTAGE_CHARGE = 10;
 
 export type OnboardingActionState = {
