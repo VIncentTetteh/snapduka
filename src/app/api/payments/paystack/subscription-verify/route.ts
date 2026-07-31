@@ -45,7 +45,9 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: subscription, error: subscriptionError } = await admin
     .from("seller_subscriptions")
-    .select("id,state,plan_prices!price_id(amount_minor,currency,interval)")
+    .select(
+      "id,state,pending_change_type,pending_plan_id,pending_plan_version,pending_price_id,provider_subscription_code,provider_email_token,plan_prices!price_id(amount_minor,currency,interval),pending_price:plan_prices!pending_price_id(amount_minor,currency,interval)",
+    )
     .eq("seller_account_id", actor.sellerAccountId)
     .maybeSingle();
   // A query error is a distinct infrastructure failure from "no subscription
@@ -56,11 +58,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Subscription lookup failed." }, { status: 500 });
   }
   if (!subscription) return NextResponse.json({ error: "No pending subscription." }, { status: 404 });
-  if (subscription.state === "active") return NextResponse.json({ state: "active" });
+
+  const isPendingUpgrade = subscription.pending_change_type === "upgrade";
+  // An entitled seller upgrading is already 'active' on their OLD plan, so the
+  // usual "already active, nothing to do" shortcut would swallow the very
+  // payment that promotes them.
+  if (subscription.state === "active" && !isPendingUpgrade) {
+    return NextResponse.json({ state: "active" });
+  }
 
   type PriceRow = { amount_minor: number; currency: string; interval: string };
-  const joined = subscription.plan_prices as unknown as PriceRow | PriceRow[] | null;
-  const price = Array.isArray(joined) ? joined[0] : joined;
+  const one = (value: unknown): PriceRow | null => {
+    const row = value as PriceRow | PriceRow[] | null;
+    return Array.isArray(row) ? (row[0] ?? null) : row;
+  };
+  // Verify against what they are actually being charged: the pending price for
+  // an upgrade, the current one otherwise.
+  const price = isPendingUpgrade
+    ? one(subscription.pending_price)
+    : one(subscription.plan_prices);
   if (!price) return NextResponse.json({ error: "Subscription has no price." }, { status: 409 });
 
   let verified;
@@ -108,7 +124,38 @@ export async function POST(request: Request) {
   };
   if (verified.authorizationCode) updatePayload.provider_authorization_code = verified.authorizationCode;
   if (verified.customerCode) updatePayload.provider_customer_code = verified.customerCode;
+
+  if (isPendingUpgrade) {
+    // Payment cleared, so promote the parked target and clear the pending
+    // fields. Only now is the seller genuinely off their old plan.
+    updatePayload.plan_id = subscription.pending_plan_id;
+    updatePayload.plan_version = subscription.pending_plan_version;
+    updatePayload.price_id = subscription.pending_price_id;
+    updatePayload.pending_change_type = null;
+    updatePayload.pending_plan_id = null;
+    updatePayload.pending_plan_version = null;
+    updatePayload.pending_price_id = null;
+  }
+
   await admin.from("seller_subscriptions").update(updatePayload).eq("id", subscription.id);
+
+  // Retire the superseded Paystack subscription only after the replacement is
+  // paid for, so an abandoned checkout never cancels a renewal the seller
+  // still wants. Best-effort: the plan change is already committed above, and
+  // a stale provider subscription is recoverable where a lost plan is not.
+  if (isPendingUpgrade && subscription.provider_subscription_code && subscription.provider_email_token) {
+    try {
+      await paystackProvider().disableSubscription(
+        subscription.provider_subscription_code,
+        subscription.provider_email_token,
+      );
+    } catch (error) {
+      console.error(
+        "[subscription-verify] could not disable the superseded subscription",
+        error instanceof Error ? error.message : "unknown",
+      );
+    }
+  }
 
   return NextResponse.json({ state: "active" });
 }

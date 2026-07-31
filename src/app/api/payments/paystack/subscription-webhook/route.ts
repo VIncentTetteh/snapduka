@@ -19,7 +19,9 @@ export async function POST(request: Request) {
   if (typeof providerCode !== "string") return NextResponse.json({ error: "Invalid event." }, { status: 400 });
 
   const admin = createAdminClient();
-  let { data: subscription } = await admin.from("seller_subscriptions").select("id,seller_account_id,state").eq("provider_subscription_code", providerCode).maybeSingle();
+  const SUBSCRIPTION_COLUMNS =
+    "id,seller_account_id,state,pending_change_type,pending_plan_id,pending_plan_version,pending_price_id";
+  let { data: subscription } = await admin.from("seller_subscriptions").select(SUBSCRIPTION_COLUMNS).eq("provider_subscription_code", providerCode).maybeSingle();
   if (!subscription && payload.event === "subscription.create") {
     const email = payload.data?.customer?.email;
     const planCode = payload.data?.plan?.plan_code;
@@ -29,7 +31,12 @@ export async function POST(request: Request) {
         admin.from("plan_prices").select("id").eq("provider_plan_code", planCode).maybeSingle(),
       ]);
       if (seller && price) {
-        const { data: matched } = await admin.from("seller_subscriptions").select("id,seller_account_id,state").eq("seller_account_id", seller.id).eq("price_id", price.id).maybeSingle();
+        const { data: matched } = await admin
+          .from("seller_subscriptions")
+          .select(SUBSCRIPTION_COLUMNS)
+          .eq("seller_account_id", seller.id)
+          .or(`price_id.eq.${price.id},pending_price_id.eq.${price.id}`)
+          .maybeSingle();
         subscription = matched;
         if (subscription) {
           await admin.from("seller_subscriptions").update({ provider_subscription_code: providerCode, provider_customer_code: payload.data?.customer?.customer_code ?? null, provider_email_token: payload.data?.email_token ?? null }).eq("id", subscription.id);
@@ -63,7 +70,10 @@ export async function POST(request: Request) {
       .select("pending_change_type")
       .eq("id", subscription.id)
       .maybeSingle();
-    if (current?.pending_change_type) {
+    // Only a change WE scheduled explains a solicited disable. A pending
+    // upgrade has not disabled anything yet, so a disable arriving during one
+    // is a genuine external cancellation and must still be recorded.
+    if (current?.pending_change_type === "downgrade" || current?.pending_change_type === "cancel") {
       return NextResponse.json({ received: true, applied: true, pending: true });
     }
     await admin
@@ -85,6 +95,19 @@ export async function POST(request: Request) {
     if (typeof authorizationCode === "string") update.provider_authorization_code = authorizationCode;
     const customerCode = payload.data?.customer?.customer_code;
     if (typeof customerCode === "string") update.provider_customer_code = customerCode;
+
+    // The webhook can beat the browser back from Paystack. Promoting here too
+    // means the seller lands on the plan they paid for either way, and the
+    // event_key insert above keeps it from being applied twice.
+    if (subscription.pending_change_type === "upgrade") {
+      update.plan_id = subscription.pending_plan_id;
+      update.plan_version = subscription.pending_plan_version;
+      update.price_id = subscription.pending_price_id;
+      update.pending_change_type = null;
+      update.pending_plan_id = null;
+      update.pending_plan_version = null;
+      update.pending_price_id = null;
+    }
   }
   await admin.from("seller_subscriptions").update(update).eq("id", subscription.id);
   return NextResponse.json({ received: true, applied: true });

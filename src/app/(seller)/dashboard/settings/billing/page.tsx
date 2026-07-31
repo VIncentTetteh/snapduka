@@ -11,7 +11,7 @@ import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
 
-import { cancelSubscription, changePlan } from "./actions";
+import { cancelPendingUpgrade, cancelSubscription, changePlan } from "./actions";
 import { SubscriptionVerifier } from "./subscription-verifier";
 
 type PlanRow = {
@@ -118,8 +118,9 @@ export default async function BillingPage({
 
   const pendingPlanRow = subscription?.pending_plan as { name?: string } | { name?: string }[] | null;
   const pendingPlanName = Array.isArray(pendingPlanRow) ? pendingPlanRow[0]?.name : pendingPlanRow?.name;
+  const isPendingUpgrade = subscription?.pending_change_type === "upgrade";
   const pendingLabel =
-    subscription?.pending_change_type && renewsAt
+    !isPendingUpgrade && subscription?.pending_change_type && renewsAt
       ? subscription.pending_change_type === "cancel"
         ? `Switching to Free on ${renewsAt}`
         : `Switching to ${pendingPlanName ?? "a different plan"} on ${renewsAt}`
@@ -155,6 +156,30 @@ export default async function BillingPage({
           >
             Payment confirmed — your plan is active. Welcome aboard!
           </div>
+        ) : null}
+
+        {isPendingUpgrade ? (
+          <Panel className="p-4.5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[13.5px] font-bold text-ink">
+                  Upgrade to {pendingPlanName ?? "a higher plan"} is waiting for payment
+                </p>
+                <p className="mt-1 max-w-[52ch] text-[12.5px] leading-[1.6] text-ink-soft">
+                  You are still on {plan.planName} and nothing has changed yet. Choose the
+                  plan again to finish paying, or discard the upgrade.
+                </p>
+              </div>
+              <form action={cancelPendingUpgrade}>
+                <SubmitButton
+                  className="min-h-10 cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13px] font-semibold text-ink-soft transition-colors hover:border-[#B9AC98] hover:text-ink disabled:cursor-wait disabled:opacity-60"
+                  pendingLabel="Discarding…"
+                >
+                  Discard upgrade
+                </SubmitButton>
+              </form>
+            </div>
+          </Panel>
         ) : null}
 
         {/* Current plan */}

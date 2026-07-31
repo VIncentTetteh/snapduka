@@ -60,6 +60,10 @@ function adminMock(
       const t = tables[table] ?? {};
       return {
         select: () => ({
+          // The cron now filters `.in("pending_change_type", [...])` so a
+          // pending UPGRADE — which waits on payment, not on a date — is never
+          // swept up and charged as if it were a scheduled downgrade.
+          in: () => ({ lte: () => Promise.resolve({ data: t.select }) }),
           not: () => ({ lte: () => Promise.resolve({ data: t.select }) }),
           eq: () => ({ maybeSingle: () => Promise.resolve({ data: t.select }) }),
         }),

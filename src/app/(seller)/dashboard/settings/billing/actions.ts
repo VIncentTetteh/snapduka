@@ -137,13 +137,10 @@ export async function changePlan(formData: FormData) {
     .maybeSingle();
   if (!price || price.amount_minor <= 0) fail("This plan is not priced for your country yet.");
 
-  if (existing?.provider_subscription_code && existing.provider_email_token) {
-    try {
-      await paystackProvider().disableSubscription(existing.provider_subscription_code, existing.provider_email_token);
-    } catch {
-      fail("Paystack could not update your current subscription. Try again shortly.");
-    }
-  }
+  // The old Paystack subscription is deliberately NOT disabled here. Until the
+  // new charge succeeds the seller is still on — and still paying for — their
+  // current plan, so cancelling their renewal now would strand them if they
+  // abandon the checkout.
 
   let providerPlanCode = price.provider_plan_code;
   if (!providerPlanCode) {
@@ -161,24 +158,41 @@ export async function changePlan(formData: FormData) {
     await admin.from("plan_prices").update({ provider_plan_code: providerPlanCode }).eq("id", price.id);
   }
 
-  const { error } = await admin.from("seller_subscriptions").upsert(
-    {
-      seller_account_id: actor.sellerAccountId,
-      plan_id: plan.id,
-      plan_version: plan.version,
-      price_id: price.id,
-      state: "trialing",
-      current_period_start: new Date().toISOString(),
-      current_period_end: null,
-      grace_ends_at: null,
-      cancelled_at: null,
-      pending_change_type: null,
-      pending_plan_id: null,
-      pending_plan_version: null,
-      pending_price_id: null,
-    },
-    { onConflict: "seller_account_id" },
-  );
+  // An entitled seller keeps everything they are paying for until the new
+  // charge clears; the target is parked in the pending_* columns and promoted
+  // by subscription-verify (or the webhook). Overwriting the live row with a
+  // 'trialing' one — which grants nothing — used to downgrade a paying seller
+  // to Free the moment they clicked Upgrade.
+  const { error } = isEntitled
+    ? await admin
+        .from("seller_subscriptions")
+        .update({
+          pending_change_type: "upgrade",
+          pending_plan_id: plan.id,
+          pending_plan_version: plan.version,
+          pending_price_id: price.id,
+        })
+        .eq("id", existing!.id)
+    : await admin.from("seller_subscriptions").upsert(
+        {
+          // Nothing to preserve: no subscription, or one already expired or
+          // cancelled. 'trialing' is the pending-checkout placeholder.
+          seller_account_id: actor.sellerAccountId,
+          plan_id: plan.id,
+          plan_version: plan.version,
+          price_id: price.id,
+          state: "trialing",
+          current_period_start: new Date().toISOString(),
+          current_period_end: null,
+          grace_ends_at: null,
+          cancelled_at: null,
+          pending_change_type: null,
+          pending_plan_id: null,
+          pending_plan_version: null,
+          pending_price_id: null,
+        },
+        { onConflict: "seller_account_id" },
+      );
   if (error) fail("Subscription could not be prepared.");
 
   let authorizationUrl: string | null = null;
@@ -194,11 +208,26 @@ export async function changePlan(formData: FormData) {
     });
     authorizationUrl = payment.authorizationUrl;
   } catch {
-    await admin
-      .from("seller_subscriptions")
-      .delete()
-      .eq("seller_account_id", actor.sellerAccountId)
-      .eq("state", "trialing");
+    // Roll back whichever shape we wrote above, so a Paystack outage does not
+    // leave a phantom pending upgrade or a dangling trialing row.
+    if (isEntitled) {
+      await admin
+        .from("seller_subscriptions")
+        .update({
+          pending_change_type: null,
+          pending_plan_id: null,
+          pending_plan_version: null,
+          pending_price_id: null,
+        })
+        .eq("id", existing!.id)
+        .eq("pending_change_type", "upgrade");
+    } else {
+      await admin
+        .from("seller_subscriptions")
+        .delete()
+        .eq("seller_account_id", actor.sellerAccountId)
+        .eq("state", "trialing");
+    }
   }
   if (!authorizationUrl) fail("Paystack could not start billing.");
   redirect(authorizationUrl);
@@ -208,4 +237,29 @@ export async function cancelSubscription() {
   const formData = new FormData();
   formData.set("planCode", "free");
   await changePlan(formData);
+}
+
+/**
+ * Abandons an upgrade the seller started but never paid for.
+ *
+ * Only clears the pending fields — the live plan was never touched, which is
+ * the whole point of parking an upgrade rather than applying it optimistically.
+ */
+export async function cancelPendingUpgrade() {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "seller" || actor.role || actor.status !== "active") return;
+
+  const admin = createAdminClient();
+  await admin
+    .from("seller_subscriptions")
+    .update({
+      pending_change_type: null,
+      pending_plan_id: null,
+      pending_plan_version: null,
+      pending_price_id: null,
+    })
+    .eq("seller_account_id", actor.sellerAccountId)
+    .eq("pending_change_type", "upgrade");
+
+  revalidatePath("/dashboard/settings/billing");
 }

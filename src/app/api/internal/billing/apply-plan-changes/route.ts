@@ -43,7 +43,10 @@ export async function POST(request: Request) {
     .select(
       "id,pending_change_type,pending_plan_id,pending_plan_version,pending_price_id,provider_authorization_code,provider_customer_code,current_period_end",
     )
-    .not("pending_change_type", "is", null)
+    // Scheduled changes only. An 'upgrade' is pending payment, not pending a
+    // date — sweeping it up here would charge the seller for a plan they never
+    // finished buying once their period happened to end.
+    .in("pending_change_type", ["downgrade", "cancel"])
     .lte("current_period_end", now.toISOString());
 
   let applied = 0;
