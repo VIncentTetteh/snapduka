@@ -1,4 +1,12 @@
-import type { EntitlementValue } from "./entitlements";
+/**
+ * A single entitlement value as stored in plans.entitlements.
+ *
+ * Previously declared in ./entitlements alongside a snapshot API built for the
+ * seller_entitlements table. That table was never written to and is dropped in
+ * 202607310052; entitlements are resolved live from the versioned plan row, so
+ * this type belongs with the resolver that actually uses it.
+ */
+export type EntitlementValue = boolean | number | string | string[];
 import { effectiveSubscriptionState, type SubscriptionState } from "./subscriptions";
 
 export type SellerPlan = {

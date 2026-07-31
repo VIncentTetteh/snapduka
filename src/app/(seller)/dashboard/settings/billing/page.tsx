@@ -6,7 +6,7 @@ import { PageHeader, Panel } from "@/components/ui/surface";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan } from "@/lib/billing/resolve";
-import type { EntitlementValue } from "@/lib/billing/entitlements";
+import type { EntitlementValue } from "@/lib/billing/resolve";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";

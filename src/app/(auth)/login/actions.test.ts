@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
   checkRateLimit: vi.fn<(key: string) => Promise<RateLimitResult>>(() => Promise.resolve({ ok: true })),
+  releaseRateLimit: vi.fn<(key: string) => Promise<void>>(() => Promise.resolve()),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -20,6 +21,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/rate-limit", () => ({
   checkRateLimit: mocks.checkRateLimit,
+  releaseRateLimit: mocks.releaseRateLimit,
 }));
 
 import { resendOtpAction, sendOtpAction, signInWithSocial, signOut, verifyOtpAction } from "./actions";
@@ -354,5 +356,57 @@ describe("signOut", () => {
 
     expect(signOutFromSupabase).toHaveBeenCalledOnce();
     expect(mocks.redirect).toHaveBeenCalledWith("/login");
+  });
+});
+
+describe("failed sends do not consume the caller's quota", () => {
+  it("refunds the identifier limit when the OTP provider fails", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { signInWithOtp: vi.fn().mockResolvedValue({ error: { message: "smtp unreachable" } }) },
+    });
+
+    await expect(
+      sendOtpAction(formData({ mode: "email", identifier: "ama@example.com", next: "/dashboard" })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
+
+    expect(mocks.releaseRateLimit).toHaveBeenCalledWith("auth:send-otp:target:ama@example.com");
+  });
+
+  it("leaves the IP limit spent, so a failing provider cannot be probed without bound", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { signInWithOtp: vi.fn().mockResolvedValue({ error: { message: "smtp unreachable" } }) },
+    });
+
+    await expect(
+      sendOtpAction(formData({ mode: "email", identifier: "ama@example.com", next: "/dashboard" })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
+
+    const refunded = mocks.releaseRateLimit.mock.calls.map(([key]) => key);
+    expect(refunded.some((key) => key.startsWith("auth:send-otp:ip"))).toBe(false);
+    expect(refunded).toHaveLength(1);
+  });
+
+  it("keeps the quota spent when the code was actually sent", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { signInWithOtp: vi.fn().mockResolvedValue({ error: null }) },
+    });
+
+    await expect(
+      sendOtpAction(formData({ mode: "email", identifier: "ama@example.com", next: "/dashboard" })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
+
+    expect(mocks.releaseRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("refunds a failed resend too", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { signInWithOtp: vi.fn().mockResolvedValue({ error: { message: "provider down" } }) },
+    });
+
+    await expect(
+      resendOtpAction(formData({ identifier: "ama@example.com", next: "/dashboard" })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
+
+    expect(mocks.releaseRateLimit).toHaveBeenCalledWith("auth:send-otp:target:ama@example.com");
   });
 });

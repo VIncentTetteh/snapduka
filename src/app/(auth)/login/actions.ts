@@ -16,7 +16,7 @@ import {
 } from "@/lib/auth/identifier";
 import { safeNextPath } from "@/lib/auth/redirect";
 import { isSocialProviderEnabled } from "@/lib/auth/social";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, releaseRateLimit } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
 
 // ---------------------------------------------------------------------------
@@ -132,6 +132,13 @@ export async function sendOtpAction(formData: FormData): Promise<never> {
       : await supabase.auth.signInWithOtp({ phone: identifier.value, options: { channel: "sms" } });
 
   if (error) {
+    // No code was sent, so this attempt must not count against the identifier.
+    // A provider outage previously spent the caller's whole allowance and then
+    // told them "Too many attempts" — locking them out of their own account
+    // over a failure that was entirely ours. The IP limit is deliberately NOT
+    // refunded: it is what still bounds repeated calls from one source when the
+    // provider is failing for everyone.
+    await releaseRateLimit(`auth:send-otp:target:${identifier.value}`);
     loginRedirect("error", "We could not send a code. Please try again.", next);
   }
 
@@ -212,6 +219,7 @@ export async function resendOtpAction(formData: FormData): Promise<never> {
       : await supabase.auth.signInWithOtp({ phone: identifier.value, options: { channel: "sms" } });
 
   if (error) {
+    await releaseRateLimit(`auth:send-otp:target:${identifier.value}`);
     toCodeStep(identifier.value, next, "error", "We could not resend the code. Please try again.");
   }
 

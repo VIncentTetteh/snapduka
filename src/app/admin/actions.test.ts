@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Reached transitively through @/lib/audit/write; the real server-only package
+// throws unconditionally outside webpack.
+vi.mock("server-only", () => ({}));
+
 const mocks = vi.hoisted(() => ({
   resolveServerActor: vi.fn(),
   createAdminClient: vi.fn(),

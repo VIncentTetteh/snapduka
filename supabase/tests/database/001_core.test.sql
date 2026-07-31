@@ -2,7 +2,7 @@ begin;
 
 set local search_path = extensions, public;
 
-select plan(69);
+select plan(66);
 
 select has_extension('pgcrypto', 'pgcrypto extension is enabled');
 select has_extension('pgtap', 'pgtap extension is enabled');
@@ -111,11 +111,6 @@ select has_table(
   'public',
   'payment_subaccounts',
   'payment subaccounts table exists'
-);
-select has_table(
-  'public',
-  'seller_entitlements',
-  'seller entitlements table exists'
 );
 select has_table('public', 'audit_events', 'audit events table exists');
 
@@ -580,47 +575,6 @@ select throws_ok(
   'payment request fingerprint rejects blank strings'
 );
 
-select throws_ok(
-  $$
-    insert into public.seller_entitlements (
-      seller_account_id,
-      plan_id,
-      version,
-      entitlements
-    )
-    select
-      '00000000-0000-0000-0000-000000000201',
-      id,
-      2,
-      entitlements
-    from public.plans
-    where code = 'free' and version = 1
-  $$,
-  '23503',
-  'insert or update on table "seller_entitlements" violates foreign key constraint "seller_entitlements_plan_version_fkey"',
-  'entitlement snapshot version must match its plan version'
-);
-
-select throws_ok(
-  $$
-    insert into public.seller_entitlements (
-      seller_account_id,
-      plan_id,
-      version,
-      entitlements
-    )
-    select
-      '00000000-0000-0000-0000-000000000201',
-      id,
-      version,
-      '[]'::jsonb
-    from public.plans
-    where code = 'free' and version = 1
-  $$,
-  '23514',
-  'new row for relation "seller_entitlements" violates check constraint "seller_entitlements_entitlements_check"',
-  'seller entitlement snapshot must be a JSON object'
-);
 
 insert into public.shops (
   id,

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { canTransitionCase, type CaseState } from "@/lib/support/transitions";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { writeAuditEvent } from "@/lib/audit/write";
 
 export async function resolveCaseAction(formData: FormData) {
   const actor = await resolveServerActor();
@@ -56,15 +57,15 @@ export async function reviewPayoutAction(formData: FormData) {
     })
     .eq("id", payoutId);
 
-  await admin.rpc("write_audit_event", {
-    p_actor_type: "admin",
-    p_actor_id: actor.userId,
-    p_action: `payout_${decision}`,
-    p_entity_type: "payout_request",
-    p_entity_id: payoutId,
-    p_before_data: { status: payout.status },
-    p_after_data: { status: decision, reason },
-    p_metadata: {
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: `payout_${decision}`,
+    entityType: "payout_request",
+    entityId: payoutId,
+    before: { status: payout.status },
+    after: { status: decision, reason },
+    metadata: {
       sellerAccountId: payout.seller_account_id,
       amountMinor: payout.amount_minor,
       currency: payout.currency,
@@ -107,15 +108,15 @@ export async function approveVerificationAction(formData: FormData) {
     { onConflict: "seller_account_id" },
   );
 
-  await admin.rpc("write_audit_event", {
-    p_actor_type: "admin",
-    p_actor_id: actor.userId,
-    p_action: `verification_${decision}`,
-    p_entity_type: "seller_account",
-    p_entity_id: sellerId,
-    p_before_data: null,
-    p_after_data: { state: decision, reason },
-    p_metadata: {},
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: `verification_${decision}`,
+    entityType: "seller_account",
+    entityId: sellerId,
+    before: null,
+    after: { state: decision, reason },
+    metadata: {},
   });
 
   revalidatePath(`/admin/sellers/${sellerId}`);
@@ -148,15 +149,15 @@ export async function setDiscoveryRemovalAction(formData: FormData) {
     .eq("seller_account_id", sellerId);
   await admin.rpc("refresh_discovery_listing", { p_shop_id: preference.shop_id });
 
-  await admin.rpc("write_audit_event", {
-    p_actor_type: "admin",
-    p_actor_id: actor.userId,
-    p_action: `discovery_${decision}`,
-    p_entity_type: "seller_account",
-    p_entity_id: sellerId,
-    p_before_data: { operator_removed_at: preference.operator_removed_at },
-    p_after_data: { decision, reason },
-    p_metadata: {},
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: `discovery_${decision}`,
+    entityType: "seller_account",
+    entityId: sellerId,
+    before: { operator_removed_at: preference.operator_removed_at },
+    after: { decision, reason },
+    metadata: {},
   });
 
   revalidatePath(`/admin/sellers/${sellerId}`);
@@ -202,15 +203,15 @@ export async function updatePlanPriceAction(formData: FormData) {
 
   await admin.from("plan_prices").update({ amount_minor: amountMinor }).eq("id", priceId);
 
-  await admin.rpc("write_audit_event", {
-    p_actor_type: "admin",
-    p_actor_id: actor.userId,
-    p_action: "plan_price_updated",
-    p_entity_type: "plan_price",
-    p_entity_id: priceId,
-    p_before_data: { amountMinor: price.amount_minor },
-    p_after_data: { amountMinor, reason },
-    p_metadata: { planId: price.plan_id, country: price.country, interval: price.interval },
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: "plan_price_updated",
+    entityType: "plan_price",
+    entityId: priceId,
+    before: { amountMinor: price.amount_minor },
+    after: { amountMinor, reason },
+    metadata: { planId: price.plan_id, country: price.country, interval: price.interval },
   });
 
   revalidatePath("/admin/plans");
@@ -231,7 +232,7 @@ export async function applyRiskAction(formData: FormData) {
   if (action === "restrict_payments") await admin.from("payment_subaccounts").update({ status: "restricted" }).eq("seller_account_id",sellerId);
   if (action === "suspend") await admin.from("seller_accounts").update({ status: "suspended", is_active: false }).eq("id",sellerId);
   if (action === "remove") await admin.from("seller_accounts").update({ status: "closed", is_active: false }).eq("id",sellerId);
-  await admin.rpc("write_audit_event", { p_actor_type:"admin",p_actor_id:actor.userId,p_action:`risk_${action}`,p_entity_type:"seller_account",p_entity_id:sellerId,p_before_data:null,p_after_data:{ action, reason },p_metadata:{ caseId } });
+  await writeAuditEvent(admin, { actorType:"admin",actorId:actor.userId,action:`risk_${action}`,entityType:"seller_account",entityId:sellerId,before:null,after:{ action, reason },metadata:{ caseId } });
   revalidatePath(`/admin/sellers/${sellerId}`);
 }
 
@@ -263,15 +264,15 @@ export async function setCreatorStatusAction(formData: FormData) {
 
   await admin.from("creators").update({ status }).eq("id", creatorId);
 
-  await admin.rpc("write_audit_event", {
-    p_actor_type: "admin",
-    p_actor_id: actor.userId,
-    p_action: `creator_${status === "suspended" ? "suspended" : "reinstated"}`,
-    p_entity_type: "creator",
-    p_entity_id: creatorId,
-    p_before_data: { status: creator.status },
-    p_after_data: { status, reason },
-    p_metadata: { handle: creator.handle },
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: `creator_${status === "suspended" ? "suspended" : "reinstated"}`,
+    entityType: "creator",
+    entityId: creatorId,
+    before: { status: creator.status },
+    after: { status, reason },
+    metadata: { handle: creator.handle },
   });
 
   revalidatePath("/admin/creators");

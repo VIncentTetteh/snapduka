@@ -1,20 +1,3 @@
 {
-  "crons": [
-    {
-      "path": "/api/internal/discovery/refresh",
-      "schedule": "30 3 * * *"
-    },
-    {
-      "path": "/api/internal/billing/apply-plan-changes",
-      "schedule": "15 3 * * *"
-    },
-    {
-      "path": "/api/internal/inventory/sweep-expired-reservations",
-      "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/internal/creators/release-commissions",
-      "schedule": "45 3 * * *"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }
