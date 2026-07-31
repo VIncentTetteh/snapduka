@@ -109,6 +109,25 @@ export class PaystackProvider implements PaymentProvider {
     };
   }
 
+  /**
+   * Changes an existing subaccount's split.
+   *
+   * Paystack stores percentage_charge on the subaccount at creation, so a
+   * platform-fee change does not reach sellers who have already onboarded
+   * unless it is pushed here. Returns the rate Paystack echoes back rather than
+   * the one sent, so the caller records what the provider actually accepted.
+   */
+  async updateSubaccount(subaccountCode: string, input: { percentageCharge: number }) {
+    const data = await this.request(`/subaccount/${encodeURIComponent(subaccountCode)}`, {
+      method: "PUT",
+      body: JSON.stringify({ percentage_charge: input.percentageCharge }),
+    });
+    return {
+      subaccountCode: data.subaccount_code as string,
+      percentageCharge: Number(data.percentage_charge),
+    };
+  }
+
   async verify(reference: string) {
     const data = await this.request(`/transaction/verify/${encodeURIComponent(reference)}`);
     return {

@@ -7,6 +7,8 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { canTransitionCase, type CaseState } from "@/lib/support/transitions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditEvent } from "@/lib/audit/write";
+import { paystackProvider } from "@/lib/payments/paystack";
+import { feeBpsToPercent, validateFeePercent } from "@/lib/payments/platform-fee";
 
 export async function resolveCaseAction(formData: FormData) {
   const actor = await resolveServerActor();
@@ -212,6 +214,133 @@ export async function updatePlanPriceAction(formData: FormData) {
     before: { amountMinor: price.amount_minor },
     after: { amountMinor, reason },
     metadata: { planId: price.plan_id, country: price.country, interval: price.interval },
+  });
+
+  revalidatePath("/admin/plans");
+}
+
+/**
+ * Changes SnapDuka's share of online sales for one market.
+ *
+ * percentage_charge is SnapDuka's cut — the seller's subaccount receives the
+ * remainder, and Paystack's fee comes out of SnapDuka's share (confirmed
+ * against a live split; see @/lib/payments/platform-fee). So lowering this
+ * number pays sellers more and shrinks SnapDuka's margin.
+ *
+ * Paystack stores the rate on each subaccount at creation, so this only governs
+ * sellers onboarded from now on. Existing sellers keep their current rate until
+ * their subaccount is updated at the provider — syncPlatformFeeAction does that
+ * and is what makes the change actually take effect for everyone.
+ */
+export async function updatePlatformFeeAction(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator") return;
+  const country = String(formData.get("country") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!reason || !["GH", "NG", "CI"].includes(country)) return;
+
+  const validated = validateFeePercent(String(formData.get("feePercent") ?? ""));
+  if (!validated.ok) return;
+
+  const admin = createAdminClient();
+  const { data: config } = await admin
+    .from("country_configs")
+    .select("country,platform_fee_bps")
+    .eq("country", country)
+    .maybeSingle();
+  if (!config || config.platform_fee_bps === validated.bps) return;
+
+  const { error } = await admin
+    .from("country_configs")
+    .update({ platform_fee_bps: validated.bps, updated_at: new Date().toISOString() })
+    .eq("country", country);
+  if (error) return;
+
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: "platform_fee_updated",
+    entityType: "country_config",
+    before: { platformFeeBps: config.platform_fee_bps },
+    after: { platformFeeBps: validated.bps, reason },
+    metadata: { country, warning: validated.warning ?? null },
+  });
+
+  revalidatePath("/admin/plans");
+}
+
+/**
+ * Pushes the configured rate onto sellers' existing Paystack subaccounts.
+ *
+ * Without this a fee change is invisible to every seller who already onboarded,
+ * because Paystack holds percentage_charge on the subaccount itself. Each
+ * result is recorded so a partial sync is legible rather than looking like it
+ * either fully worked or fully failed.
+ */
+export async function syncPlatformFeeAction(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator" || formData.get("confirm") !== "yes") return;
+  const country = String(formData.get("country") ?? "").trim();
+  if (!["GH", "NG", "CI"].includes(country)) return;
+
+  const admin = createAdminClient();
+  const { data: config } = await admin
+    .from("country_configs")
+    .select("platform_fee_bps")
+    .eq("country", country)
+    .maybeSingle();
+  if (!config) return;
+
+  const { data: sellers } = await admin
+    .from("seller_accounts")
+    .select("id")
+    .eq("country", country);
+  const sellerIds = (sellers ?? []).map((seller) => seller.id);
+  if (!sellerIds.length) return;
+
+  const { data: subaccounts } = await admin
+    .from("payment_subaccounts")
+    .select("id,provider_subaccount_code,percentage_charge_bps,seller_account_id")
+    .eq("provider", "paystack")
+    .in("seller_account_id", sellerIds)
+    .not("provider_subaccount_code", "is", null);
+
+  let synced = 0;
+  const failures: string[] = [];
+  for (const subaccount of subaccounts ?? []) {
+    if (subaccount.percentage_charge_bps === config.platform_fee_bps) continue;
+    try {
+      const applied = await paystackProvider().updateSubaccount(
+        subaccount.provider_subaccount_code!,
+        { percentageCharge: feeBpsToPercent(config.platform_fee_bps) },
+      );
+      // Record what Paystack echoed back, not what was sent. If the provider
+      // clamped or ignored the value, the column should say so — that is the
+      // whole point of storing it separately from the configured rate.
+      await admin
+        .from("payment_subaccounts")
+        .update({ percentage_charge_bps: Math.round(applied.percentageCharge * 100) })
+        .eq("id", subaccount.id);
+      synced++;
+    } catch (error) {
+      // Paystack is the source of truth for the rate, so the local column is
+      // deliberately left alone on failure: recording a rate the provider did
+      // not accept would hide the drift this column exists to expose.
+      failures.push(subaccount.id);
+      console.error(
+        `[platform-fee] could not sync subaccount ${subaccount.id}:`,
+        error instanceof Error ? error.message : "unknown",
+      );
+    }
+  }
+
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: "platform_fee_synced",
+    entityType: "country_config",
+    after: { platformFeeBps: config.platform_fee_bps, synced, failed: failures.length },
+    metadata: { country, failedSubaccountIds: failures },
   });
 
   revalidatePath("/admin/plans");

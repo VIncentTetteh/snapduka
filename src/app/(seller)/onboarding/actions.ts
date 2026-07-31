@@ -18,28 +18,13 @@ import {
 } from "@/lib/payments/subaccounts";
 import { mapPaymentActionResult } from "@/lib/payments/onboarding-result";
 import { paystackProvider } from "@/lib/payments/paystack";
+import { DEFAULT_PLATFORM_FEE_BPS, feeBpsToPercent } from "@/lib/payments/platform-fee";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const SELLER_POLICY_KEY = "seller_terms";
 const SELLER_POLICY_VERSION = "2026-06-12";
-/**
- * UNVERIFIED — do not change this number until the direction is confirmed.
- *
- * This is sent as `percentage_charge` when a seller's Paystack subaccount is
- * created (see createSubaccount in src/lib/payments/subaccounts.ts). Paystack's
- * meaning of the field depends on `bearer_type` / the `subaccount` split
- * configuration on each transaction, and nothing in this codebase pins either.
- * So 10 is currently ambiguous between "SnapDuka keeps 10%" and "the subaccount
- * keeps 10% and SnapDuka keeps 90%" — a 9x difference in what a seller receives.
- *
- * To resolve it: run one live transaction against the seller's subaccount, then
- * read the split on Paystack's transaction dashboard. Until then no SnapDuka
- * screen publishes a net-of-split figure (src/lib/payouts/balance.ts shows
- * gross paid orders and says explicitly that Paystack's charges come off), and
- * no platform revenue is modelled from this rate.
- */
-const PAYSTACK_PERCENTAGE_CHARGE = 10;
+
 
 export type OnboardingActionState = {
   status: "idle" | "success" | "processing" | "error";
@@ -654,6 +639,17 @@ export async function requestSettlementAction(
     );
   }
 
+  // SnapDuka's share is a per-country setting, not a constant — see
+  // country_configs.platform_fee_bps. Read it here so the rate a seller is
+  // onboarded onto is whatever is configured at that moment, and fall back to
+  // the seeded default rather than failing onboarding over a settings read.
+  const { data: countryConfig } = await supabase
+    .from("country_configs")
+    .select("platform_fee_bps")
+    .eq("country", actor.country)
+    .maybeSingle();
+  const platformFeeBps = countryConfig?.platform_fee_bps ?? DEFAULT_PLATFORM_FEE_BPS;
+
   const paymentResult = await createPaymentSubaccount(
     {
       authUserId: actor.userId,
@@ -663,13 +659,29 @@ export async function requestSettlementAction(
       bankCode: parsed.data.bankCode,
       bankName: parsed.data.bankName,
       accountNumber: parsed.data.accountNumber,
-      percentageCharge: PAYSTACK_PERCENTAGE_CHARGE,
+      percentageCharge: feeBpsToPercent(platformFeeBps),
     },
     {
       provider: settlementProvider(),
       repository: paymentRepository(createAdminClient()),
     },
   );
+  // Record the rate this subaccount was actually created on. Paystack holds
+  // percentage_charge on the subaccount itself, so once the configured fee
+  // changes there is otherwise no way to tell which sellers are on the old
+  // rate and which are on the new one. Best-effort: onboarding has already
+  // succeeded at this point and must not fail over a bookkeeping column.
+  if (paymentResult.status === "active") {
+    const { error: rateError } = await createAdminClient()
+      .from("payment_subaccounts")
+      .update({ percentage_charge_bps: platformFeeBps })
+      .eq("seller_account_id", actor.sellerAccountId)
+      .eq("provider", "paystack");
+    if (rateError) {
+      console.error("[onboarding] could not record the platform fee rate", rateError.message);
+    }
+  }
+
   const safeValues = {
     bankCode: parsed.data.bankCode,
     bankName: parsed.data.bankName,

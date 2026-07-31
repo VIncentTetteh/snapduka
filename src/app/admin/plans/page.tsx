@@ -1,8 +1,13 @@
-import { updatePlanPriceAction } from "@/app/admin/actions";
+import {
+  syncPlatformFeeAction,
+  updatePlanPriceAction,
+  updatePlatformFeeAction,
+} from "@/app/admin/actions";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { formatMoney } from "@/lib/i18n";
+import { formatFeeBps } from "@/lib/payments/platform-fee";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CurrencyCode } from "@/lib/countries/types";
 
@@ -10,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPlansPage() {
   const admin = createAdminClient();
-  const [{ data: plans }, { data: prices }, { data: subscriptions }] = await Promise.all([
+  const [{ data: plans }, { data: prices }, { data: subscriptions }, { data: countries }, { data: subaccounts }] = await Promise.all([
     admin.from("plans").select("id,code,name,version,active").eq("active", true).order("code"),
     admin
       .from("plan_prices")
@@ -18,7 +23,32 @@ export default async function AdminPlansPage() {
       .eq("active", true)
       .order("country"),
     admin.from("seller_subscriptions").select("plan_id"),
+    admin.from("country_configs").select("country,currency,platform_fee_bps").order("country"),
+    admin
+      .from("payment_subaccounts")
+      .select("percentage_charge_bps,seller_account_id,seller_accounts!inner(country)")
+      .eq("provider", "paystack")
+      .eq("status", "active"),
   ]);
+
+  // A fee change only reaches sellers who onboard afterwards — Paystack holds
+  // percentage_charge on the subaccount. Counting the drift here is what makes
+  // "you changed the number but nobody is on it yet" visible.
+  const driftByCountry = (countries ?? []).reduce<Record<string, { total: number; stale: number }>>(
+    (acc, config) => {
+      const mine = (subaccounts ?? []).filter((row) => {
+        const seller = row.seller_accounts as unknown as { country?: string } | { country?: string }[];
+        const country = Array.isArray(seller) ? seller[0]?.country : seller?.country;
+        return country === config.country;
+      });
+      acc[config.country] = {
+        total: mine.length,
+        stale: mine.filter((row) => row.percentage_charge_bps !== config.platform_fee_bps).length,
+      };
+      return acc;
+    },
+    {},
+  );
 
   const sellersByPlan = (subscriptions ?? []).reduce<Record<string, number>>((acc, sub) => {
     acc[sub.plan_id] = (acc[sub.plan_id] ?? 0) + 1;
@@ -114,6 +144,94 @@ export default async function AdminPlansPage() {
                   ))
                 )}
               </div>
+            </Panel>
+          );
+        })}
+      </div>
+
+      <PageHeader
+        title="Platform fee"
+        sub="SnapDuka's share of each online sale. The seller's Paystack subaccount receives the rest, and Paystack's own processing fee comes out of SnapDuka's share — not the seller's."
+      />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {(countries ?? []).map((config) => {
+          const drift = driftByCountry[config.country] ?? { total: 0, stale: 0 };
+          return (
+            <Panel key={config.country} className="p-4.5">
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <h2 className="text-[15px] font-bold text-ink">
+                  {config.country} · {config.currency}
+                </h2>
+                <Badge tone="accent">{formatFeeBps(config.platform_fee_bps)}</Badge>
+              </div>
+              <p className="mb-3 text-[12.5px] text-ink-soft">
+                Sellers keep {formatFeeBps(10_000 - config.platform_fee_bps)} of every online sale.
+              </p>
+
+              <form action={updatePlatformFeeAction} className="grid gap-2.5">
+                <input name="country" type="hidden" value={config.country} />
+                <label
+                  className="grid gap-1 text-[12px] font-semibold text-ink"
+                  htmlFor={`fee-${config.country}`}
+                >
+                  New fee (%)
+                  <input
+                    id={`fee-${config.country}`}
+                    name="feePercent"
+                    inputMode="decimal"
+                    defaultValue={config.platform_fee_bps / 100}
+                    className="h-10 w-full rounded-[9px] border border-line-input bg-white px-3 text-[13px] text-ink outline-none focus:border-accent"
+                  />
+                </label>
+                <label
+                  className="grid gap-1 text-[12px] font-semibold text-ink"
+                  htmlFor={`fee-reason-${config.country}`}
+                >
+                  Reason (required)
+                  <input
+                    id={`fee-reason-${config.country}`}
+                    name="reason"
+                    required
+                    placeholder="e.g. Lowered to 7% to stay competitive"
+                    className="h-10 w-full rounded-[9px] border border-line-input bg-white px-3 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
+                  />
+                </label>
+                <SubmitButton
+                  className="min-h-9 cursor-pointer justify-self-start rounded-[9px] border-none bg-ink px-3.5 text-[12.5px] font-bold text-white transition-colors hover:bg-ink-2 disabled:cursor-wait disabled:opacity-60"
+                  pendingLabel="Saving…"
+                >
+                  Save fee
+                </SubmitButton>
+              </form>
+
+              {drift.stale > 0 ? (
+                <form
+                  action={syncPlatformFeeAction}
+                  className="mt-3 grid gap-2 border-t border-line pt-3"
+                >
+                  <input name="country" type="hidden" value={config.country} />
+                  <input name="confirm" type="hidden" value="yes" />
+                  <p className="text-[12px] leading-[1.5] text-ink-soft">
+                    <strong className="text-ink">
+                      {drift.stale} of {drift.total}
+                    </strong>{" "}
+                    {drift.stale === 1 ? "seller is" : "sellers are"} still on an older rate at
+                    Paystack. Changing the number above does not move them — Paystack stores it on
+                    each subaccount.
+                  </p>
+                  <SubmitButton
+                    className="min-h-9 cursor-pointer justify-self-start rounded-[9px] border border-line bg-raised px-3.5 text-[12.5px] font-bold text-ink transition-colors hover:bg-white disabled:cursor-wait disabled:opacity-60"
+                    pendingLabel="Syncing…"
+                  >
+                    Apply to existing sellers
+                  </SubmitButton>
+                </form>
+              ) : drift.total > 0 ? (
+                <p className="mt-3 border-t border-line pt-3 text-[12px] text-ink-muted">
+                  All {drift.total} {drift.total === 1 ? "seller is" : "sellers are"} on this rate.
+                </p>
+              ) : null}
             </Panel>
           );
         })}
