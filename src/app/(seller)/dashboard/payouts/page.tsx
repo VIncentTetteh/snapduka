@@ -50,12 +50,13 @@ export default async function PayoutsPage() {
         .eq("seller_account_id", actor.sellerAccountId)
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .from("payout_destinations")
-        .select("bank_name,account_last4,type,status,resolved_account_name,cooling_off")
-        .eq("seller_account_id", actor.sellerAccountId)
-        .eq("status", "active")
-        .maybeSingle(),
+      // Through an RPC rather than a table select: the cool-off has to be
+      // computed with the database clock (request_seller_payout enforces the
+      // same window), and routing it here keeps recipient_code unreadable by
+      // construction instead of by remembering to omit it.
+      supabase.rpc("seller_payout_destination", {
+        p_seller_account_id: actor.sellerAccountId,
+      }),
       supabase
         .from("country_configs")
         .select("settlement_mode,payouts_enabled,minimum_payout_minor,payout_fee_minor,payout_hold_days")
@@ -82,8 +83,17 @@ export default async function PayoutsPage() {
     })),
   );
 
-  const destinationLabel = destination
-    ? `${destination.bank_name} •••${destination.account_last4}`
+  const payoutDestination = (destination ?? [])[0] as
+    | {
+        bank_name: string;
+        account_last4: string;
+        destination_type: string;
+        resolved_account_name: string | null;
+        cooling_off: boolean;
+      }
+    | undefined;
+  const destinationLabel = payoutDestination
+    ? `${payoutDestination.bank_name} •••${payoutDestination.account_last4}`
     : null;
   const inArrears = available < 0;
 
@@ -198,14 +208,14 @@ export default async function PayoutsPage() {
                 currency={currency}
                 minimumMinor={config?.minimum_payout_minor ?? 5000}
                 feeMinor={config?.payout_fee_minor ?? 100}
-                hasDestination={Boolean(destination)}
+                hasDestination={Boolean(payoutDestination)}
                 payoutsEnabled={Boolean(config?.payouts_enabled)}
                 destinationLabel={destinationLabel}
               />
               <PayoutDestinationForm
                 currentLabel={destinationLabel}
-                currentAccountName={destination?.resolved_account_name ?? null}
-                coolingOff={Boolean(destination?.cooling_off)}
+                currentAccountName={payoutDestination?.resolved_account_name ?? null}
+                coolingOff={Boolean(payoutDestination?.cooling_off)}
               />
             </>
           ) : (

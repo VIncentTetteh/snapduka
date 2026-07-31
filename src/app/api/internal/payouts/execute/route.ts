@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
-import { paystackProvider } from "@/lib/payments/paystack";
+import { PaystackApiError, paystackProvider } from "@/lib/payments/paystack";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /** Rows claimed longer ago than this are assumed to have crashed mid-call. */
@@ -99,10 +99,14 @@ async function sendApproved(admin: Admin) {
       sent++;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Transfer failed";
-      // A network error is not evidence the transfer did not happen. Only
-      // release the claim when Paystack itself refused; otherwise leave the row
-      // in 'processing' for the sweeper to resolve against the provider.
-      if (/insufficient|balance|invalid|recipient|not found/i.test(message)) {
+      // Paystack answered and refused, so no transfer exists and the claim can
+      // safely go back to the queue with the reason attached. Anything else —
+      // a timeout, a dropped connection — proves nothing, so the row stays in
+      // 'processing' and the sweeper asks Paystack what actually happened.
+      // Keying this on the error TYPE rather than on words in the message
+      // matters: a keyword list silently missed "You cannot initiate third
+      // party payouts as a starter business" and left the payout stuck.
+      if (error instanceof PaystackApiError) {
         await admin.rpc("release_payout_claim", {
           p_payout_id: claim.payout_id,
           p_reason: message.slice(0, 300),

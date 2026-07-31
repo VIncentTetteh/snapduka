@@ -159,17 +159,16 @@ export default async function AdminPayoutsPage({
                             pendingLabel="Approving…"
                             className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep disabled:cursor-wait disabled:opacity-60"
                           >
-                            Approve
+                            Approve &amp; send
                           </FormActionButton>
                         ) : (
-                          <FormActionButton
-                            name="decision"
-                            value="paid"
-                            pendingLabel="Marking as paid…"
-                            className="min-h-10 cursor-pointer rounded-[10px] border-none bg-success px-4.5 text-[13px] font-bold text-white transition-colors hover:bg-success-deep disabled:cursor-wait disabled:opacity-60"
-                          >
-                            Mark as paid
-                          </FormActionButton>
+                          /* There is deliberately no "mark as paid". Approving
+                             sends the transfer; only Paystack's webhook can
+                             report that the money arrived. */
+                          <p className="text-[12.5px] text-ink-soft">
+                            Approved — the transfer is sent automatically and marked paid once
+                            Paystack confirms it.
+                          </p>
                         )}
                         <FormActionButton
                           name="decision"

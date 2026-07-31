@@ -2,6 +2,24 @@ import type { InitializePaymentInput, PaymentProvider } from "@/lib/payments/typ
 
 type Fetcher = typeof fetch;
 
+/**
+ * Paystack received the request and refused it.
+ *
+ * The distinction from a network error is not cosmetic: a refusal proves
+ * nothing happened on their side, so the caller may safely retry or give up.
+ * A network error proves nothing at all — the request may well have been
+ * processed — so the caller must go and ask rather than assume.
+ */
+export class PaystackApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "PaystackApiError";
+  }
+}
+
 export class PaystackProvider implements PaymentProvider {
   constructor(private secret: string, private fetcher: Fetcher = fetch) {}
 
@@ -15,7 +33,9 @@ export class PaystackProvider implements PaymentProvider {
       },
     });
     const payload = await response.json();
-    if (!response.ok || !payload.status) throw new Error(payload.message ?? "Paystack request failed.");
+    if (!response.ok || !payload.status) {
+      throw new PaystackApiError(payload.message ?? "Paystack request failed.", response.status);
+    }
     return payload.data;
   }
 

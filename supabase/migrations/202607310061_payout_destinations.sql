@@ -227,15 +227,40 @@ with check (
   and length(btrim(review_reason)) > 0
 );
 
--- Exposed by PostgREST as a virtual column on payout_destinations, so the UI
--- reads the cool-off from the same clock request_seller_payout enforces it
--- with. Computing it from a server or browser clock would disagree at the
--- boundary, and would also make the React render impure.
-create or replace function public.cooling_off(d public.payout_destinations)
-returns boolean language sql stable set search_path = '' as $$
-  select d.activated_at is not null
-     and d.activated_at > now() - interval '24 hours';
+-- Seller-facing read of their own destination.
+--
+-- Deliberately an RPC rather than a PostgREST computed column: a computed
+-- column takes the whole row type, so evaluating it needs SELECT on EVERY
+-- column — including recipient_code, which is withheld from sellers. That made
+-- the seller's query fail outright and the UI conclude they had no destination.
+--
+-- The cool-off is computed here with the database clock, the same one
+-- request_seller_payout enforces it with; a server or browser clock would
+-- disagree at the boundary.
+create or replace function public.seller_payout_destination(p_seller_account_id uuid)
+returns table (
+  bank_name text,
+  account_last4 text,
+  destination_type text,
+  resolved_account_name text,
+  cooling_off boolean
+)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  -- security definer bypasses RLS, so re-authorise by hand.
+  if p_seller_account_id is distinct from (select public.current_seller_account_id())
+     and not (select public.is_operator()) then
+    raise exception using errcode = '42501', message = 'Not your payout destination.';
+  end if;
+
+  return query
+  select d.bank_name, d.account_last4, d.type, d.resolved_account_name,
+         (d.activated_at is not null and d.activated_at > now() - interval '24 hours')
+  from public.payout_destinations d
+  where d.seller_account_id = p_seller_account_id and d.status = 'active'
+  limit 1;
+end;
 $$;
 
-grant execute on function public.cooling_off(public.payout_destinations)
-  to authenticated, service_role;
+revoke all on function public.seller_payout_destination(uuid) from public, anon;
+grant execute on function public.seller_payout_destination(uuid) to authenticated, service_role;

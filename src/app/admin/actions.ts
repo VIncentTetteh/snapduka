@@ -31,7 +31,15 @@ export async function reviewPayoutAction(formData: FormData) {
   const payoutId = String(formData.get("payoutId"));
   const decision = String(formData.get("decision"));
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!reason || !["approved", "rejected", "paid"].includes(decision)) return;
+  // 'paid' is deliberately absent. This action runs on the service-role client,
+  // which bypasses RLS, so the policy restricting operators to approve/reject
+  // is not enough on its own — the check has to be here too.
+  //
+  // Only apply_paystack_transfer_event may set 'paid', because only the
+  // provider can know money actually moved. An operator marking a payout paid
+  // by hand would leave the seller's balance debited, no transfer in existence,
+  // and the books claiming it was settled.
+  if (!reason || !["approved", "rejected"].includes(decision)) return;
 
   const admin = createAdminClient();
   const { data: payout } = await admin
@@ -41,9 +49,11 @@ export async function reviewPayoutAction(formData: FormData) {
     .maybeSingle();
   if (!payout) return;
 
+  // Approving is the trigger: the execute worker picks up 'approved' rows every
+  // two minutes, sends the transfer, and the webhook settles it.
   const allowed: Record<string, string[]> = {
     requested: ["approved", "rejected"],
-    approved: ["paid", "rejected"],
+    approved: ["rejected"],
   };
   if (!allowed[payout.status]?.includes(decision)) return;
 
@@ -54,7 +64,6 @@ export async function reviewPayoutAction(formData: FormData) {
       review_reason: reason,
       reviewed_by: actor.email,
       reviewed_at: new Date().toISOString(),
-      paid_at: decision === "paid" ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", payoutId);
