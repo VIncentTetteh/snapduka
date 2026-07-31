@@ -147,6 +147,106 @@ export class PaystackProvider implements PaymentProvider {
     });
     return { providerId: String(data.id), status: data.status };
   }
+
+  /**
+   * Asks Paystack whose account a number belongs to, so a seller can confirm
+   * the name before we ever send money there.
+   */
+  async resolveAccount(input: { accountNumber: string; bankCode: string }) {
+    const data = await this.request(
+      `/bank/resolve?account_number=${encodeURIComponent(input.accountNumber)}&bank_code=${encodeURIComponent(input.bankCode)}`,
+    );
+    return { accountName: String(data.account_name), accountNumber: String(data.account_number) };
+  }
+
+  /**
+   * Exchanges an account number for an opaque recipient code.
+   *
+   * This is the only place the full number exists in our process. It is passed
+   * straight through and never returned, logged or persisted — everything
+   * downstream works from the recipient code alone.
+   */
+  async createTransferRecipient(input: {
+    type: "bank" | "mobile_money";
+    name: string;
+    accountNumber: string;
+    bankCode: string;
+    currency: string;
+  }) {
+    const data = await this.request("/transferrecipient", {
+      method: "POST",
+      body: JSON.stringify({
+        // Paystack's Ghana types: 'ghipss' for bank accounts, 'mobile_money' for wallets.
+        type: input.type === "mobile_money" ? "mobile_money" : "ghipss",
+        name: input.name,
+        account_number: input.accountNumber,
+        bank_code: input.bankCode,
+        currency: input.currency,
+      }),
+    });
+    return {
+      recipientCode: String(data.recipient_code),
+      accountName: (data.details?.account_name as string | undefined) ?? null,
+    };
+  }
+
+  /**
+   * Sends money from the main Paystack balance.
+   *
+   * `reference` is our own payout reference. Paystack treats it as idempotent,
+   * so a retry after a timeout returns the existing transfer rather than
+   * sending a second one — which is what makes a crash between the call and our
+   * DB write recoverable rather than expensive.
+   */
+  async createTransfer(input: {
+    amountMinor: number;
+    recipientCode: string;
+    reference: string;
+    reason?: string;
+    currency: string;
+  }) {
+    const data = await this.request("/transfer", {
+      method: "POST",
+      body: JSON.stringify({
+        source: "balance",
+        amount: input.amountMinor,
+        recipient: input.recipientCode,
+        reference: input.reference,
+        reason: input.reason ?? "SnapDuka withdrawal",
+        currency: input.currency,
+      }),
+    });
+    return {
+      transferCode: String(data.transfer_code),
+      transferId: String(data.id),
+      // 'otp' means the integration still requires per-transfer confirmation.
+      // Callers must treat it as a hard failure, never try to solve it.
+      status: String(data.status),
+    };
+  }
+
+  /**
+   * Asks what happened to a transfer we may or may not have recorded.
+   * The recovery path when we crashed between sending and writing.
+   */
+  async verifyTransfer(reference: string) {
+    const data = await this.request(`/transfer/verify/${encodeURIComponent(reference)}`);
+    return {
+      transferCode: String(data.transfer_code),
+      transferId: String(data.id),
+      status: String(data.status),
+      amountMinor: Number(data.amount),
+    };
+  }
+
+  /** Real balance at Paystack, for reconciling against the ledger. */
+  async balances() {
+    const data = await this.request("/balance");
+    return (data as Array<{ currency: string; balance: number }>).map((row) => ({
+      currency: row.currency,
+      balanceMinor: Number(row.balance),
+    }));
+  }
 }
 
 export function paystackProvider() {

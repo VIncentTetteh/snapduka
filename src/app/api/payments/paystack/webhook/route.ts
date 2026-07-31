@@ -49,5 +49,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   }
 
+  // Transfers out. Until now no transfer.* event was handled at all, so a
+  // withdrawal could leave SnapDuka's account with nothing recording that it
+  // had. This is the only path allowed to declare that a payout settled —
+  // neither operators nor the execute worker may.
+  if (typeof payload.event === "string" && payload.event.startsWith("transfer.")) {
+    const reference = payload.data?.reference;
+    const status = payload.data?.status;
+    if (typeof reference !== "string" || typeof status !== "string") {
+      return NextResponse.json({ error: "Invalid event." }, { status: 400 });
+    }
+    const { error } = await admin.rpc("apply_paystack_transfer_event", {
+      p_event_key: eventKey,
+      p_reference: reference,
+      p_transfer_id: payload.data?.id == null ? null : String(payload.data.id),
+      // transfer.success / transfer.failed / transfer.reversed all carry the
+      // outcome in data.status, so the RPC branches on that rather than on the
+      // event name.
+      p_status: status,
+      p_payload: payload,
+    });
+    if (error) return NextResponse.json({ error: "Event processing failed." }, { status: 500 });
+    return NextResponse.json({ received: true });
+  }
+
   return NextResponse.json({ received: true });
 }
