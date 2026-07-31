@@ -226,3 +226,16 @@ with check (
   and review_reason is not null
   and length(btrim(review_reason)) > 0
 );
+
+-- Exposed by PostgREST as a virtual column on payout_destinations, so the UI
+-- reads the cool-off from the same clock request_seller_payout enforces it
+-- with. Computing it from a server or browser clock would disagree at the
+-- boundary, and would also make the React render impure.
+create or replace function public.cooling_off(d public.payout_destinations)
+returns boolean language sql stable set search_path = '' as $$
+  select d.activated_at is not null
+     and d.activated_at > now() - interval '24 hours';
+$$;
+
+grant execute on function public.cooling_off(public.payout_destinations)
+  to authenticated, service_role;

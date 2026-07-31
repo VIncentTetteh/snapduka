@@ -1,6 +1,6 @@
 # Background jobs
 
-Nine worker routes live under `src/app/api/internal/**`. They are **scheduled by
+Twelve worker routes live under `src/app/api/internal/**`. They are **scheduled by
 pg_cron inside Supabase, not by Vercel.** `vercel.json` deliberately declares no
 `crons` array — do not add one back without removing the matching pg_cron entry,
 or the worker will run twice.
@@ -21,7 +21,8 @@ needs, and lives in a migration alongside the schema.
 
 ## Schedule
 
-Defined in `supabase/migrations/202607310051_job_scheduler.sql`.
+Defined in `supabase/migrations/202607310051_job_scheduler.sql` and
+`202607310064_payout_job_schedule.sql`.
 
 | Job | Cadence | Why |
 |---|---|---|
@@ -34,7 +35,10 @@ Defined in `supabase/migrations/202607310051_job_scheduler.sql`.
 | `snapduka-apply-plan-changes` | 03:15 daily | Acts on period boundaries |
 | `snapduka-discovery-refresh` | 03:30 daily | Ranking, not time-critical |
 | `snapduka-release-commissions` | 03:45 daily | Hold window is measured in days |
+| `snapduka-release-holds` | 03:50 daily | The hold is measured in days |
+| `snapduka-reconcile-ledger` | 04:10 daily | Before the prune, so drift still has raw responses to inspect |
 | `snapduka-prune-http-responses` | 04:20 daily | `net._http_response` is never pruned by pg_net |
+| `snapduka-execute-payouts` | every 2 min | A seller who asked to withdraw is watching; also the sweeper for crashed transfers |
 
 ## Authentication
 

@@ -3,7 +3,13 @@ export type InitializePaymentInput = {
   amountMinor: number;
   currency: "GHS" | "NGN";
   reference: string;
-  subaccount: string;
+  /**
+   * Legacy split payments only. Omitted under settlement_mode='ledger', where
+   * the whole amount lands in SnapDuka's main account and the seller is
+   * credited internally. Optional rather than removed so a rollback to the
+   * subaccount flow still compiles.
+   */
+  subaccount?: string;
   callbackUrl: string;
   metadata: Record<string, unknown>;
 };

@@ -165,7 +165,12 @@ an account.
 
 - Native Android or iOS applications.
 - A platform-operated delivery fleet.
-- Escrow or SnapDuka manually holding and paying out seller funds.
+- ~~Escrow or SnapDuka manually holding and paying out seller funds.~~
+  **Revisited 2026-07-31** (see `docs/adr/0001-pooled-account-and-seller-ledger.md`).
+  Online payments now land in SnapDuka's main Paystack account and the seller
+  is credited in an internal double-entry ledger, withdrawing on request via
+  Paystack Transfers. SnapDuka is a custodian of seller funds; it is still not
+  an escrow agent and offers no buyer-protection guarantee.
 - Required buyer accounts.
 - A centralized marketplace feed as the primary acquisition model.
 - Service bookings, digital downloads, subscriptions sold by sellers, tickets,

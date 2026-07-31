@@ -47,19 +47,39 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Order is not eligible for payment." }, { status: 409 });
   }
 
-  const { data: subaccount } = await admin
-    .from("payment_subaccounts")
-    .select("provider_subaccount_code")
-    .eq("seller_account_id", order.seller_account_id)
-    .eq("provider", "paystack")
-    .eq("status", "active")
+  // Under settlement_mode='ledger' the full amount lands in SnapDuka's main
+  // account and the seller is credited internally, so no split is sent and no
+  // subaccount is needed. The legacy mode still requires one, because there the
+  // subaccount IS how the seller gets paid.
+  const { data: seller } = await admin
+    .from("seller_accounts")
+    .select("country")
+    .eq("id", order.seller_account_id)
     .maybeSingle();
+  const { data: countryConfig } = await admin
+    .from("country_configs")
+    .select("settlement_mode")
+    .eq("country", seller?.country ?? "GH")
+    .maybeSingle();
+  const onLedger = countryConfig?.settlement_mode === "ledger";
 
-  if (!subaccount?.provider_subaccount_code) {
-    return NextResponse.json(
-      { error: "This seller cannot accept online payments yet." },
-      { status: 409 },
-    );
+  let subaccountCode: string | undefined;
+  if (!onLedger) {
+    const { data: subaccount } = await admin
+      .from("payment_subaccounts")
+      .select("provider_subaccount_code")
+      .eq("seller_account_id", order.seller_account_id)
+      .eq("provider", "paystack")
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (!subaccount?.provider_subaccount_code) {
+      return NextResponse.json(
+        { error: "This seller cannot accept online payments yet." },
+        { status: 409 },
+      );
+    }
+    subaccountCode = subaccount.provider_subaccount_code;
   }
 
   const reference = `sd_${order.id.replaceAll("-", "").slice(0, 12)}_${randomUUID().slice(0, 8)}`;
@@ -86,7 +106,7 @@ export async function POST(request: Request) {
       amountMinor: order.total_minor,
       currency: order.currency,
       reference,
-      subaccount: subaccount.provider_subaccount_code,
+      subaccount: subaccountCode,
       callbackUrl: `${await appOrigin()}/orders/${order.tracking_token}?payment=pending`,
       metadata: { orderId: order.id, attemptId: attempt.id },
     });

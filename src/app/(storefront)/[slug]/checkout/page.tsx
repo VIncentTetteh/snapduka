@@ -108,7 +108,7 @@ export default async function CheckoutPage({
     };
   });
   const admin = createAdminClient();
-  const [{ data: methods }, { data: subaccount }] = await Promise.all([
+  const [{ data: methods }, { data: seller }, { data: countryConfig }] = await Promise.all([
     admin
       .from("fulfillment_methods")
       .select("id,name,type,fee_minor,instructions")
@@ -116,14 +116,43 @@ export default async function CheckoutPage({
       .eq("active", true)
       .order("position"),
     admin
-      .from("payment_subaccounts")
-      .select("id")
-      .eq("seller_account_id", shop.seller_account_id)
-      .eq("provider", "paystack")
-      .eq("status", "active")
+      .from("seller_accounts")
+      .select("status,country,seller_verifications(state),payment_subaccounts(status)")
+      .eq("id", shop.seller_account_id)
+      .maybeSingle(),
+    admin
+      .from("country_configs")
+      .select("settlement_mode,enabled")
+      .eq("country", shop.country)
       .maybeSingle(),
   ]);
-  const onlinePaymentsAvailable = Boolean(subaccount);
+
+  // The subaccount row used to be the gate, and it was doing real work: its
+  // existence proved the seller was verified and had settlement details. Under
+  // the pooled ledger there is no subaccount, so the same guarantees are stated
+  // explicitly rather than dropped — otherwise an unverified seller could take
+  // buyer money that SnapDuka then holds and cannot pay out.
+  //
+  // A payout destination is deliberately NOT required: money may accrue before
+  // a seller has told us where to send it. It is only required to withdraw.
+  const verification = Array.isArray(seller?.seller_verifications)
+    ? seller?.seller_verifications[0]
+    : seller?.seller_verifications;
+  const legacySubaccount = Array.isArray(seller?.payment_subaccounts)
+    ? seller?.payment_subaccounts[0]
+    : seller?.payment_subaccounts;
+
+  const sellerCanBeOwedMoney =
+    seller?.status === "active" && verification?.state === "verified";
+
+  const onlinePaymentsAvailable = Boolean(
+    countryConfig?.enabled &&
+      (countryConfig.settlement_mode === "ledger"
+        ? sellerCanBeOwedMoney
+        : // Legacy split: Paystack pays the subaccount directly, so the
+          // subaccount existing is still exactly the right condition.
+          legacySubaccount?.status === "active"),
+  );
 
   return (
     <main className="sd-main min-h-svh bg-paper text-ink">
