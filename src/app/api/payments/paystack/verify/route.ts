@@ -86,5 +86,15 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ paymentStatus: applied ? "paid" : attempt.status });
+  // Re-read rather than reporting `attempt.status`, which was captured before
+  // the RPC ran. `applied` is false both when nothing happened AND when the
+  // webhook won the race and applied the payment first — in the second case the
+  // stale value would tell a buyer their paid order is still pending.
+  const { data: settled } = await admin
+    .from("payment_attempts")
+    .select("status")
+    .eq("reference", reference)
+    .maybeSingle();
+
+  return NextResponse.json({ paymentStatus: settled?.status ?? attempt.status });
 }

@@ -62,7 +62,14 @@ describe("paystack verify route", () => {
   });
 
   it("applies a successful verification through the idempotent RPC", async () => {
-    mocks.attempt.mockResolvedValue({ data: { status: "pending" } });
+    // The route reads the attempt, applies, then re-reads: by the second read
+    // the RPC has marked it paid.
+    mocks.attempt
+      .mockResolvedValueOnce({ data: { status: "pending" } })
+      // No order_id, so the notification enqueue is skipped — it has its own
+      // tests and needs a deeper client mock than this route warrants.
+      .mockResolvedValueOnce({ data: {} })
+      .mockResolvedValue({ data: { status: "paid" } });
     mocks.verify.mockResolvedValue({
       status: "success",
       amountMinor: 45_000,
@@ -99,6 +106,29 @@ describe("paystack verify route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ paymentStatus: "pending", providerStatus: "failed" });
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  // Regression: `applied` is false both when nothing happened AND when the
+  // webhook won the race and applied the payment first. Reporting the attempt
+  // status captured before the RPC would tell a buyer their paid order is
+  // still pending.
+  it("reports paid when the webhook applied the payment first", async () => {
+    mocks.attempt
+      .mockResolvedValueOnce({ data: { status: "pending" } })
+      .mockResolvedValue({ data: { status: "paid" } });
+    mocks.verify.mockResolvedValue({
+      status: "success",
+      amountMinor: 45_000,
+      currency: "GHS",
+      reference: "sd_race_ref",
+    });
+    // The RPC's already-paid guard returns false without re-applying.
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+
+    const response = await POST(request({ reference: "sd_race_ref" }, "10.0.0.8"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ paymentStatus: "paid" });
   });
 
   it("returns 502 when Paystack is unreachable", async () => {
