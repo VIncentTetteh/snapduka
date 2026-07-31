@@ -46,6 +46,12 @@ const ITEMS = [
     badgeKey: "cases" as const,
   },
   {
+    href: "/admin/creators",
+    label: "Creators",
+    d: "M12.5 6.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm4.5 10c-.4-2.3-2.6-3.5-5-3.5m-7 3.5c.4-2.3 2.6-3.5 5-3.5M16 8.5a1.8 1.8 0 1 1-3.5 0 1.8 1.8 0 0 1 3.5 0Z",
+    badgeKey: null,
+  },
+  {
     href: "/admin/plans",
     label: "Plans & fees",
     d: "M4 4.5h12v11H4v-11Zm0 3.5h12M7.5 11.5h5",

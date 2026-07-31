@@ -234,3 +234,45 @@ export async function applyRiskAction(formData: FormData) {
   await admin.rpc("write_audit_event", { p_actor_type:"admin",p_actor_id:actor.userId,p_action:`risk_${action}`,p_entity_type:"seller_account",p_entity_id:sellerId,p_before_data:null,p_after_data:{ action, reason },p_metadata:{ caseId } });
   revalidatePath(`/admin/sellers/${sellerId}`);
 }
+
+/**
+ * Suspends or reinstates a creator. The only operator write in the creator
+ * program — settlement stays between seller and creator, and SnapDuka must not
+ * look like an arbiter of who is owed what.
+ *
+ * Suspension takes effect through current_creator_id(), which only resolves an
+ * active creator: a suspended one loses portal access immediately but keeps
+ * every accrued commission, because work already done cannot be un-done.
+ */
+export async function setCreatorStatusAction(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator") redirect("/login?next=/admin/creators");
+
+  const creatorId = String(formData.get("creatorId"));
+  const status = String(formData.get("status"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!reason || !["active", "suspended"].includes(status)) return;
+
+  const admin = createAdminClient();
+  const { data: creator } = await admin
+    .from("creators")
+    .select("id,status,handle")
+    .eq("id", creatorId)
+    .maybeSingle();
+  if (!creator || creator.status === status) return;
+
+  await admin.from("creators").update({ status }).eq("id", creatorId);
+
+  await admin.rpc("write_audit_event", {
+    p_actor_type: "admin",
+    p_actor_id: actor.userId,
+    p_action: `creator_${status === "suspended" ? "suspended" : "reinstated"}`,
+    p_entity_type: "creator",
+    p_entity_id: creatorId,
+    p_before_data: { status: creator.status },
+    p_after_data: { status, reason },
+    p_metadata: { handle: creator.handle },
+  });
+
+  revalidatePath("/admin/creators");
+}
