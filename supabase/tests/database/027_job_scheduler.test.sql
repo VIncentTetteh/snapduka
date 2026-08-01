@@ -14,12 +14,13 @@ select has_function(
   'run_internal_job exists'
 );
 
--- Every worker route under src/app/api/internal must have a schedule. A route
--- with no row here is a worker that never runs — the exact defect being fixed.
+-- Twelve workers plus the pg_net response prune. A route under
+-- src/app/api/internal with no row here is a worker that never runs, which is
+-- the defect this whole file exists to prevent.
 select is(
   (select count(*)::int from cron.job where jobname like 'snapduka-%'),
-  10,
-  'nine workers plus the pg_net response prune are scheduled'
+  13,
+  'every worker plus the pg_net response prune is scheduled'
 );
 
 select isnt_empty(

@@ -23,9 +23,12 @@ select ok(
 select policies_are(
   'public',
   'payout_requests',
+  -- payout_requests_owner_insert was removed in 202607310061: RLS checks row
+  -- ownership but not values, so it let a seller insert a request for any
+  -- amount at all. Requests now go through request_seller_payout, which checks
+  -- the ledger under a row lock.
   array[
     'payout_requests_owner_operator_read',
-    'payout_requests_owner_insert',
     'payout_requests_operator_update'
   ],
   'payout_requests policies are exactly the expected set'

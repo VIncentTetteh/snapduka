@@ -55,8 +55,10 @@ select lives_ok(
   'a balanced transaction posts'
 );
 
+-- sum() over bigint returns numeric, so both sides are cast explicitly rather
+-- than relying on an is() overload that does not exist.
 select is(
-  (select sum(amount_minor) from public.ledger_entries),
+  (select coalesce(sum(amount_minor), 0)::bigint from public.ledger_entries),
   0::bigint,
   'the books close to zero'
 );

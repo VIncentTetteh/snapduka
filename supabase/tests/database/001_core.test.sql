@@ -129,14 +129,17 @@ select results_eq(
   'supported country configurations are seeded'
 );
 
+-- Asserting a specific version number breaks on every plan re-version (free is
+-- on v3 after the creator-program entitlement). The invariant worth pinning is
+-- that exactly one version per code is active — plans_one_active_version_per_code_idx.
 select is(
   (
-    select version
+    select count(*)::int
     from public.plans
     where code = 'free' and active
   ),
   1,
-  'active free plan is version 1'
+  'exactly one free plan version is active'
 );
 
 select is(

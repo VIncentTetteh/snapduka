@@ -203,22 +203,6 @@ values
     'restricted'
   );
 
-insert into public.seller_entitlements (
-  id,
-  seller_account_id,
-  plan_id,
-  version,
-  entitlements
-)
-select
-  '00000000-0000-0000-0000-000000001601',
-  '00000000-0000-0000-0000-000000001203',
-  id,
-  version,
-  entitlements
-from public.plans
-where code = 'free' and active;
-
 insert into public.audit_events (
   actor_type,
   actor_id,
@@ -246,14 +230,13 @@ select is(
         'payment_subaccounts',
         'plans',
         'seller_accounts',
-        'seller_entitlements',
         'seller_verifications',
         'shops'
       )
       and c.relrowsecurity
       and c.relforcerowsecurity
   ),
-  8::bigint,
+  7::bigint,
   'RLS is enabled and forced on every current public table'
 );
 
@@ -273,9 +256,6 @@ select is(
         'plans_operator_read',
         'seller_accounts_owner_or_operator_read',
         'seller_accounts_owner_update',
-        'seller_entitlements_owner_insert',
-        'seller_entitlements_owner_operator_read',
-        'seller_entitlements_owner_update',
         'seller_verifications_owner_insert',
         'seller_verifications_owner_operator_read',
         'seller_verifications_owner_update',
@@ -285,7 +265,7 @@ select is(
         'shops_public_read'
       )
   ),
-  20::bigint,
+  17::bigint,
   'the expected RLS policies exist'
 );
 
@@ -380,12 +360,6 @@ select throws_ok(
   '42501',
   'permission denied for table payment_subaccounts',
   'anonymous users cannot enumerate payment subaccounts'
-);
-select throws_ok(
-  $$ select count(*) from public.seller_entitlements $$,
-  '42501',
-  'permission denied for table seller_entitlements',
-  'anonymous users cannot enumerate entitlements'
 );
 select throws_ok(
   $$ select count(*) from public.audit_events $$,
@@ -510,44 +484,6 @@ select lives_ok(
     )
   $$,
   'pending seller can create their own pending setup record'
-);
-select lives_ok(
-  $$
-    insert into public.seller_entitlements (
-      seller_account_id,
-      plan_id,
-      version,
-      entitlements
-    )
-    select
-      '00000000-0000-0000-0000-000000001201',
-      id,
-      version,
-      entitlements
-    from public.plans
-    where code = 'free' and active
-  $$,
-  'pending seller can assign only the canonical free entitlement'
-);
-select throws_ok(
-  $$
-    insert into public.seller_entitlements (
-      seller_account_id,
-      plan_id,
-      version,
-      entitlements
-    )
-    select
-      '00000000-0000-0000-0000-000000001201',
-      id,
-      version,
-      '{"shops":999}'::jsonb
-    from public.plans
-    where code = 'free' and active
-  $$,
-  '42501',
-  'new row violates row-level security policy for table "seller_entitlements"',
-  'seller cannot grant themselves spoofed entitlements'
 );
 select is(
   public.is_operator(),
@@ -758,11 +694,6 @@ select is(
   (select count(*) from public.payment_subaccounts),
   3::bigint,
   'operator can read payment setup across sellers'
-);
-select is(
-  (select count(*) from public.seller_entitlements),
-  2::bigint,
-  'operator can read entitlements across sellers'
 );
 select is(
   (select count(*) from public.audit_events),

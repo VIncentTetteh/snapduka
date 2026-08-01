@@ -60,22 +60,33 @@ enable_confirmations = false
 subject = "Your SnapDuka sign-in code"
 content_path = "./supabase/templates/magic_link.html"
 
-# Custom SMTP so OTP emails send reliably in local dev instead of hitting
-# Supabase's default, heavily rate-limited email service. Credentials come
-# from the environment running `supabase start` — export SMTP_HOST /
-# SMTP_PORT / SMTP_USERNAME / SMTP_PASSWORD / SMTP_FROM_EMAIL /
-# SMTP_FROM_NAME (or keep them in .env.local). This only covers local
-# development — Supabase Cloud does not read this file, so the same values
-# must also be set in the dashboard (Authentication → Emails → SMTP
-# Settings) for production.
+# Local SMTP is OFF, and should stay off.
+#
+# This block only ever affected `supabase start` — Supabase Cloud does not read
+# this file, so production SMTP lives in the dashboard (Authentication → Emails
+# → SMTP Settings) and is unaffected by anything here.
+#
+# It was enabled with `port = "env(SMTP_PORT)"`, which the CLI parses as a
+# uint16. With SMTP_PORT unset, `supabase start` dies with:
+#
+#   failed to parse config: 'auth.email.smtp.port' cannot parse value as
+#   'uint16': strconv.ParseUint: invalid syntax
+#
+# That broke the Database workflow on every push from 2026-07-19 onward, so the
+# entire pgTAP suite silently stopped running for two weeks — including every
+# test written in that window, which had therefore never run at all.
+#
+# Disabled rather than papered over with dummy CI values, because local does not
+# want real SMTP anyway: `supabase start` runs Mailpit on
+# http://127.0.0.1:54324, which catches every outbound email instantly with no
+# rate limit and no real mail sent. That is strictly better for development than
+# routing OTPs through Gmail.
+#
+# To test a real provider locally, set enabled = true and export SMTP_HOST,
+# SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL, SMTP_FROM_NAME —
+# but do not commit that, or CI goes dark again.
 [auth.email.smtp]
-enabled = true
-host = "env(SMTP_HOST)"
-port = "env(SMTP_PORT)"
-user = "env(SMTP_USERNAME)"
-pass = "env(SMTP_PASSWORD)"
-admin_email = "env(SMTP_FROM_EMAIL)"
-sender_name = "env(SMTP_FROM_NAME)"
+enabled = false
 
 [auth.sms]
 enable_signup = true
