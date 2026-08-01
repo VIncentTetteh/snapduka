@@ -1,28 +1,31 @@
 import type { CurrencyCode } from "@/lib/countries/types";
 
 /**
- * Seller earnings, split by where the money actually is.
+ * Seller earnings by payment method — NOT a wallet balance.
  *
- * This used to expose `calculateAvailableBalance`, which summed the GROSS
- * total of paid orders and offered it as a withdrawable balance. That was
- * wrong in two independent ways, and the payouts page presented the result as
- * "Available balance" next to a "Request a payout" button:
+ * Read this alongside `settlement_mode` (country_configs), because what these
+ * numbers mean depends on it:
  *
- *   * Online orders are collected by Paystack into the seller's own
- *     subaccount, and Paystack settles that subaccount to the seller's bank on
- *     its own schedule. SnapDuka never holds the money.
- *   * Offline orders (cash on delivery, pay on pickup, seller arranged) are
- *     handed to the seller directly. SnapDuka never sees that money either.
+ *   * `subaccount` (legacy): Paystack splits at charge time into the seller's
+ *     own subaccount and settles it to their bank directly. SnapDuka never
+ *     holds the money, so `settledOnlineMinor` is money the seller already has.
+ *   * `ledger`: the full amount lands in SnapDuka's main account and the seller
+ *     is credited in the double-entry ledger. Their real, withdrawable position
+ *     is `seller_wallet_balance()`, not anything in this file.
  *
- * So the balance shown was money the seller had already received, and there is
- * no Paystack Transfer integration anywhere for SnapDuka to have sent it with.
- * Approving such a request meant an operator wiring funds by hand against a
- * number that was never owed. On the demo shop it read GH₵11,422.75.
+ * Offline orders (cash on delivery, pay on pickup, seller arranged) are handed
+ * to the seller directly under either mode, so `collectedOfflineMinor` is
+ * always money already in their hand and never withdrawable.
  *
- * Nothing here nets off Paystack's split. Which side of `percentage_charge`
- * receives the cut is undocumented in this codebase and unconfirmed with
- * Paystack, and publishing a net figure derived from a guess would repeat the
- * exact mistake this module exists to correct.
+ * This module replaced `calculateAvailableBalance`, which summed the GROSS
+ * total of paid orders and offered it as withdrawable next to a "Request a
+ * payout" button — money the seller had already received, against a payout rail
+ * that did not exist. On the demo shop it read GH₵11,422.75.
+ *
+ * Nothing here nets off Paystack's split, deliberately. Under `ledger` the fee
+ * is applied at capture and recorded in the ledger with the rate snapshotted on
+ * order_settlements; deriving a second net figure here would be a duplicate
+ * source of truth for the same money.
  */
 
 /** Payment methods where the buyer pays SnapDuka's provider, not the seller. */
@@ -106,10 +109,16 @@ export type PayoutValidation =
   | { ok: false; error: string };
 
 /**
- * Retained so the existing payout_requests rows, the operator screen and any
- * future disbursement work keep a single validation rule. It is not reachable
- * from the seller UI today: requesting a payout is disabled while SnapDuka
- * holds no seller funds.
+ * Superseded by `request_seller_payout`, which validates under a row lock on
+ * the wallet — the lock is the point, because two concurrent withdrawals must
+ * not both pass. Thresholds now live in country_configs (minimum_payout_minor,
+ * payout_fee_minor), so `payoutFeeMinor`/`minimumPayoutMinor` below are
+ * fallbacks only.
+ *
+ * Kept because the operator screen and the existing payout_requests rows still
+ * reference the same rules, and having one readable statement of them is worth
+ * more than deleting it. Do not add a caller: validation that decides whether
+ * money moves belongs in the RPC, not here, or the two will disagree.
  */
 export function validatePayoutRequest(input: {
   amountMinor: number;

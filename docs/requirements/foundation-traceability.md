@@ -12,7 +12,7 @@ Each P0 requirement is mapped to its primary implementation and verification sur
 | ACC-006 | shop/product draft and publish states | catalog and RLS tests |
 | ACC-007 | `seller_verifications` | onboarding database tests |
 | ACC-008 | verification-gated payment setup | onboarding tests |
-| ACC-009 | Paystack subaccount workflow | subaccount tests |
+| ACC-009 | subaccount workflow (subaccount mode) / payout destinations (ledger mode) | subaccount tests, 029_ledger_invariants |
 | SHP-001 | `shops.slug` and storefront routes | storefront tests |
 | SHP-002 | shop header and trust summary | mobile acceptance |
 | SHP-003 | draft product/shop states | catalog tests |
@@ -42,7 +42,7 @@ Each P0 requirement is mapped to its primary implementation and verification sur
 | CHK-008 | typed unavailable-product errors | checkout API |
 | CHK-009 | preserved form state and live errors | checkout form |
 | PAY-001 | Paystack initialization | Paystack tests |
-| PAY-002 | seller subaccount initialization | Paystack tests |
+| PAY-002 | subaccount split or main-account collection + ledger, per settlement_mode | Paystack tests, 028_platform_fee, 029_ledger_invariants |
 | PAY-003 | redirect remains pending | receipt/payment flow |
 | PAY-004 | signed webhook and verify API | webhook tests |
 | PAY-005 | idempotent provider events | payment migration |

@@ -272,8 +272,13 @@ Priority labels:
   `suspended`.
 - **ACC-008 (P0):** Verified status must be displayed only when the applicable
   verification checks remain valid.
-- **ACC-009 (P0):** SnapDuka must create and associate a Paystack subaccount
-  with each eligible verified seller.
+- **ACC-009 (P0):** SnapDuka must associate each eligible verified seller with a
+  settlement route: a Paystack subaccount under `settlement_mode = 'subaccount'`,
+  or a payout destination (Paystack transfer recipient) under
+  `settlement_mode = 'ledger'`. Amended 2026-07-31 — see
+  `docs/adr/0001-pooled-account-and-seller-ledger.md`. Under `ledger` a payout
+  destination is required to WITHDRAW, not to accept payment; a seller may
+  accrue a balance before naming one.
 - **ACC-010 (P1):** Paid plans may unlock custom branding and operational
   limits but must not sell or imply verification.
 
@@ -372,8 +377,15 @@ Priority labels:
 
 - **PAY-001 (P0):** Sellers must be able to enable the Paystack channels
   available to their market and account.
-- **PAY-002 (P0):** SnapDuka must use Paystack subaccounts to route settlement
-  to eligible sellers and to support a configured platform fee.
+- **PAY-002 (P0):** SnapDuka must route settlement to eligible sellers and
+  support a configured platform fee. Amended 2026-07-31 — see
+  `docs/adr/0001-pooled-account-and-seller-ledger.md`. Two mechanisms exist,
+  selected per market by `country_configs.settlement_mode`:
+  Paystack subaccounts splitting at charge time (`subaccount`), or collection
+  into SnapDuka's main account with the seller credited in an internal
+  double-entry ledger and paid out on request via Paystack Transfers
+  (`ledger`). The fee is `country_configs.platform_fee_bps`, applied by Paystack
+  in the first mode and by SnapDuka at capture in the second.
 - **PAY-003 (P0):** SnapDuka must not mark an order paid solely because a buyer
   returns to a success URL.
 - **PAY-004 (P0):** Payment confirmation must use a signed Paystack webhook or

@@ -20,7 +20,19 @@ Refund initiation creates a processing refund. Completion must follow provider e
 
 ## Withdrawals
 
-Only relevant where `settlement_mode = 'ledger'`. Background: `docs/adr/0001-pooled-account-and-seller-ledger.md`.
+**Status as shipped: every market is still `settlement_mode = 'subaccount'` with
+`payouts_enabled = false`.** Payments split to seller subaccounts exactly as
+before, the ledger tables are empty, and no seller can withdraw. Everything
+below describes the `ledger` mode, which is built and tested but not switched
+on. Cutover is one row per market and is reversible by one more.
+
+The remaining blocker is not code: Paystack refuses transfers on this account
+with *"You cannot initiate third party payouts as a starter business."*
+Do not flip `settlement_mode` before that is lifted — money would accumulate in
+wallets sellers cannot withdraw from, which is strictly worse for them than the
+split, where Paystack pays them directly.
+
+Background: `docs/adr/0001-pooled-account-and-seller-ledger.md`.
 
 ### Preconditions before enabling a market
 
