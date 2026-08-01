@@ -1,0 +1,61 @@
+name: E2E
+
+# The seven spec files under tests/e2e have existed since 2026-07-16 and had
+# never run in CI — `pnpm test:e2e` was defined in package.json and invoked by
+# no workflow. playwright.config.ts was already written for CI (forbidOnly,
+# retries: 2), so the intent was there; the wiring was not.
+#
+# Same class of problem as the Database workflow silently failing since July:
+# tests that exist, pass, and never execute are worth nothing. All 10 pass.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.106.0
+
+      # The specs run against a real local Postgres with the real migrations —
+      # scripts/local-supabase-env.mjs reads the keys out of `supabase status`.
+      - name: Start Supabase
+        run: supabase start
+
+      - name: Apply migrations
+        run: supabase db reset
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install chromium --with-deps
+
+      # playwright.config.ts builds and starts the app itself on E2E_PORT.
+      - name: Run end-to-end tests
+        run: pnpm test:e2e
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
