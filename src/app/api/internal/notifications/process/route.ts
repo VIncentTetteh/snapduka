@@ -51,7 +51,14 @@ export async function POST(request: Request) {
       await admin.from("notification_attempts").insert({ notification_id: claimed.id, attempt: claimed.attempts, outcome: "sent" });
       processed++;
     } catch (error) {
-      const retryAt = nextAttemptAt(new Date(), claimed.attempts);
+      const message = error instanceof Error ? error.message : "";
+      // A missing provider is not a transient failure. Retrying it five times
+      // with exponential backoff burns a day of worker runs to reach the same
+      // answer, and buries the real cause under generic retry noise. Fail it
+      // straight to dead_letter with the reason intact.
+      const retryAt = message === "not_configured"
+        ? null
+        : nextAttemptAt(new Date(), claimed.attempts);
       await admin.from("notifications").update({
         status: retryAt ? "failed" : "dead_letter", available_at: retryAt?.toISOString() ?? claimed.available_at,
         last_error: error instanceof Error ? error.message.slice(0,500) : "Unknown provider failure",
