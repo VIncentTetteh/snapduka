@@ -5,6 +5,7 @@ import { OrderStatusPoller } from "@/components/storefront/order-status-poller";
 import { Timeline, type TimelineStep } from "@/components/ui/timeline";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { isSafeHttpUrl } from "@/lib/catalog/video";
+import { courierLabel, type CourierKey } from "@/lib/couriers/catalogue";
 import { buyerInitiatedWhatsApp } from "@/lib/notifications/whatsapp";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -103,7 +104,7 @@ export default async function TrackingPage({
   if (!order) notFound();
   const { data: shipment } = await admin
     .from("shipments")
-    .select("tracking_number,tracking_url,status,provider")
+    .select("tracking_number,tracking_url,status,provider,provider_name")
     .eq("order_id", order.id)
     .maybeSingle();
 
@@ -184,21 +185,32 @@ export default async function TrackingPage({
           <h2 className="mb-3.5 text-[14px] font-bold">Progress</h2>
           <Timeline steps={buildTimeline(order)} />
           {shipment?.tracking_number ? (
-            <p className="mt-3 border-t border-line-soft pt-3 text-[12.5px] text-ink-soft">
-              Delivery tracking:{" "}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-line-soft pt-3">
+              <div>
+                {/* The point of the whole feature: the buyer knows who has
+                    their parcel. provider_name is escaped text, never a link
+                    target — the href only ever comes from tracking_url. */}
+                <p className="m-0 text-[12.5px] font-semibold text-ink">
+                  Delivered by {courierLabel(shipment.provider as CourierKey, shipment.provider_name)}
+                </p>
+                <p className="m-0 font-mono text-[12.5px] text-ink-soft">
+                  {shipment.tracking_number}
+                </p>
+              </div>
+              {/* Not embedded: our CSP restricts frame-src to a fixed
+                  allowlist, and courier tracking pages almost always send
+                  X-Frame-Options: DENY. A link works for every provider. */}
               {shipment.tracking_url && isSafeHttpUrl(shipment.tracking_url) ? (
                 <a
                   href={shipment.tracking_url}
                   target="_blank"
-                  rel="noreferrer"
-                  className="font-mono font-semibold text-accent underline"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-9 items-center rounded-[9px] bg-ink px-3.5 text-[12.5px] font-bold text-white transition-colors hover:bg-ink-2"
                 >
-                  {shipment.tracking_number}
+                  Track ↗
                 </a>
-              ) : (
-                <span className="font-mono font-semibold text-ink">{shipment.tracking_number}</span>
-              )}
-            </p>
+              ) : null}
+            </div>
           ) : null}
         </div>
 

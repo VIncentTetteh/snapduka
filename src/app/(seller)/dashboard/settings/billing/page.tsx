@@ -70,7 +70,11 @@ function featureBullets(entitlements: Record<string, EntitlementValue>): string[
     typeof n("apiKeys") === "number" && Number(n("apiKeys")) > 0
       ? `${n("apiKeys")} API keys + webhooks`
       : null,
-    n("courierIntegrations") === true ? "Courier integrations" : null,
+    // "Courier integrations" was listed here for Scale only, but the
+    // courierIntegrations entitlement is never checked anywhere — every plan
+    // could already record a delivery — and there are no courier integrations:
+    // the seller books their own rider and records who it was. Recording that
+    // is basic order management, so it is not a plan differentiator.
     n("discovery") === true ? "Discovery listing" : null,
   ];
   return bullets.filter((bullet): bullet is string => Boolean(bullet));
