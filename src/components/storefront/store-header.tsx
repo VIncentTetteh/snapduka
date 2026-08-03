@@ -11,14 +11,20 @@ const COUNTRY_LABEL: Record<CountryCode, string> = {
 };
 
 /**
- * Sticky storefront header: avatar, shop name + verified mark, share and
- * live cart buttons. `backHref` renders the back chevron on inner pages.
+ * Sticky storefront header: avatar, shop name, share and live cart buttons.
+ * `backHref` renders the back chevron on inner pages.
+ *
+ * `verified` and `fulfillment` are both required to be passed explicitly rather
+ * than defaulted. Both were previously hardcoded true/"Delivers nationwide" for
+ * every shop, and a default here is exactly how that survives a refactor.
  */
 export function StoreHeader({
   name,
   slug,
   country,
   canonicalUrl,
+  verified,
+  fulfillment,
   backHref,
   logoUrl = null,
   titleAsH1 = false,
@@ -27,6 +33,8 @@ export function StoreHeader({
   slug: string;
   country: CountryCode;
   canonicalUrl: string;
+  verified: boolean;
+  fulfillment: string | null;
   backHref?: string;
   logoUrl?: string | null;
   titleAsH1?: boolean;
@@ -66,13 +74,15 @@ export function StoreHeader({
               <NameTag className="m-0 max-w-none truncate font-sans text-[15px] font-bold leading-normal tracking-normal text-ink">
                 {name}
               </NameTag>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-label="Verified seller" className="flex-none">
-                <circle cx="7" cy="7" r="6.4" fill="#047857" />
-                <path d="M4.4 7.2 6.2 9l3.4-3.8" stroke="#FFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              {verified ? (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" role="img" aria-label="Verified seller" className="flex-none">
+                  <circle cx="7" cy="7" r="6.4" fill="#047857" />
+                  <path d="M4.4 7.2 6.2 9l3.4-3.8" stroke="#FFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : null}
             </span>
             <span className="block truncate text-[11px] text-ink-muted">
-              {COUNTRY_LABEL[country] ?? country} · Delivers nationwide
+              {[COUNTRY_LABEL[country] ?? country, fulfillment].filter(Boolean).join(" · ")}
             </span>
           </span>
         </Link>

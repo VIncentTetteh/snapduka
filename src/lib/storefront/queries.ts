@@ -15,7 +15,12 @@ function publicClient() {
 export async function getPublicShop(slug: string) {
   const { data, error } = await publicClient()
     .from("shops")
-    .select("id, seller_account_id, slug, display_name, country, currency, published_at, shop_branding(accent_color,surface_color,font_family,logo_path,banner_path,hide_snapduka_branding)")
+    // verified_at is the public mirror of seller_verifications, which the anon
+    // key cannot read (202606120002_rls.sql:146). fulfillment_methods is
+    // embedded rather than fetched separately — it has a public read policy, so
+    // it costs no extra round trip, and the header used to claim "Delivers
+    // nationwide" for every shop regardless of what the seller actually offers.
+    .select("id, seller_account_id, slug, display_name, country, currency, published_at, verified_at, fulfillment_methods(type,active), shop_branding(accent_color,surface_color,font_family,logo_path,banner_path,hide_snapduka_branding)")
     .eq("slug", slug)
     .eq("status", "published")
     .maybeSingle();

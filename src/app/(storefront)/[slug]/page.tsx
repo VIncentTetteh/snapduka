@@ -10,6 +10,7 @@ import {
   getPublicProducts,
   getPublicShop,
 } from "@/lib/storefront/queries";
+import { fulfillmentSummary } from "@/lib/storefront/fulfillment-summary";
 import { appOrigin } from "@/lib/app-url";
 import { normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
 import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
@@ -62,10 +63,12 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
       <StoreHeader
         canonicalUrl={canonicalUrl}
         country={shop.country}
+        fulfillment={fulfillmentSummary(shop.fulfillment_methods)}
         logoUrl={publicMediaUrl(normalizeToOne(shop.shop_branding)?.logo_path, "shop-logos")}
         name={shop.display_name}
         slug={slug}
         titleAsH1
+        verified={Boolean(shop.verified_at)}
       />
 
       <div className="mx-auto max-w-[1040px] px-4 pb-16 pt-5">
@@ -135,7 +138,7 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
         <ProductGrid campaign={filters.campaign} products={products} slug={slug} />
 
         <p className="mt-7 text-center text-[11.5px] text-ink-faint">
-          Powered by SnapDuka · Secure Paystack checkout · Guest checkout
+          Powered by SnapDuka · Guest checkout · Payment options shown at checkout
         </p>
       </div>
     </main>

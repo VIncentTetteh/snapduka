@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { AnalyticsTracker } from "@/components/storefront/analytics-tracker";
 import { CheckoutForm } from "@/components/storefront/checkout-form";
 import { StoreHeader } from "@/components/storefront/store-header";
+import { fulfillmentSummary } from "@/lib/storefront/fulfillment-summary";
 import { getPublicProduct, getPublicShop } from "@/lib/storefront/queries";
 import { appOrigin } from "@/lib/app-url";
 import { normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
@@ -65,8 +66,10 @@ export default async function CheckoutPage({
           backHref={`/${slug}`}
           canonicalUrl={canonicalUrl}
           country={shop.country}
+          fulfillment={fulfillmentSummary(shop.fulfillment_methods)}
           name={shop.display_name}
           slug={slug}
+          verified={Boolean(shop.verified_at)}
         />
         <div className="mx-auto max-w-[640px] px-4 pb-16 pt-5">
           <h1 className="mb-4.5 max-w-none font-serif text-[24px] font-medium">Checkout</h1>
@@ -167,9 +170,11 @@ export default async function CheckoutPage({
         backHref={`/${slug}`}
         canonicalUrl={canonicalUrl}
         country={shop.country}
+        fulfillment={fulfillmentSummary(shop.fulfillment_methods)}
         logoUrl={publicMediaUrl(normalizeToOne(shop.shop_branding)?.logo_path, "shop-logos")}
         name={shop.display_name}
         slug={slug}
+        verified={Boolean(shop.verified_at)}
       />
 
       <div className="mx-auto max-w-[640px] px-4 pb-16 pt-5">

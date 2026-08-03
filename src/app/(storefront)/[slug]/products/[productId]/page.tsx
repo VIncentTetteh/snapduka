@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { AnalyticsTracker } from "@/components/storefront/analytics-tracker";
 import { ProductGallery, type VideoSlide } from "@/components/storefront/product-gallery";
+import { fulfillmentSummary } from "@/lib/storefront/fulfillment-summary";
 import type { VideoProvider } from "@/lib/catalog/video";
 import { PurchaseActions } from "@/components/storefront/purchase-actions";
 import { RestockForm } from "@/components/storefront/restock-form";
@@ -102,9 +103,11 @@ export default async function ProductPage({ params, searchParams }: Props) {
         backHref={`/${slug}`}
         canonicalUrl={canonicalUrl}
         country={shop.country}
+        fulfillment={fulfillmentSummary(shop.fulfillment_methods)}
         logoUrl={publicMediaUrl(normalizeToOne(shop.shop_branding)?.logo_path, "shop-logos")}
         name={shop.display_name}
         slug={slug}
+        verified={Boolean(shop.verified_at)}
       />
 
       <div className="mx-auto max-w-[900px] px-4 pb-10 pt-5">
@@ -155,7 +158,16 @@ export default async function ProductPage({ params, searchParams }: Props) {
                 <svg width="15" height="15" viewBox="0 0 18 18" fill="none" aria-hidden="true" className="flex-none text-success">
                   <path d="M3.5 9.5 7 13l7.5-8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Secure payment with Paystack · card or mobile money
+                {/*
+                  Was "Secure payment with Paystack · card or mobile money".
+                  Online payments require an active subaccount
+                  (checkout/page.tsx:150) and 4 of the 5 live shops have none —
+                  those buyers were promised card and mobile money, then offered
+                  cash on delivery. The storefront cannot read
+                  payment_subaccounts (owner/operator RLS), so this states only
+                  what holds for every shop.
+                */}
+                Payment options shown at checkout
               </p>
               <p className="m-0 flex items-center gap-2.5 text-[12.5px] text-ink-soft">
                 <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="flex-none text-price">

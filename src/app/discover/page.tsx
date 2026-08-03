@@ -73,7 +73,7 @@ export default async function DiscoverPage({
         </h1>
         <p className="mb-8 max-w-[52ch] text-[15.5px] leading-[1.65] text-ink-soft">
           Stores across Ghana, Nigeria and Côte d&rsquo;Ivoire that chose to be discovered. Every one has
-          secure Paystack checkout and order tracking.
+          guest checkout and order tracking, with each shop&rsquo;s payment options shown at checkout.
         </p>
 
         <form className="mb-8 flex flex-wrap gap-2.5">
