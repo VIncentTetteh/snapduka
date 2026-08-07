@@ -98,6 +98,11 @@ function applySecurityHeaders(response: NextResponse, supabaseUrl: string, nonce
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // /api/mobile is excluded deliberately: those requests are Bearer-token
+    // JSON with no cookies, so the getClaims() round-trip and the custom-domain
+    // lookup are pure latency, and a CSP header on a JSON response is noise.
+    // The rest of /api still runs through here — cookie-authenticated routes
+    // rely on the proxy to refresh an expired session.
+    "/((?!api/mobile|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

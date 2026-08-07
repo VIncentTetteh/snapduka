@@ -5,7 +5,7 @@ import QRCode from "qrcode";
 import { appHost } from "@/lib/app-url";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { mainImageUrl, normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
-import { createClient } from "@/lib/supabase/server";
+import { createRequestScopedClient } from "@/lib/supabase/request";
 export const dynamic = "force-dynamic";
 
 /**
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
   }
 
   const productId = request.nextUrl.searchParams.get("product");
-  const supabase = await createClient();
+  const supabase = await createRequestScopedClient();
 
   const { data: shop } = await supabase
     .from("shops")

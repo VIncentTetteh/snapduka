@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
 vi.mock("@/lib/auth/permissions", () => ({ hasPermission: mocks.hasPermission }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
+vi.mock("@/lib/supabase/request", () => ({
+  createRequestScopedClient: mocks.createClient,
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 
 import { POST } from "./route";

@@ -140,12 +140,23 @@ export async function resolveActor(
 }
 
 async function createSupabaseDependencies(): Promise<ActorResolverDependencies> {
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  // Request-scoped rather than cookie-only, so the same resolver serves the web
+  // dashboard (cookies) and the mobile app (Authorization: Bearer <jwt>).
+  const { createRequestScopedClient, requestBearerJwt } = await import(
+    "@/lib/supabase/request"
+  );
+  const [supabase, bearerJwt] = await Promise.all([
+    createRequestScopedClient(),
+    requestBearerJwt(),
+  ]);
 
   return {
     async getVerifiedUser() {
-      const { data, error } = await supabase.auth.getUser();
+      // A Bearer client has no stored session, so the token must be passed
+      // explicitly; `getUser(undefined)` is the cookie path unchanged. Either
+      // way this round-trips to Supabase Auth, which verifies signature and
+      // expiry — the token is never trusted as presented.
+      const { data, error } = await supabase.auth.getUser(bearerJwt ?? undefined);
 
       if (error || !data.user) {
         return null;

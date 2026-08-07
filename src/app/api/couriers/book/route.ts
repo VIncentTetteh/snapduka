@@ -6,7 +6,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { isSafeHttpUrl } from "@/lib/catalog/video";
 import { courierLabel, isCourierKey, requiresCustomName } from "@/lib/couriers/catalogue";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { createRequestScopedClient } from "@/lib/supabase/request";
 
 const schema = z
   .object({
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = await createRequestScopedClient();
   const { data: order } = await supabase
     .from("orders")
     .select("id,fulfillment_status")
