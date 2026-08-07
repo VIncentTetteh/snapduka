@@ -327,6 +327,67 @@ describe("transitionOrder", () => {
       }
     });
   });
+
+  // These run after the order row has already been updated, so they cannot be
+  // rolled back and must not be reported to the caller as a failed transition —
+  // a retry would only come back as a version conflict. They must still be
+  // logged: these errors were originally discarded, and a whole notification
+  // fan-out went missing in a live run without leaving a single trace.
+  describe("post-commit failures", () => {
+    function failingRpcAdmin(failing: string, order = paidOrder()) {
+      const admin = fakeAdmin([order]);
+      admin.rpc.mockImplementation(async (name: string) =>
+        name === failing
+          ? { data: null, error: { message: `${name} exploded` } }
+          : { data: null, error: null },
+      );
+      return admin;
+    }
+
+    it("still reports success when the notification fan-out fails, and logs it", async () => {
+      const admin = failingRpcAdmin(
+        "enqueue_order_notification",
+        paidOrder({ status: "pending" }),
+      );
+      mocks.createAdminClient.mockReturnValue(admin.client);
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const result = await transitionOrder({
+        sellerAccountId: SELLER,
+        orderId: ORDER_ID,
+        next: "confirmed",
+        expectedVersion: 3,
+      });
+
+      expect(result).toMatchObject({ ok: true, status: "confirmed", version: 4 });
+      expect(admin.state.get(ORDER_ID)!).toMatchObject({ status: "confirmed" });
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining("enqueue_order_notification failed"),
+        expect.objectContaining({ message: "enqueue_order_notification exploded" }),
+      );
+      logged.mockRestore();
+    });
+
+    it("logs a failed stock finalization rather than losing it", async () => {
+      const admin = failingRpcAdmin("finalize_order_stock");
+      mocks.createAdminClient.mockReturnValue(admin.client);
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const result = await transitionOrder({
+        sellerAccountId: SELLER,
+        orderId: ORDER_ID,
+        next: "cancelled",
+        expectedVersion: 3,
+      });
+
+      expect(result).toMatchObject({ ok: true });
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining("finalize_order_stock(released) failed"),
+        expect.anything(),
+      );
+      logged.mockRestore();
+    });
+  });
 });
 
 describe("bulkTransitionOrders", () => {

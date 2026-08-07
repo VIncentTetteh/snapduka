@@ -107,8 +107,22 @@ select ok(
   'a signed-in seller can read their own funnel');
 
 -- ---------------------------------------------------------------------------
--- Arithmetic.
+-- Arithmetic — as the seller, not as postgres.
+--
+-- These functions carry no seller predicate of their own; RLS is the entire
+-- scoping mechanism. Run as superuser, RLS is bypassed, so every assertion
+-- below silently becomes a platform-wide aggregate: it passes only while this
+-- database holds exactly one seller's data, and it proves nothing about the
+-- tenant isolation the header claims. Authenticating as the seller both fixes
+-- that fragility and makes the scoping itself the thing under test.
 -- ---------------------------------------------------------------------------
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","sub":"a2a20000-0000-4000-8000-000000000001","app_metadata":{}}',
+  true
+);
+set local role authenticated;
+
 select is(
   (select visits from public.seller_analytics_summary(now() - interval '1 day', now() + interval '1 day')),
   2::bigint,

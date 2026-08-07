@@ -675,23 +675,41 @@ select set_config(
 set local role authenticated;
 
 select is(public.is_operator(), true, 'verified app metadata identifies operator');
+
+-- Scoped to this file's three fixture sellers rather than counting the whole
+-- table. What is under test is that the operator sees rows belonging to sellers
+-- other than themselves; an unscoped count says that only as long as the
+-- database holds nothing else, so it breaks the moment anyone signs up on a dev
+-- stack — a failure that says nothing about RLS.
 select is(
-  (select count(*) from public.seller_accounts),
+  (select count(*) from public.seller_accounts
+    where id in ('00000000-0000-0000-0000-000000001201',
+                 '00000000-0000-0000-0000-000000001202',
+                 '00000000-0000-0000-0000-000000001203')),
   3::bigint,
   'operator can read seller accounts across sellers'
 );
 select is(
-  (select count(*) from public.shops),
+  (select count(*) from public.shops
+    where seller_account_id in ('00000000-0000-0000-0000-000000001201',
+                                '00000000-0000-0000-0000-000000001202',
+                                '00000000-0000-0000-0000-000000001203')),
   3::bigint,
   'operator can read published and unpublished shops'
 );
 select is(
-  (select count(*) from public.seller_verifications),
+  (select count(*) from public.seller_verifications
+    where seller_account_id in ('00000000-0000-0000-0000-000000001201',
+                                '00000000-0000-0000-0000-000000001202',
+                                '00000000-0000-0000-0000-000000001203')),
   3::bigint,
   'operator can read verifications across sellers'
 );
 select is(
-  (select count(*) from public.payment_subaccounts),
+  (select count(*) from public.payment_subaccounts
+    where seller_account_id in ('00000000-0000-0000-0000-000000001201',
+                                '00000000-0000-0000-0000-000000001202',
+                                '00000000-0000-0000-0000-000000001203')),
   3::bigint,
   'operator can read payment setup across sellers'
 );

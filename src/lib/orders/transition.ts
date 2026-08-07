@@ -98,14 +98,29 @@ export async function transitionOrder(input: TransitionInput): Promise<Transitio
     .maybeSingle();
   if (!changed) return { ok: false, reason: "version_conflict" };
 
-  if (next === "completed") {
-    await admin.rpc("finalize_order_stock", { p_order_id: orderId, p_outcome: "consumed" });
-  }
-  if (next === "cancelled") {
-    await admin.rpc("finalize_order_stock", { p_order_id: orderId, p_outcome: "released" });
+  // Everything past this point is post-commit: the status change is already
+  // durable and cannot be rolled back from here, so a failure must not turn a
+  // successful transition into a client-visible error (the retry would only
+  // come back as a version conflict). It must still be *loud* — these silently
+  // discarded errors are how a whole notification fan-out went missing without
+  // a single trace.
+  const stockOutcome =
+    next === "completed" ? "consumed" : next === "cancelled" ? "released" : null;
+  if (stockOutcome) {
+    const { error: stockError } = await admin.rpc("finalize_order_stock", {
+      p_order_id: orderId,
+      p_outcome: stockOutcome,
+    });
+    if (stockError) {
+      // Inventory now disagrees with the order. Nothing else will notice.
+      console.error(
+        `[orders/transition] finalize_order_stock(${stockOutcome}) failed for ${orderId}`,
+        stockError,
+      );
+    }
   }
 
-  await admin.from("order_events").insert({
+  const { error: eventError } = await admin.from("order_events").insert({
     order_id: orderId,
     seller_account_id: sellerAccountId,
     event_type: `order_${next}`,
@@ -113,8 +128,22 @@ export async function transitionOrder(input: TransitionInput): Promise<Transitio
     actor_id: sellerAccountId,
     data: { from: order.status, to: next },
   });
+  if (eventError) {
+    console.error(`[orders/transition] order_events insert failed for ${orderId}`, eventError);
+  }
 
-  await admin.rpc("enqueue_order_notification", { p_order_id: orderId, p_event: next });
+  const { error: notifyError } = await admin.rpc("enqueue_order_notification", {
+    p_order_id: orderId,
+    p_event: next,
+  });
+  if (notifyError) {
+    // The buyer will never hear about this change, and neither will the seller
+    // on their other devices.
+    console.error(
+      `[orders/transition] enqueue_order_notification failed for ${orderId}`,
+      notifyError,
+    );
+  }
 
   if (next === "completed") {
     await enqueueIntegrationEvent({
