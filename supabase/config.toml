@@ -48,6 +48,12 @@ additional_redirect_urls = [
   "http://localhost:3000/**",
   "http://localhost:3001/**",
   "http://192.168.100.43:3001/**",
+  # The mobile app's OAuth return target (apps/mobile lib/auth.ts builds
+  # snapduka://auth/callback). Without it social sign-in starts, the provider
+  # authenticates, and GoTrue then redirects to site_url — a web URL the app
+  # never receives — so the browser sheet closes on the marketing site and the
+  # seller is never signed in.
+  "snapduka://**",
 ]
 jwt_expiry = 3600
 enable_signup = true
