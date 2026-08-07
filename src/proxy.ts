@@ -103,6 +103,11 @@ export const config = {
     // lookup are pure latency, and a CSP header on a JSON response is noise.
     // The rest of /api still runs through here — cookie-authenticated routes
     // rely on the proxy to refresh an expired session.
-    "/((?!api/mobile|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    //
+    // .well-known is excluded because iOS fetches the app-site-association file
+    // exactly once at install time and abandons universal links silently if
+    // anything about the response surprises it — a redirect, a content type, an
+    // unexpected header. It must be served plainly.
+    "/((?!api/mobile|\\.well-known|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

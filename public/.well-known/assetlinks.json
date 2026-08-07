@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "shop.snapduka.app",
+      "sha256_cert_fingerprints": ["REPLACE_WITH_UPLOAD_KEY_SHA256"]
+    }
+  }
+]
