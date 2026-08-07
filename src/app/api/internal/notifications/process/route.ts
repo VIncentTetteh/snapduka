@@ -39,7 +39,15 @@ export async function POST(request: Request) {
         const result = await sendWhatsApp(claimed.recipient, template.text);
         if (!result.delivered) throw new Error(result.reason);
       } else if (claimed.channel === "push") {
-        const result = await sendPush(claimed.recipient, template.subject, template.text, String(trackingUrl));
+        // orderId rides along so tapping the notification on a phone opens that
+        // order rather than the app's home tab.
+        const result = await sendPush(
+          claimed.recipient,
+          template.subject,
+          template.text,
+          String(trackingUrl),
+          claimed.payload.orderId ? { orderId: String(claimed.payload.orderId) } : undefined,
+        );
         if (!result.delivered) throw new Error(result.reason);
       } else if (claimed.channel === "sms") {
         const result = await sendSms(claimed.recipient, template.text);

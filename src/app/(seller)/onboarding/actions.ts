@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { resolveServerActor } from "@/lib/auth/actor";
+import { bootstrapSeller } from "@/lib/auth/bootstrap";
 import {
   parseAccountSetup,
   parseSettlementInput,
@@ -84,60 +85,43 @@ export async function bootstrapSellerAction(
   _previousState: OnboardingActionState,
   formData: FormData,
 ): Promise<OnboardingActionState> {
-  const preserved = values(formData, [
-    "country",
-    "contactName",
-    "contactPhone",
-  ]);
+  const preserved = values(formData, ["country", "contactName", "contactPhone"]);
   const actor = await resolveServerActor();
 
-  if (actor.kind === "anonymous" || actor.kind === "operator") {
-    return errorState(preserved, actorError(actor.kind));
-  }
-
-  if (actor.kind === "seller") {
-    return errorState(
-      preserved,
-      actor.status === "suspended"
-        ? actorError("suspended")
-        : "A seller account already exists. Refresh to continue.",
-    );
-  }
-
-  const parsed = parseAccountSetup(
-    {
-      country: preserved.country,
-      contactName: preserved.contactName,
-      contactPhone: preserved.contactPhone,
-    },
-    actor.email,
-  );
-
-  if (!parsed.success) {
-    return errorState(
-      preserved,
-      "Check the highlighted account details.",
-      parsed.fieldErrors,
-    );
-  }
-
-  const admin = createAdminClient();
-  const { error } = await admin.rpc("bootstrap_seller_account", {
-    p_auth_user_id: actor.userId,
-    p_country: parsed.data.country,
-    p_contact_name: parsed.data.contactName,
-    p_contact_phone: parsed.data.contactPhone,
+  // Adapter only: the rules live in @/lib/auth/bootstrap so the mobile
+  // onboarding route creates accounts identically.
+  const result = await bootstrapSeller(actor, {
+    country: preserved.country ?? "",
+    contactName: preserved.contactName ?? "",
+    contactPhone: preserved.contactPhone ?? "",
   });
 
-  if (error) {
-    return errorState(
-      preserved,
-      "We could not create the seller account. Please try again.",
-    );
+  if (result.ok) {
+    revalidatePath("/onboarding");
+    return successState("Seller account created. Continue with your shop.");
   }
 
-  revalidatePath("/onboarding");
-  return successState("Seller account created. Continue with your shop.");
+  switch (result.reason) {
+    case "not_authenticated":
+      return errorState(preserved, actorError("anonymous"));
+    case "operator":
+      return errorState(preserved, actorError("operator"));
+    case "suspended":
+      return errorState(preserved, actorError("suspended"));
+    case "already_exists":
+      return errorState(preserved, "A seller account already exists. Refresh to continue.");
+    case "invalid":
+      return errorState(
+        preserved,
+        "Check the highlighted account details.",
+        result.fieldErrors,
+      );
+    case "failed":
+      return errorState(
+        preserved,
+        "We could not create the seller account. Please try again.",
+      );
+  }
 }
 
 export async function saveAccountAction(
