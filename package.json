@@ -32,6 +32,7 @@
     "db:test": "supabase test db"
   },
   "dependencies": {
+    "@snapduka/core": "workspace:*",
     "@supabase/ssr": "0.12.0",
     "@supabase/supabase-js": "2.108.1",
     "next": "16.2.9",
