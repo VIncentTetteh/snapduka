@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { generateCampaignToken, isUniqueViolation } from "@/lib/campaigns/tokens";
+import { CHANNEL_TOKEN_SUFFIX, SHARE_CHANNELS } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
 
 export async function disconnectSocialAccountAction(formData: FormData): Promise<void> {
@@ -21,13 +22,11 @@ export async function disconnectSocialAccountAction(formData: FormData): Promise
   revalidatePath("/dashboard/share");
 }
 
-const CHANNELS = ["tiktok", "instagram", "snapchat", "whatsapp"] as const;
-const CHANNEL_SUFFIX: Record<(typeof CHANNELS)[number], string> = {
-  tiktok: "t",
-  instagram: "i",
-  snapchat: "s",
-  whatsapp: "w",
-};
+// From @snapduka/core so the app and the web mint the same token for the same
+// channel. Two clients disagreeing here would create competing links for one
+// destination and split its attribution between them.
+const CHANNELS = SHARE_CHANNELS;
+const CHANNEL_SUFFIX = CHANNEL_TOKEN_SUFFIX;
 
 // Was Math.random().toString(36).slice(2, 6): a ~1.7M keyspace on a globally
 // unique column, enumerable by anyone who wanted another seller's links.
