@@ -4,7 +4,10 @@ import { z } from "zod";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { checkRateLimit } from "@/lib/rate-limit";
+import type { Database } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
+
+type SubscriptionUpdate = Database["public"]["Tables"]["seller_subscriptions"]["Update"];
 
 const schema = z.object({ reference: z.string().min(8).max(120) });
 
@@ -114,7 +117,7 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  const updatePayload: Record<string, unknown> = {
+  const updatePayload: SubscriptionUpdate = {
     state: "active",
     current_period_start: now.toISOString(),
     current_period_end: periodEnd(now, price.interval),
@@ -128,9 +131,9 @@ export async function POST(request: Request) {
   if (isPendingUpgrade) {
     // Payment cleared, so promote the parked target and clear the pending
     // fields. Only now is the seller genuinely off their old plan.
-    updatePayload.plan_id = subscription.pending_plan_id;
-    updatePayload.plan_version = subscription.pending_plan_version;
-    updatePayload.price_id = subscription.pending_price_id;
+    updatePayload.plan_id = subscription.pending_plan_id ?? undefined;
+    updatePayload.plan_version = subscription.pending_plan_version ?? undefined;
+    updatePayload.price_id = subscription.pending_price_id ?? undefined;
     updatePayload.pending_change_type = null;
     updatePayload.pending_plan_id = null;
     updatePayload.pending_plan_version = null;

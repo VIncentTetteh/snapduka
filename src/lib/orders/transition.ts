@@ -5,7 +5,10 @@ import {
   type SellerTransition,
 } from "@/lib/commerce/transitions";
 import { enqueueIntegrationEvent } from "@/lib/integrations/events";
+import type { Database } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
+
+type OrderRowUpdate = Database["public"]["Tables"]["orders"]["Update"];
 
 /**
  * Advancing an order's status, shared by the dashboard server action and the
@@ -73,14 +76,15 @@ export async function transitionOrder(input: TransitionInput): Promise<Transitio
   }
 
   const nextVersion = expectedVersion + 1;
-  const updates: Record<string, unknown> = {
+  const updates = {
     status: next,
     event_version: nextVersion,
-    fulfillment_status: fulfillmentForTransition(next),
-  };
-  if (next === "completed" && order.payment_status === "offline_due") {
-    updates.payment_status = "paid";
-  }
+    fulfillment_status: fulfillmentForTransition(next) as OrderRowUpdate["fulfillment_status"],
+    // Completing a cash order is the moment it becomes paid.
+    ...(next === "completed" && order.payment_status === "offline_due"
+      ? { payment_status: "paid" as const }
+      : {}),
+  } satisfies OrderRowUpdate;
 
   // Compare-and-set on event_version: if another client advanced this order
   // between the read above and here, zero rows change and we report a conflict

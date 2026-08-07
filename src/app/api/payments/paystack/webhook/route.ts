@@ -62,7 +62,8 @@ export async function POST(request: Request) {
     const { error } = await admin.rpc("apply_paystack_transfer_event", {
       p_event_key: eventKey,
       p_reference: reference,
-      p_transfer_id: payload.data?.id == null ? null : String(payload.data.id),
+      // Required in SQL, nullable in practice: a rejected transfer never got an id.
+      p_transfer_id: (payload.data?.id == null ? null : String(payload.data.id)) as string,
       // transfer.success / transfer.failed / transfer.reversed all carry the
       // outcome in data.status, so the RPC branches on that rather than on the
       // event name.

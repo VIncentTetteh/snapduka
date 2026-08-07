@@ -78,7 +78,7 @@ describe("onboarding actions", () => {
       p_slug: "ama-market",
       p_display_name: "Ama Market",
       p_legal_name: "Ama Market Limited",
-      p_registration_number: null,
+      p_registration_number: "",
     });
     expect(from).not.toHaveBeenCalled();
   });

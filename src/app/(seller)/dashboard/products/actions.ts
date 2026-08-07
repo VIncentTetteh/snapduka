@@ -1,4 +1,5 @@
 "use server";
+import { oneOf, PRODUCT_STATUSES } from "@/lib/db/enums";
 
 import { randomUUID } from "node:crypto";
 
@@ -226,13 +227,13 @@ export async function createProductAction(
 export async function setProductStatusAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
   const productId = value(formData, "productId");
-  const status = value(formData, "status");
+  const status = oneOf(value(formData, "status"), PRODUCT_STATUSES);
 
   if (
     actor.kind !== "seller" ||
     !hasPermission(actor.role ?? "owner","products.manage") ||
     !["pending", "active"].includes(actor.status) ||
-    !["draft", "active", "archived"].includes(status)
+    !status
   ) {
     return;
   }
@@ -390,8 +391,8 @@ export async function deleteProductImageAction(formData: FormData): Promise<void
 export async function bulkProductStatusAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
   const ids = formData.getAll("productIds").map(String).slice(0, 100);
-  const status = value(formData, "status");
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner","products.manage") || !ids.length || !["draft", "active", "archived"].includes(status)) return;
+  const status = oneOf(value(formData, "status"), PRODUCT_STATUSES);
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner","products.manage") || !ids.length || !status) return;
   const supabase = await createClient();
   await supabase.from("products").update({ status, published_at: status === "active" ? new Date().toISOString() : null }).eq("seller_account_id", actor.sellerAccountId).in("id", ids);
   revalidatePath("/dashboard/products");

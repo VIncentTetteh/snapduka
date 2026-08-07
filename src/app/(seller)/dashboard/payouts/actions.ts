@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
+import type { CurrencyCode } from "@/lib/countries/types";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { createPayoutDestination, type DestinationType } from "@/lib/payouts/destinations";
@@ -128,7 +129,9 @@ export async function savePayoutDestinationAction(
           const { data, error } = await admin
             .rpc("reserve_payout_destination", {
               p_seller_account_id: input.sellerAccountId,
-              p_currency: input.currency,
+              // The repository interface takes a plain string; the value comes
+              // from the seller's country, so it is always one of the three.
+              p_currency: input.currency as CurrencyCode,
               p_type: input.type,
               p_bank_code: input.bankCode,
               p_bank_name: input.bankName,
@@ -144,7 +147,7 @@ export async function savePayoutDestinationAction(
           const { error } = await admin.rpc("activate_payout_destination", {
             p_destination_id: input.destinationId,
             p_recipient_code: input.recipientCode,
-            p_resolved_account_name: input.resolvedAccountName,
+            p_resolved_account_name: input.resolvedAccountName ?? undefined,
           });
           if (error) throw new Error(error.message);
         },

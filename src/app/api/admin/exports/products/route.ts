@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { oneOf, PRODUCT_STATUSES } from "@/lib/db/enums";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { toCsv } from "@/lib/exports/csv";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
     .limit(5000);
 
-  const status = url.searchParams.get("status");
+  const status = oneOf(url.searchParams.get("status"), PRODUCT_STATUSES);
   if (status) query = query.eq("status", status);
   const moderation = url.searchParams.get("moderation");
   if (moderation) query = query.eq("moderation_status", moderation);

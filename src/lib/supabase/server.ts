@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import type { Database } from "@snapduka/core";
 import { cookies } from "next/headers";
 
 function publicSupabaseConfig() {
@@ -22,7 +23,7 @@ export async function createClient() {
   const { url, publishableKey } = publicSupabaseConfig();
   const cookieStore = await cookies();
 
-  return createServerClient(url, publishableKey, {
+  return createServerClient<Database>(url, publishableKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

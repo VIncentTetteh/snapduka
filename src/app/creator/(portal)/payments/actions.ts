@@ -23,7 +23,7 @@ export async function respondToPayment(formData: FormData): Promise<void> {
   const { error } = await supabase.rpc("respond_to_creator_commission_payment", {
     p_payment_id: paymentId,
     p_action: action,
-    p_note: note || null,
+    p_note: note || undefined,
   });
 
   if (error) {

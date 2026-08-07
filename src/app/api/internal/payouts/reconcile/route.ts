@@ -42,7 +42,9 @@ export async function POST(request: Request) {
     const match = balances.find((row) => row.currency === currency);
     const { data, error } = await admin.rpc("record_ledger_reconciliation", {
       p_currency: currency,
-      p_provider_balance_minor: providerReachable ? (match?.balanceMinor ?? 0) : null,
+      // Required in SQL but nullable: null records "we could not reach the
+      // provider", which is different from a balance of zero.
+      p_provider_balance_minor: (providerReachable ? (match?.balanceMinor ?? 0) : null) as number,
     });
     if (error) {
       console.error(`[reconcile] ${currency} failed: ${error.message}`);

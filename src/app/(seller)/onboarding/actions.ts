@@ -236,7 +236,7 @@ export async function saveShopAction(
     p_slug: parsed.data.slug,
     p_display_name: parsed.data.displayName,
     p_legal_name: parsed.data.legalName,
-    p_registration_number: parsed.data.registrationNumber,
+    p_registration_number: parsed.data.registrationNumber ?? "",
   });
 
   if (shopError) {
@@ -414,7 +414,10 @@ function paymentRepository(
         throw new Error("Unable to read payment setup.", { cause: error });
       }
 
-      if (!data) {
+      if (!data?.provider_subaccount_id || !data.provider_subaccount_code) {
+        // An active row without provider identifiers is not usable for a
+        // charge; treating it as absent makes the caller re-provision rather
+        // than send Paystack an empty subaccount code.
         return null;
       }
 

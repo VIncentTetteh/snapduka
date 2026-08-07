@@ -7,6 +7,7 @@ import { PageHeader, Panel } from "@/components/ui/surface";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { mainImageUrl } from "@/lib/storefront/media";
 import { formatMoney } from "@/lib/i18n";
+import { oneOf, PRODUCT_STATUSES } from "@/lib/db/enums";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CurrencyCode } from "@/lib/countries/types";
 
@@ -57,7 +58,8 @@ export default async function AdminProductsPage({
     .order("created_at", { ascending: false })
     .limit(100);
 
-  if (status && STATUS_FILTERS.some((f) => f.value === status)) query = query.eq("status", status);
+  const productStatus = oneOf(status, PRODUCT_STATUSES);
+  if (productStatus) query = query.eq("status", productStatus);
   if (moderation && MODERATION_FILTERS.some((f) => f.value === moderation)) {
     query = query.eq("moderation_status", moderation);
   }

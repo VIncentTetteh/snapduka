@@ -1,5 +1,6 @@
 import { createClient as createTokenClient } from "@supabase/supabase-js";
 import { headers } from "next/headers";
+import type { Database } from "@snapduka/core";
 
 import { createClient as createCookieClient } from "./server";
 
@@ -72,7 +73,7 @@ export async function createRequestScopedClient() {
   if (!token) return createCookieClient();
 
   const { url, publishableKey } = publicSupabaseConfig();
-  return createTokenClient(url, publishableKey, {
+  return createTokenClient<Database>(url, publishableKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
     // There is no session to persist or refresh on the server: the token is
     // whatever this one request presented. The device owns refresh.

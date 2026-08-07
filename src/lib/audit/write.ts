@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { asJson } from "@/lib/db/json";
 
 /** Derived from the factory so it tracks the real client type, not a guess. */
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -47,13 +48,16 @@ export async function writeAuditEvent(
 
   const { error } = await admin.rpc("write_audit_event", {
     p_actor_type: input.actorType,
-    p_actor_id: input.actorId,
+    // `p_actor_id uuid` has no SQL default, so the generated Args type calls it
+    // required — but Postgres accepts NULL there, and a system actor has no id.
+    // The generator cannot express nullable-but-required, so the cast stands in.
+    p_actor_id: input.actorId as string,
     p_action: input.action,
     p_entity_type: input.entityType,
-    p_entity_id: input.entityId ?? null,
-    p_before_data: input.before ?? null,
-    p_after_data: input.after ?? null,
-    p_metadata: input.metadata ?? {},
+    p_entity_id: input.entityId ?? undefined,
+    p_before_data: asJson(input.before ?? null),
+    p_after_data: asJson(input.after ?? null),
+    p_metadata: asJson(input.metadata ?? {}),
   });
 
   if (error) {

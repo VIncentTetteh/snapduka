@@ -243,8 +243,8 @@ export async function markCommissionsPaid(formData: FormData): Promise<void> {
     p_creator_id: creatorId,
     p_commission_ids: commissionIds,
     p_method: method,
-    p_external_reference: String(formData.get("externalReference") ?? "").trim() || null,
-    p_note: String(formData.get("note") ?? "").trim() || null,
+    p_external_reference: String(formData.get("externalReference") ?? "").trim() || undefined,
+    p_note: String(formData.get("note") ?? "").trim() || undefined,
   });
 
   if (error) back("error", error.message, detail);

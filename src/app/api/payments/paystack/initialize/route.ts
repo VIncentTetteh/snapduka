@@ -5,6 +5,7 @@ import { z } from "zod";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { appOrigin } from "@/lib/app-url";
+import { jsonObject } from "@/lib/db/json";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const schema = z.object({ orderId: z.uuid() });
@@ -100,9 +101,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Payment could not be started." }, { status: 500 });
   }
 
+  // Paystack settles in GHS and NGN only. An XOF order reaching here would be
+  // rejected by the provider with a currency error the buyer cannot act on;
+  // Cote d'Ivoire has no online payment rail yet and checkout says so.
+  if (order.currency !== "GHS" && order.currency !== "NGN") {
+    return NextResponse.json(
+      { error: "Online payment is not available in this market yet." },
+      { status: 400 },
+    );
+  }
+
+  // buyer_snapshot is jsonb, so the generated type is the full Json union.
+  const buyer = jsonObject(order.buyer_snapshot);
+
   try {
     const result = await paystackProvider().initialize({
-      email: String(order.buyer_snapshot.email),
+      email: String(buyer.email),
       amountMinor: order.total_minor,
       currency: order.currency,
       reference,
