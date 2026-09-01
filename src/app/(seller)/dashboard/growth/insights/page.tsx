@@ -4,19 +4,20 @@ import { MetricTile } from "@/components/ui/metric-tile";
 import { advancedCommerceMetrics } from "@/lib/analytics/advanced";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
+import { fetchEventCounts } from "@/lib/analytics/event-counts";
 
 export default async function InsightsPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [{ data: events }, { data: orders }, { data: lines }] = await Promise.all([
-    supabase.from("analytics_events").select("event_type").eq("seller_account_id", actor.sellerAccountId),
+  const [eventCounts, { data: orders }, { data: lines }] = await Promise.all([
+    fetchEventCounts(actor.sellerAccountId),
     supabase.from("orders").select("customer_id,total_minor").eq("seller_account_id", actor.sellerAccountId),
     supabase.from("order_lines").select("product_name,quantity,line_total_minor,orders!inner(seller_account_id)").eq("orders.seller_account_id", actor.sellerAccountId),
   ]);
   const metrics = advancedCommerceMetrics({
-    visits: events?.filter((e) => e.event_type === "visit").length ?? 0,
-    checkouts: events?.filter((e) => e.event_type === "checkout_start").length ?? 0,
+    visits: eventCounts.visit,
+    checkouts: eventCounts.checkout_start,
     orders: (orders ?? []).map((o) => ({ customerId: o.customer_id, totalMinor: o.total_minor })),
   });
   const top = new Map<string, number>();

@@ -20,6 +20,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
+import { fetchEventCounts } from "@/lib/analytics/event-counts";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,7 @@ export default async function ShareStudioPage({
   const originHost = new URL(origin).host;
   const supabase = await createClient();
 
-  const [{ data: shop }, { data: products }, { data: links }, { data: attributions }, { data: events }, { count: paidOrders }] =
+  const [{ data: shop }, { data: products }, { data: links }, { data: attributions }, eventCounts, { count: paidOrders }] =
     await Promise.all([
       supabase
         .from("shops")
@@ -75,10 +76,7 @@ export default async function ShareStudioPage({
         .from("campaign_attributions")
         .select("campaign_id,order_id,click_count")
         .eq("seller_account_id", actor.sellerAccountId),
-      supabase
-        .from("analytics_events")
-        .select("event_type")
-        .eq("seller_account_id", actor.sellerAccountId),
+      fetchEventCounts(actor.sellerAccountId),
       supabase
         .from("orders")
         .select("id", { count: "exact", head: true })
@@ -132,8 +130,8 @@ export default async function ShareStudioPage({
   const totalClicks = (attributions ?? [])
     .filter((attribution) => !attribution.order_id)
     .reduce((sum, attribution) => sum + (attribution.click_count ?? 1), 0);
-  const visits = events?.filter((e) => e.event_type === "visit").length ?? 0;
-  const checkoutStarts = events?.filter((e) => e.event_type === "checkout_start").length ?? 0;
+  const visits = eventCounts.visit;
+  const checkoutStarts = eventCounts.checkout_start;
 
   const clicksByChannel = (links ?? []).reduce<Record<string, number>>((acc, link) => {
     acc[link.channel] = (acc[link.channel] ?? 0) + (clicksByCampaign[link.id]?.clicks ?? 0);
