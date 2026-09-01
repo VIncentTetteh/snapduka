@@ -30,8 +30,11 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  // data-scroll-behavior opts into the smooth scrolling globals.css sets on
+  // <html>. Without it Next animates every route transition's scroll reset,
+  // which reads as lag on a slow connection.
   return (
-    <html lang="en">
+    <html data-scroll-behavior="smooth" lang="en">
       <head>
       </head>
       <body><OfflineBanner />{children}<ServiceWorkerRegister /></body>
