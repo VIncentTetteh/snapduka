@@ -15,6 +15,12 @@ export type EventCounts = Record<AnalyticsEventType, number>;
  * Builds its own cookie-bound client so callers keep their own `supabase`
  * binding free: handing this function the caller's client made tsc compare the
  * client's generics structurally and blow its instantiation depth limit.
+ *
+ * Follow-up: migration 202608070069 adds seller_analytics_summary(p_from, p_to),
+ * which returns these three counts plus order and buyer totals in one round
+ * trip. Fold these callers into it once that migration is live — counting here
+ * only because the RPC is not yet applied to production, and three dashboards
+ * should not start depending on an unshipped migration.
  */
 export async function fetchEventCounts(sellerAccountId: string): Promise<EventCounts> {
   const supabase = await createClient();
