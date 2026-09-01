@@ -24,9 +24,13 @@ export async function changePlan(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller" || actor.role || actor.status !== "active") return;
   const planCode = String(formData.get("planCode") ?? "");
-  const interval = String(formData.get("interval") ?? "monthly");
+  const intervalEntry = formData.get("interval");
+  const requestedInterval =
+    typeof intervalEntry === "string" && ["monthly", "yearly"].includes(intervalEntry)
+      ? intervalEntry
+      : null;
   if (!["free", "growth", "scale"].includes(planCode)) return;
-  if (planCode !== "free" && !["monthly", "yearly"].includes(interval)) return;
+  if (planCode !== "free" && intervalEntry !== null && !requestedInterval) return;
   if (!process.env.PAYSTACK_SECRET_KEY) fail("Online billing is not configured yet. Contact support.");
 
   const supabase = await createClient();
@@ -52,6 +56,9 @@ export async function changePlan(formData: FormData) {
   const existingPriceRow = existing?.plan_prices as { interval?: string } | { interval?: string }[] | null;
   const existingInterval =
     (Array.isArray(existingPriceRow) ? existingPriceRow[0]?.interval : existingPriceRow?.interval) ?? "monthly";
+  // Missing interval means "keep my current cadence" for an existing paid
+  // subscription, while new subscriptions sensibly default to monthly.
+  const interval = requestedInterval ?? (existing ? existingInterval : "monthly");
   const existingState = existing
     ? effectiveSubscriptionState({ state: existing.state as SubscriptionState, graceEndsAt: existing.grace_ends_at })
     : "expired";
@@ -76,10 +83,9 @@ export async function changePlan(formData: FormData) {
       (targetTier === currentTier &&
         (INTERVAL_RANK[interval] ?? 0) > (INTERVAL_RANK[existingInterval] ?? 0)));
 
-  // Yearly -> monthly must not refund the remainder of a paid year, so it is
-  // scheduled. Every other scheduled change keeps whatever interval the seller
-  // is already billed on.
-  const scheduledInterval = isIntervalChange ? interval : existingInterval;
+  // Respect an explicitly selected cadence on a tier downgrade. Legacy callers
+  // that omit it still preserve the seller's existing billing interval.
+  const scheduledInterval = requestedInterval ?? existingInterval;
 
   if (!isUpgrade) {
     // Downgrade or cancel: keep current entitlements until current_period_end,

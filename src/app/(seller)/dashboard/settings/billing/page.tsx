@@ -13,6 +13,7 @@ import type { CurrencyCode } from "@/lib/countries/types";
 
 import { cancelPendingUpgrade, cancelSubscription, changePlan } from "./actions";
 import { SubscriptionVerifier } from "./subscription-verifier";
+import { BillingPlanCard } from "./billing-plan-card";
 
 type PlanRow = {
   code: string;
@@ -253,6 +254,24 @@ export default async function BillingPage({
               row.code === "free"
                 ? subscription?.pending_change_type === "cancel"
                 : subscription?.pending_change_type === "downgrade" && pendingPlanName === row.name;
+            if (row.code !== "free") {
+              return (
+                <BillingPlanCard
+                  key={row.code}
+                  code={row.code}
+                  name={row.name}
+                  prices={prices}
+                  features={featureBullets(row.entitlements)}
+                  currentPlanCode={plan.planCode}
+                  currentInterval={currentInterval}
+                  isEntitled={isEntitled}
+                  renewsAt={renewsAt}
+                  featured={featured}
+                  pending={isPendingThisRow}
+                  pendingLabel={pendingLabel}
+                />
+              );
+            }
             return (
               <Panel
                 key={row.code}

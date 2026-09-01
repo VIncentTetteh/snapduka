@@ -334,6 +334,28 @@ describe("changePlan", () => {
     expect(priceQuery.eq).toHaveBeenCalledWith("interval", "yearly");
   });
 
+  it("a tier downgrade uses an explicitly selected interval", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    const existing = {
+      id: "sub-1", state: "active", grace_ends_at: null, current_period_end: "2027-01-01T00:00:00Z",
+      provider_subscription_code: null, provider_email_token: null,
+      plans: { code: "scale" }, plan_prices: { interval: "yearly" },
+    };
+    const priceQuery = queryMock({ data: { id: "price-growth-monthly" } });
+    const fromRead = vi.fn((table: string) => {
+      if (table === "seller_subscriptions") return queryMock({ data: existing });
+      if (table === "plans") return queryMock({ data: { id: "plan-growth", version: 2 } });
+      if (table === "plan_prices") return priceQuery;
+      return queryMock({ data: null });
+    });
+    mocks.createClient.mockResolvedValue({ from: fromRead });
+    mocks.createAdminClient.mockReturnValue({ from: () => ({ update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }) });
+
+    await changePlan(formData({ planCode: "growth", interval: "monthly" }));
+
+    expect(priceQuery.eq).toHaveBeenCalledWith("interval", "monthly");
+  });
+
   it("already on this plan AND interval is rejected", async () => {
     mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
     const existing = {

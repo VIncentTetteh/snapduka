@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { setProductStatusAction } from "@/app/(seller)/dashboard/products/actions";
-import { ProductForm } from "@/components/seller/product-form";
+import { ProductCreateDialog } from "@/components/seller/product-create-dialog";
 import { ProductStatusBadge } from "@/components/seller/status-badges";
 import { ProductStatusToggle } from "@/components/seller/product-status-toggle";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -34,13 +34,11 @@ export default async function ProductsPage() {
 
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
-      <PageHeader title="Products" sub="Your catalogue — prices, stock and visibility." />
-
-      {/* Add product */}
-      <Panel className="mb-5 p-4.5">
-        <h2 className="mb-3 text-[14px] font-bold">Add a product</h2>
-        <ProductForm currency={shop.currency as "GHS" | "NGN" | "XOF"} />
-      </Panel>
+      <PageHeader
+        title="Products"
+        sub="Keep your catalogue organised, in stock and ready to share."
+        actions={<ProductCreateDialog currency={shop.currency as "GHS" | "NGN" | "XOF"} />}
+      />
 
       {error ? (
         <div
@@ -54,12 +52,20 @@ export default async function ProductsPage() {
       {!error && !products?.length ? (
         <EmptyState
           title="Your catalogue is empty"
-          body="Add your first product above — a name, a price and stock is enough to start selling."
+          body="Create your first product with a name, price and stock. You can add richer details whenever you are ready."
+          action={<ProductCreateDialog currency={shop.currency as "GHS" | "NGN" | "XOF"} />}
         />
       ) : null}
 
       {products && products.length > 0 ? (
         <Panel className="overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-line-soft bg-raised/60 px-4.5 py-3">
+            <div>
+              <h2 className="text-[13.5px] font-bold text-ink">All products</h2>
+              <p className="mt-0.5 text-[11.5px] text-ink-muted">{products.length} {products.length === 1 ? "item" : "items"} in your catalogue</p>
+            </div>
+            <span className="text-[11.5px] font-semibold text-ink-muted">Select a product to edit</span>
+          </div>
           {products.map((product) => {
             const available =
               product.inventory_policy === "track"

@@ -149,70 +149,96 @@ export default async function ShareStudioPage({
   };
 
   return (
-    <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
+    <main className="sd-main mx-auto max-w-[1120px] px-4 pt-6 sm:px-6">
       <PageHeader
+        eyebrow="Growth"
         title="Share Studio"
-        sub="Tracked links, captions and story cards for every channel."
+        sub="One polished workspace to prepare, publish and measure every product campaign."
+        actions={
+          <a
+            href={storeUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-10 items-center rounded-[10px] border border-line-strong bg-white px-4 text-[13px] font-semibold text-ink no-underline transition-colors hover:border-[#B9AC98]"
+          >
+            View storefront ↗
+          </a>
+        }
       />
 
       {/* Tabs */}
-      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-line">
+      <nav aria-label="Share Studio sections" className="mb-5 flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1 shadow-[0_4px_16px_rgba(57,44,31,0.035)]">
         {TABS.map((t) => (
           <Link
             key={t.id}
             href={tabHref(t.id)}
             aria-current={tab === t.id ? "page" : undefined}
-            className={`-mb-px min-h-10 whitespace-nowrap border-b-2 px-3.5 pt-2 text-[13.5px] no-underline ${
+            className={`inline-flex min-h-9 items-center whitespace-nowrap rounded-lg px-3.5 text-[13px] no-underline transition-colors ${
               tab === t.id
-                ? "border-accent font-bold text-ink"
-                : "border-transparent font-semibold text-ink-muted hover:text-ink"
+                ? "bg-ink font-bold text-white shadow-sm"
+                : "font-semibold text-ink-muted hover:bg-raised hover:text-ink"
             }`}
           >
             {t.label}
           </Link>
         ))}
-      </div>
+      </nav>
 
       {tab === "share" ? (
         <>
-          {/* Product chips */}
-          <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
-            <Link
-              href="/dashboard/share"
-              aria-current={!selectedProduct ? "page" : undefined}
-              className={`flex h-10 flex-none items-center whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold no-underline ${
-                !selectedProduct
-                  ? "border-ink bg-ink text-paper"
-                  : "border-line-input bg-white text-ink-soft hover:border-[#B9AC98]"
-              }`}
-            >
-              Storefront
-            </Link>
-            {(products ?? []).map((product) => (
+          <Panel className="mb-5 p-4 sm:p-4.5">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <p className="text-[11.5px] font-bold uppercase tracking-[0.07em] text-accent">Campaign destination</p>
+                <h2 className="mt-1 text-[14px] font-bold text-ink">Choose what you want to share</h2>
+              </div>
+              <p className="max-w-[42ch] truncate font-mono text-[11.5px] text-ink-muted">{targetUrl}</p>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-0.5">
               <Link
-                key={product.id}
-                href={`/dashboard/share?product=${product.id}`}
-                aria-current={selectedProduct?.id === product.id ? "page" : undefined}
+                href="/dashboard/share"
+                aria-current={!selectedProduct ? "page" : undefined}
                 className={`flex h-10 flex-none items-center whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold no-underline ${
-                  selectedProduct?.id === product.id
-                    ? "border-ink bg-ink text-paper"
+                  !selectedProduct
+                    ? "border-accent bg-accent-tint text-accent-deep"
                     : "border-line-input bg-white text-ink-soft hover:border-[#B9AC98]"
                 }`}
               >
-                {product.name}
+                Storefront
               </Link>
-            ))}
-          </div>
+              {(products ?? []).map((product) => (
+                <Link
+                  key={product.id}
+                  href={`/dashboard/share?product=${product.id}`}
+                  aria-current={selectedProduct?.id === product.id ? "page" : undefined}
+                  className={`flex h-10 flex-none items-center whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold no-underline ${
+                    selectedProduct?.id === product.id
+                      ? "border-accent bg-accent-tint text-accent-deep"
+                      : "border-line-input bg-white text-ink-soft hover:border-[#B9AC98]"
+                  }`}
+                >
+                  {product.name}
+                </Link>
+              ))}
+            </div>
+          </Panel>
 
-          <div className="grid items-start gap-4 lg:grid-cols-[1.4fr_1fr]">
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.25fr)_340px]">
             <div className="grid gap-4">
               {/* Share now */}
-              <Panel className="p-4.5">
-                <h2 className="mb-1 text-[14px] font-bold">Share now</h2>
-                <p className="mb-3 text-[12.5px] text-ink-muted">
+              <Panel className="overflow-hidden border-[#E8D8C6] bg-[linear-gradient(135deg,#FFF8F1_0%,#FFFFFF_65%)] p-4.5">
+                <div className="mb-4 flex items-start gap-3">
+                  <span aria-hidden="true" className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-accent text-white">
+                    <svg fill="none" height="18" viewBox="0 0 20 20" width="18"><path d="M13.5 6.5 6.8 9.6m0 .9 6.7 3M16 5a2.2 2.2 0 1 1-4.4 0A2.2 2.2 0 0 1 16 5ZM8.4 10a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0Zm7.6 5a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" /></svg>
+                  </span>
+                  <div>
+                    <h2 className="text-[14px] font-bold">Share {destinationLabel}</h2>
+                    <p className="mt-1 text-[12.5px] text-ink-muted">
                   Each button uses that channel&rsquo;s tracked link, so clicks and orders are
                   attributed automatically.
-                </p>
+                    </p>
+                  </div>
+                </div>
                 <ShareButtons
                   caption={caption}
                   links={destinationLinks.map((link) => ({
@@ -283,7 +309,7 @@ export default async function ShareStudioPage({
               </Panel>
 
               {/* Caption */}
-              <Panel className="p-4.5">
+              <Panel className="overflow-hidden bg-ink p-4.5 text-white">
                 <div className="mb-2.5 flex items-center justify-between gap-3">
                   <h2 className="text-[14px] font-bold">Caption</h2>
                   <CopyButton value={`${caption}\n${targetUrl}`} label="Copy caption" />
@@ -300,11 +326,11 @@ export default async function ShareStudioPage({
               {/* Story card */}
               <Panel className="p-4.5">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h2 className="text-[14px] font-bold">Story card</h2>
+                  <div><h2 className="text-[14px] font-bold text-white">Story card</h2><p className="mt-0.5 text-[11.5px] text-[#BDB3A8]">Ready for Stories, Reels and Status</p></div>
                   <a
                     href={`/api/share/story-card${selectedProduct ? `?product=${selectedProduct.id}` : ""}`}
                     download={`snapduka-story-${selectedProduct?.id ?? shop.slug}.png`}
-                    className="inline-flex min-h-9 items-center rounded-[9px] border border-line-strong bg-white px-3 text-[12.5px] font-semibold text-ink no-underline transition-colors hover:border-[#B9AC98]"
+                    className="inline-flex min-h-9 items-center rounded-[9px] border border-white/20 bg-white/10 px-3 text-[12.5px] font-semibold text-white no-underline transition-colors hover:bg-white/15"
                   >
                     Download
                   </a>
@@ -314,9 +340,9 @@ export default async function ShareStudioPage({
                 <img
                   src={`/api/share/story-card${selectedProduct ? `?product=${selectedProduct.id}` : ""}`}
                   alt={`Story card for ${selectedProduct?.name ?? shop.display_name}`}
-                  className="mx-auto w-full max-w-[240px] rounded-2xl border border-line shadow-card"
+                  className="mx-auto w-full max-w-[220px] rounded-2xl border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.28)]"
                 />
-                <p className="mt-2.5 text-center text-[11.5px] text-ink-muted">
+                <p className="mt-3 text-center text-[11.5px] text-[#BDB3A8]">
                   1080×1920 — download and post to TikTok, Reels, Snapchat or Status.
                 </p>
               </Panel>
