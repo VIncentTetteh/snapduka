@@ -37,8 +37,8 @@ function wireClient() {
     expect(options).toEqual({ count: "exact", head: true });
     expect(columns).not.toBe("event_type");
     return {
-      eq: (_sellerColumn: string, _sellerId: string) => ({
-        eq: (_typeColumn: string, eventType: string) =>
+      eq: () => ({
+        eq: (_column: string, eventType: string) =>
           Promise.resolve({ count: TRUE_COUNTS[eventType] ?? 0 }),
       }),
     };
