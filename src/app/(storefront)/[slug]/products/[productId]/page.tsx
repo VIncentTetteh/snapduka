@@ -102,6 +102,8 @@ export default async function ProductPage({ params, searchParams }: Props) {
         fulfillment={fulfillmentSummary(shop.fulfillment_methods)}
         logoUrl={publicMediaUrl(normalizeToOne(shop.shop_branding)?.logo_path, "shop-logos")}
         name={shop.display_name}
+        shareSubject="product"
+        shareTitle={product.name}
         slug={slug}
         verified={Boolean(shop.verified_at)}
       />
