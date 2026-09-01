@@ -28,6 +28,8 @@ export function StoreHeader({
   backHref,
   logoUrl = null,
   titleAsH1 = false,
+  shareTitle,
+  shareSubject = "store",
 }: {
   name: string;
   slug: string;
@@ -38,6 +40,10 @@ export function StoreHeader({
   backHref?: string;
   logoUrl?: string | null;
   titleAsH1?: boolean;
+  /** What the share sheet announces. Defaults to the shop name. */
+  shareTitle?: string;
+  /** What the button says it shares, so a product page does not say "store". */
+  shareSubject?: "store" | "product";
 }) {
   const NameTag = titleAsH1 ? "h1" : "span";
   return (
@@ -87,7 +93,7 @@ export function StoreHeader({
           </span>
         </Link>
         <div className="flex-1" />
-        <ShareButton title={name} url={canonicalUrl} />
+        <ShareButton subject={shareSubject} title={shareTitle ?? name} url={canonicalUrl} />
         <CartButton slug={slug} />
       </div>
     </header>
