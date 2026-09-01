@@ -11,6 +11,7 @@ import { StoreHeader } from "@/components/storefront/store-header";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { deriveAvailability } from "@/lib/catalog/inventory";
 import { normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
+import { formatPrice } from "@/lib/storefront/price";
 import { getPublicProduct, getPublicShop } from "@/lib/storefront/queries";
 import { appOrigin } from "@/lib/app-url";
 import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
@@ -78,16 +79,11 @@ export default async function ProductPage({ params, searchParams }: Props) {
       : null;
 
   const heroGradient = gradientForSeed(product.id);
-  const priceLabel =
-    product.currency === "XOF"
-      ? `XOF ${product.price_minor.toLocaleString("en-US")}`
-      : `${product.currency} ${(product.price_minor / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const priceLabel = formatPrice(product.price_minor, product.currency);
   const compareAtPriceLabel =
     product.compare_at_price_minor == null
       ? null
-      : product.currency === "XOF"
-        ? `XOF ${product.compare_at_price_minor.toLocaleString("en-US")}`
-        : `${product.currency} ${(product.compare_at_price_minor / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      : formatPrice(product.compare_at_price_minor, product.currency);
   const canonicalUrl = canonicalStorefrontUrl(await appOrigin(), slug, productId);
 
   return (

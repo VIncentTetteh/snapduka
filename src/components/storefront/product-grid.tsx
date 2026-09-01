@@ -3,6 +3,7 @@ import Link from "next/link";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { deriveAvailability } from "@/lib/catalog/inventory";
 import { mainImageUrl } from "@/lib/storefront/media";
+import { formatPrice } from "@/lib/storefront/price";
 
 type Product = {
   id: string;
@@ -16,13 +17,6 @@ type Product = {
   reserved_quantity: number;
   product_media?: { object_path: string; alt_text: string | null; position: number }[] | null;
 };
-
-const currencySymbol: Record<string, string> = { GHS: "GH₵", NGN: "₦", XOF: "CFA" };
-
-function priceDisplay(minor: number, currency: string): string {
-  if (currency === "XOF") return `${minor.toLocaleString("en-US")}`;
-  return (minor / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
 
 export function ProductGrid({
   slug,
@@ -58,8 +52,7 @@ export function ProductGrid({
           product.stock_quantity != null &&
           product.stock_quantity - product.reserved_quantity <= 4 &&
           !soldOut;
-        const sym = currencySymbol[product.currency] ?? product.currency;
-        const price = priceDisplay(product.price_minor, product.currency);
+        const price = formatPrice(product.price_minor, product.currency);
         const imageUrl = mainImageUrl(product.product_media);
         const href = `/${slug}/products/${product.id}${campaign ? `?campaign=${encodeURIComponent(campaign)}` : ""}`;
 
@@ -106,11 +99,11 @@ export function ProductGrid({
               <span className="flex items-center gap-1.5">
                 {product.compare_at_price_minor ? (
                   <span className="text-[12px] font-semibold text-ink-faint line-through">
-                    {sym} {priceDisplay(product.compare_at_price_minor, product.currency)}
+                    {formatPrice(product.compare_at_price_minor, product.currency)}
                   </span>
                 ) : null}
                 <span className="block text-[13.5px] font-bold text-price">
-                  {sym} {price}
+                  {price}
                 </span>
               </span>
             </span>

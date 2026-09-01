@@ -12,7 +12,8 @@ import {
   validatePhone,
   validateRequired,
 } from "@/lib/validation";
-import type { CountryCode } from "@/lib/countries/types";
+import type { CountryCode, CurrencyCode } from "@/lib/countries/types";
+import { formatPrice } from "@/lib/storefront/price";
 
 type Method = { id: string; name: string; type: string; fee_minor: number; instructions: string };
 type CheckoutProduct = {
@@ -105,8 +106,7 @@ export function CheckoutForm({
   }
 
   function fmtPrice(minor: number) {
-    if (currency === "XOF") return `${currency} ${minor.toLocaleString("en-US")}`;
-    return `${currency} ${(minor / 100).toFixed(2)}`;
+    return formatPrice(minor, currency as CurrencyCode);
   }
 
   function validateBuyerFields(values: FormData): Record<string, string> {

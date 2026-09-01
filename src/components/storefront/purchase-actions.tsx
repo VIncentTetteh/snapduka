@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { useCart } from "@/components/storefront/cart-provider";
+import type { CurrencyCode } from "@/lib/countries/types";
+import { formatPrice } from "@/lib/storefront/price";
 
 type Variant = {
   id: string;
@@ -23,12 +25,8 @@ function variantAvailable(variant: Variant): number | null {
   return Math.max(0, (variant.stock_quantity ?? 0) - variant.reserved_quantity);
 }
 
-const SYMBOL: Record<string, string> = { GHS: "GH₵", NGN: "₦", XOF: "CFA" };
-
 function money(minor: number, currency: string) {
-  const sym = SYMBOL[currency] ?? currency;
-  if (currency === "XOF") return `${sym} ${minor.toLocaleString("en-US")}`;
-  return `${sym} ${(minor / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  return formatPrice(minor, currency as CurrencyCode);
 }
 
 export function PurchaseActions({
