@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AnalyticsTracker } from "@/components/storefront/analytics-tracker";
+import { CheckoutCartRecovery } from "@/components/storefront/checkout-cart-recovery";
 import { CheckoutForm } from "@/components/storefront/checkout-form";
 import { StoreHeader } from "@/components/storefront/store-header";
 import { fulfillmentSummary } from "@/lib/storefront/fulfillment-summary";
@@ -73,19 +74,21 @@ export default async function CheckoutPage({
         />
         <div className="mx-auto max-w-[640px] px-4 pb-16 pt-5">
           <h1 className="mb-4.5 max-w-none font-serif text-[24px] font-medium">Checkout</h1>
-          <div className="rounded-2xl border border-dashed border-line-strong bg-white px-6 py-11 text-center">
-            <h2 className="mb-2 text-base font-bold">Your cart is empty</h2>
-            <p className="mx-auto mb-4.5 max-w-[38ch] text-[13.5px] leading-[1.6] text-ink-soft">
-              Browse the store and add something you like — your cart is saved even if you
-              leave.
-            </p>
-            <Link
-              href={`/${slug}`}
-              className="inline-flex min-h-11 items-center rounded-[10px] bg-accent px-5 text-[13.5px] font-semibold text-white no-underline transition-colors hover:bg-accent-deep"
-            >
-              Back to store
-            </Link>
-          </div>
+          <CheckoutCartRecovery urlCarriedCart={Boolean(query.cart)}>
+            <div className="rounded-2xl border border-dashed border-line-strong bg-white px-6 py-11 text-center">
+              <h2 className="mb-2 text-base font-bold">Your cart is empty</h2>
+              <p className="mx-auto mb-4.5 max-w-[38ch] text-[13.5px] leading-[1.6] text-ink-soft">
+                Browse the store and add something you like — your cart is saved even if you
+                leave.
+              </p>
+              <Link
+                href={`/${slug}`}
+                className="inline-flex min-h-11 items-center rounded-[10px] bg-accent px-5 text-[13.5px] font-semibold text-white no-underline transition-colors hover:bg-accent-deep"
+              >
+                Back to store
+              </Link>
+            </div>
+          </CheckoutCartRecovery>
         </div>
       </main>
     );
