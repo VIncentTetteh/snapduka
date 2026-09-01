@@ -5,6 +5,7 @@ import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { calculateCommerceMetrics } from "@/lib/analytics/metrics";
 import { createClient } from "@/lib/supabase/server";
+import { fetchEventCounts } from "@/lib/analytics/event-counts";
 
 const TOOLS = [
   {
@@ -49,11 +50,8 @@ export default async function GrowthPage() {
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
 
-  const [{ data: events }, { data: orders }] = await Promise.all([
-    supabase
-      .from("analytics_events")
-      .select("event_type")
-      .eq("seller_account_id", actor.sellerAccountId),
+  const [eventCounts, { data: orders }] = await Promise.all([
+    fetchEventCounts(actor.sellerAccountId),
     supabase
       .from("orders")
       .select("status,payment_status,fulfillment_status")
@@ -61,9 +59,9 @@ export default async function GrowthPage() {
   ]);
 
   const metrics = calculateCommerceMetrics({
-    visits: events?.filter((e) => e.event_type === "visit").length ?? 0,
-    productViews: events?.filter((e) => e.event_type === "product_view").length ?? 0,
-    checkoutStarts: events?.filter((e) => e.event_type === "checkout_start").length ?? 0,
+    visits: eventCounts.visit,
+    productViews: eventCounts.product_view,
+    checkoutStarts: eventCounts.checkout_start,
     orders: (orders ?? []).map((o) => ({
       status: o.status,
       paymentStatus: o.payment_status,
