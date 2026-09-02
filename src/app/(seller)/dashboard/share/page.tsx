@@ -21,7 +21,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
-import { fetchEventCounts } from "@/lib/analytics/event-counts";
+import { fetchAnalyticsSummary } from "@/lib/analytics/summary";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +58,7 @@ export default async function ShareStudioPage({
   // seller reaches anything outside it. PostgREST would cap us anyway.
   const productSearch = (params.q ?? "").trim().slice(0, 60);
 
-  const [{ data: shop }, { data: products }, { data: links }, { data: attributions }, eventCounts, { count: paidOrders }] =
+  const [{ data: shop }, { data: products }, { data: links }, { data: attributions }, summary, { count: paidOrders }] =
     await Promise.all([
       supabase
         .from("shops")
@@ -88,7 +88,7 @@ export default async function ShareStudioPage({
         .eq("active", true)
         .order("created_at", { ascending: false }),
       supabase.rpc("campaign_link_totals"),
-      fetchEventCounts(actor.sellerAccountId),
+      fetchAnalyticsSummary(),
       supabase
         .from("orders")
         .select("id", { count: "exact", head: true })
@@ -152,8 +152,8 @@ export default async function ShareStudioPage({
   const qrDataUrl = await QRCode.toDataURL(targetUrl, { width: 480, margin: 2 });
 
   const totalClicks = (attributions ?? []).reduce((sum, row) => sum + row.clicks, 0);
-  const visits = eventCounts.visit;
-  const checkoutStarts = eventCounts.checkout_start;
+  const visits = summary.visits;
+  const checkoutStarts = summary.checkoutStarts;
 
   const clicksByChannel = (links ?? []).reduce<Record<string, number>>((acc, link) => {
     acc[link.channel] = (acc[link.channel] ?? 0) + (clicksByCampaign[link.id]?.clicks ?? 0);

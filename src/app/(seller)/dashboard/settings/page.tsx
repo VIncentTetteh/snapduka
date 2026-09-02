@@ -123,6 +123,13 @@ export default async function SettingsPage() {
       status: "View",
       tone: "accent",
     },
+    {
+      title: "Account",
+      description: "Close your SnapDuka account.",
+      href: "/dashboard/settings/account",
+      status: "Manage",
+      tone: "neutral",
+    },
   ];
 
   return (

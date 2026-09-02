@@ -1,25 +1,32 @@
 import Link from "next/link";
 
 import { MetricTile } from "@/components/ui/metric-tile";
-import { advancedCommerceMetrics } from "@/lib/analytics/advanced";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
-import { fetchEventCounts } from "@/lib/analytics/event-counts";
+import { fetchAnalyticsSummary } from "@/lib/analytics/summary";
 
 export default async function InsightsPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [eventCounts, { data: orders }, { data: lines }] = await Promise.all([
-    fetchEventCounts(actor.sellerAccountId),
-    supabase.from("orders").select("customer_id,total_minor").eq("seller_account_id", actor.sellerAccountId),
+  // The rates come from seller_analytics_summary, which aggregates in Postgres.
+  // They used to be derived in JavaScript from every order row for the seller —
+  // an unbounded select, so past db.max_rows the denominators quietly stopped
+  // growing and every rate on this page drifted.
+  const [summary, { data: lines }] = await Promise.all([
+    fetchAnalyticsSummary(),
     supabase.from("order_lines").select("product_name,quantity,line_total_minor,orders!inner(seller_account_id)").eq("orders.seller_account_id", actor.sellerAccountId),
   ]);
-  const metrics = advancedCommerceMetrics({
-    visits: eventCounts.visit,
-    checkouts: eventCounts.checkout_start,
-    orders: (orders ?? []).map((o) => ({ customerId: o.customer_id, totalMinor: o.total_minor })),
-  });
+  const rate = (part: number, whole: number) => (whole > 0 ? part / whole : 0);
+  const metrics = {
+    checkoutRate: rate(summary.checkoutStarts, summary.visits),
+    orderRate: rate(summary.ordersPlaced, summary.visits),
+    // Averaged over PAID orders, not every order placed. The previous figure
+    // divided total value by all orders including unpaid ones, which understated
+    // what a completed sale is actually worth.
+    averageOrderMinor: Math.round(rate(summary.paidTotalMinor, summary.paidOrders)),
+    repeatBuyerRate: rate(summary.repeatBuyers, summary.distinctBuyers),
+  };
   const top = new Map<string, number>();
   for (const line of lines ?? []) top.set(line.product_name, (top.get(line.product_name) ?? 0) + line.quantity);
 

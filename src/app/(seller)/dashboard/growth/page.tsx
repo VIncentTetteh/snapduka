@@ -3,9 +3,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { calculateCommerceMetrics } from "@/lib/analytics/metrics";
-import { createClient } from "@/lib/supabase/server";
-import { fetchEventCounts } from "@/lib/analytics/event-counts";
+import { fetchAnalyticsSummary } from "@/lib/analytics/summary";
 
 const TOOLS = [
   {
@@ -48,43 +46,28 @@ const TOOLS = [
 export default async function GrowthPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
-  const supabase = await createClient();
+  // One aggregated call. This used to be three head counts plus every order row
+  // pulled back to count the paid ones — and that order query had no bound, so
+  // it was the same db.max_rows trap as the event counts, just unnoticed.
+  const summary = await fetchAnalyticsSummary();
 
-  const [eventCounts, { data: orders }] = await Promise.all([
-    fetchEventCounts(actor.sellerAccountId),
-    supabase
-      .from("orders")
-      .select("status,payment_status,fulfillment_status")
-      .eq("seller_account_id", actor.sellerAccountId),
-  ]);
+  const hasData = summary.visits > 0 || summary.paidOrders > 0;
+  const share = (value: number) =>
+    summary.visits > 0 ? Math.round((value / summary.visits) * 100) : 0;
 
-  const metrics = calculateCommerceMetrics({
-    visits: eventCounts.visit,
-    productViews: eventCounts.product_view,
-    checkoutStarts: eventCounts.checkout_start,
-    orders: (orders ?? []).map((o) => ({
-      status: o.status,
-      paymentStatus: o.payment_status,
-      fulfillmentStatus: o.fulfillment_status,
-    })),
-  });
-
-  const paidOrders = (orders ?? []).filter((o) => o.payment_status === "paid").length;
-  const hasData = metrics.visits > 0 || paidOrders > 0;
-
+  // A true funnel: each step is a subset of the one above, so the percentages
+  // mean something. Product views are deliberately NOT a step — one visitor
+  // views several products, so views routinely exceed visits (975 visits to
+  // 1,550 views on the demo shop) and a "159%" bar would be nonsense.
   const funnel = [
-    { label: "Store visits", value: metrics.visits, pct: 100 },
-    {
-      label: "Checkout starts",
-      value: metrics.checkoutStarts,
-      pct: metrics.visits > 0 ? Math.round((metrics.checkoutStarts / metrics.visits) * 100) : 0,
-    },
-    {
-      label: "Paid orders",
-      value: paidOrders,
-      pct: metrics.visits > 0 ? Math.round((paidOrders / metrics.visits) * 100) : 0,
-    },
+    { label: "Store visits", value: summary.visits, pct: 100 },
+    { label: "Checkout starts", value: summary.checkoutStarts, pct: share(summary.checkoutStarts) },
+    { label: "Paid orders", value: summary.paidOrders, pct: share(summary.paidOrders) },
   ];
+
+  // Reported alongside the funnel instead, as depth per visit — which is what
+  // the number actually measures.
+  const viewsPerVisit = summary.visits > 0 ? summary.productViews / summary.visits : 0;
 
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
@@ -121,6 +104,12 @@ export default async function GrowthPage() {
                 </div>
               </div>
             ))}
+            {summary.productViews > 0 ? (
+              <p className="mt-1 text-[12.5px] text-ink-muted">
+                {summary.productViews.toLocaleString()} product views —{" "}
+                {viewsPerVisit.toFixed(1)} per visit.
+              </p>
+            ) : null}
           </div>
         )}
       </Panel>
