@@ -4142,6 +4142,7 @@ export type Database = {
           shop_id: string
           surface_color: string
           updated_at: string
+          whatsapp_number: string | null
         }
         Insert: {
           accent_color?: string
@@ -4153,6 +4154,7 @@ export type Database = {
           shop_id: string
           surface_color?: string
           updated_at?: string
+          whatsapp_number?: string | null
         }
         Update: {
           accent_color?: string
@@ -4164,6 +4166,7 @@ export type Database = {
           shop_id?: string
           surface_color?: string
           updated_at?: string
+          whatsapp_number?: string | null
         }
         Relationships: [
           {

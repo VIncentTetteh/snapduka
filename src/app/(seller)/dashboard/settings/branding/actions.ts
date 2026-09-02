@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { resolveTxt } from "node:dns/promises";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
 import { normalizeHostname } from "@/lib/domains/verification";
+import { normalizePhone } from "@/lib/i18n";
 import { parseBranding } from "@/lib/shops/branding";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,6 +26,42 @@ export async function saveBranding(formData: FormData) {
   await supabase.from("shop_branding").upsert({ shop_id: shop.id, seller_account_id: actor.sellerAccountId, accent_color: parsed.data.accent, surface_color: parsed.data.surface, font_family: parsed.data.font });
   revalidatePath("/dashboard/settings/branding");
   revalidatePath(`/${shop.id}`);
+}
+
+/**
+ * Publishes (or clears) the WhatsApp number the storefront offers buyers.
+ *
+ * Deliberately not behind planAllows("branding"): theming is a paid extra, but
+ * being reachable is not, and a free seller answering a buyer's question before
+ * they abandon the cart is exactly what should happen. Owner-only, and separate
+ * from seller_accounts.contact_phone — that is the seller's admin contact and
+ * is never published on their behalf.
+ */
+export async function saveStorefrontContact(formData: FormData) {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "settings.manage")) return;
+
+  const supabase = await createClient();
+  const { data: shop } = await supabase
+    .from("shops")
+    .select("id,slug")
+    .eq("seller_account_id", actor.sellerAccountId)
+    .single();
+  if (!shop) return;
+
+  const raw = String(formData.get("whatsapp") ?? "").trim();
+  // Empty means "stop showing it", which has to stay possible.
+  const number = raw ? normalizePhone(raw, actor.country) : null;
+  if (number && !/^\+[1-9][0-9]{7,14}$/.test(number)) {
+    redirect("/dashboard/settings/branding?error=" + encodeURIComponent("That does not look like a valid WhatsApp number."));
+  }
+
+  await supabase
+    .from("shop_branding")
+    .upsert({ shop_id: shop.id, seller_account_id: actor.sellerAccountId, whatsapp_number: number });
+
+  revalidatePath("/dashboard/settings/branding");
+  revalidatePath(`/${shop.slug}`, "layout");
 }
 
 export async function uploadShopLogoAction(

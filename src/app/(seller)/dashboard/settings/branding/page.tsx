@@ -7,7 +7,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
-import { addCustomDomain, saveBranding, verifyCustomDomain } from "./actions";
+import { addCustomDomain, saveBranding, saveStorefrontContact, verifyCustomDomain } from "./actions";
 
 export default async function BrandingPage() {
   const actor = await resolveServerActor();
@@ -38,6 +38,31 @@ export default async function BrandingPage() {
         <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Logo</h2>
         <LogoUploader currentLogoUrl={publicMediaUrl(branding?.logo_path, "shop-logos")} />
       </section>
+
+      {/* Not gated on the plan: theming is a paid extra, being reachable is not. */}
+      <form action={saveStorefrontContact} className="card grid gap-3">
+        <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>WhatsApp for buyers</h2>
+        <p className="m-0 text-[13px] leading-[1.6]" style={{ color: "var(--ink-soft)" }}>
+          Shown on every product page so a buyer can ask before they order. Leave it
+          empty and no WhatsApp line appears at all. This is published on your public
+          storefront, so use the number you are happy for customers to see.
+        </p>
+        <div className="grid gap-1">
+          <label className="field-label" htmlFor="whatsapp">WhatsApp number</label>
+          <input
+            className="field-input"
+            defaultValue={branding?.whatsapp_number ?? ""}
+            id="whatsapp"
+            inputMode="tel"
+            name="whatsapp"
+            placeholder="024 123 4567"
+            type="tel"
+          />
+        </div>
+        <SubmitButton className="btn btn-primary justify-self-start" pendingLabel="Saving…">
+          Save contact
+        </SubmitButton>
+      </form>
 
       {!themingAllowed ? (
         <UpgradePrompt feature="Storefront theming" planName={plan.planName} />

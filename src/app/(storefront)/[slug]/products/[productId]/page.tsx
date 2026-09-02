@@ -84,6 +84,14 @@ export default async function ProductPage({ params, searchParams }: Props) {
     product.compare_at_price_minor == null
       ? null
       : formatPrice(product.compare_at_price_minor, product.currency);
+  // Only offered when the seller has explicitly published a number. The page
+  // used to promise this contact as plain text with no way to act on it.
+  const whatsappNumber = normalizeToOne(shop.shop_branding)?.whatsapp_number ?? null;
+  const whatsappHref = whatsappNumber
+    ? `https://wa.me/${whatsappNumber.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
+        `Hi ${shop.display_name}, I have a question about ${product.name}: ${canonicalStorefrontUrl(await appOrigin(), slug, productId)}`,
+      )}`
+    : null;
   const canonicalUrl = canonicalStorefrontUrl(await appOrigin(), slug, productId);
 
   return (
@@ -173,12 +181,19 @@ export default async function ProductPage({ params, searchParams }: Props) {
                 </svg>
                 Delivery and pickup options shown at checkout
               </p>
-              <p className="m-0 flex items-center gap-2.5 text-[12.5px] text-ink-soft">
-                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="flex-none text-price">
-                  <path d="M10 2.5a7.5 7.5 0 0 0-6.4 11.4L2.5 17.5l3.7-1A7.5 7.5 0 1 0 10 2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-                </svg>
-                Questions? Message the seller on WhatsApp before you buy
-              </p>
+              {whatsappHref ? (
+                <a
+                  className="m-0 flex items-center gap-2.5 text-[12.5px] font-semibold text-ink-soft no-underline hover:text-ink"
+                  href={whatsappHref}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="flex-none text-price">
+                    <path d="M10 2.5a7.5 7.5 0 0 0-6.4 11.4L2.5 17.5l3.7-1A7.5 7.5 0 1 0 10 2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                  </svg>
+                  Questions? Message the seller on WhatsApp
+                </a>
+              ) : null}
               <p className="m-0 text-[11.5px] leading-[1.5] text-ink-faint">
                 Your order is created once — retrying won&apos;t double-charge you.
               </p>
