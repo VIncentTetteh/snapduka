@@ -11,7 +11,7 @@ import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
 
-import { cancelPendingUpgrade, cancelSubscription, changePlan } from "./actions";
+import { cancelPendingUpgrade, cancelSubscription, changePlan, keepCurrentPlan } from "./actions";
 import { SubscriptionVerifier } from "./subscription-verifier";
 import { BillingPlanCard } from "./billing-plan-card";
 
@@ -127,6 +127,9 @@ export default async function BillingPage({
   const currentInterval =
     (Array.isArray(currentPriceRow) ? currentPriceRow[0]?.interval : currentPriceRow?.interval) ?? "monthly";
   const isPendingUpgrade = subscription?.pending_change_type === "upgrade";
+  const isPendingDowngradeOrCancel =
+    subscription?.pending_change_type === "downgrade" ||
+    subscription?.pending_change_type === "cancel";
   const pendingLabel =
     !isPendingUpgrade && subscription?.pending_change_type && renewsAt
       ? subscription.pending_change_type === "cancel"
@@ -233,6 +236,18 @@ export default async function BillingPage({
                   pendingLabel="Cancelling…"
                 >
                   Cancel renewal
+                </SubmitButton>
+              </form>
+            ) : null}
+            {/* A scheduled downgrade or cancellation used to be a one-way door:
+                no control was rendered once anything was pending. */}
+            {isPendingDowngradeOrCancel ? (
+              <form action={keepCurrentPlan}>
+                <SubmitButton
+                  className="min-h-10 cursor-pointer rounded-[10px] border border-line-strong bg-white px-4 text-[13px] font-semibold text-ink transition-colors hover:border-ink disabled:cursor-wait disabled:opacity-60"
+                  pendingLabel="Keeping…"
+                >
+                  Keep my current plan
                 </SubmitButton>
               </form>
             ) : null}

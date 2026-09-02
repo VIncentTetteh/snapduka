@@ -93,6 +93,16 @@ export class PaystackProvider implements PaymentProvider {
     });
   }
 
+  /** Restarts a subscription that was disabled by a downgrade or cancellation
+   * the seller has since changed their mind about, so renewal resumes on the
+   * existing card. Same code/token pair `disableSubscription` takes. */
+  async enableSubscription(code: string, token: string) {
+    await this.request("/subscription/enable", {
+      method: "POST",
+      body: JSON.stringify({ code, token }),
+    });
+  }
+
   /** Subscribes an already-charged customer to a plan using a stored card
    * authorization — no checkout redirect needed. Used by the plan-change
    * cron to apply a scheduled downgrade without a live seller session. */
