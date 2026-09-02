@@ -1,3 +1,4 @@
+import { CreatorBalances } from "@/components/creator/creator-balances";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Panel } from "@/components/ui/surface";
@@ -62,9 +63,6 @@ export default async function CreatorEarningsPage() {
     })),
   });
   const earned = Object.entries(balances) as [CurrencyCode, CreatorBalance][];
-  // One currency is the common case and must look exactly as it did before, so
-  // the currency heading only appears once there is something to tell apart.
-  const showCurrencyHeadings = earned.length > 1;
 
   return (
     <main className="sd-main">
@@ -80,42 +78,7 @@ export default async function CreatorEarningsPage() {
         </p>
       </Panel>
 
-      {earned.length === 0 ? (
-        <Panel className="mb-5 px-3.5 py-3">
-          <p className="text-[13px] text-ink-soft">
-            Nothing earned yet. Your first sale through one of your links will show up here.
-          </p>
-        </Panel>
-      ) : null}
-
-      {earned.map(([currency, balance]) => (
-        <div key={currency} className="mb-5">
-          {showCurrencyHeadings ? (
-            <h2 className="mb-2 text-[12px] font-bold uppercase tracking-[0.07em] text-ink-muted">
-              {currency} earnings
-            </h2>
-          ) : null}
-          <div className="grid gap-2.5 sm:grid-cols-3">
-            {[
-              { label: "Ready to be paid", value: balance.owedNowMinor, hint: "Past the hold window" },
-              { label: "On hold", value: balance.pendingMinor, hint: "Waiting out the refund window" },
-              { label: "Paid to date", value: balance.paidMinor, hint: "Recorded by the shop" },
-            ].map((tile) => (
-              <Panel key={tile.label} className="px-3.5 py-3">
-                <p className="text-[12px] font-semibold text-ink-muted">{tile.label}</p>
-                <p className="mt-0.5 text-[22px] font-bold text-ink">{formatMoney(tile.value, currency)}</p>
-                <p className="text-[11.5px] text-ink-faint">{tile.hint}</p>
-              </Panel>
-            ))}
-          </div>
-          {balance.carryOverMinor < 0 ? (
-            <p className="mt-1.5 text-[11.5px] text-ink-muted">
-              {formatMoney(Math.abs(balance.carryOverMinor), currency)} carried over from a
-              reversal — it comes off your next payout.
-            </p>
-          ) : null}
-        </div>
-      ))}
+      <CreatorBalances balances={earned} />
 
       {(payments ?? []).length > 0 ? (
         <Panel className="mb-5 p-4.5">
