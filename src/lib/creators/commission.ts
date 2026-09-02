@@ -8,6 +8,7 @@
  */
 export {
   calculateCreatorBalance,
+  calculateCreatorBalancesByCurrency,
   commissionBasisMinor,
   computeCommissionMinor,
   DEFAULT_HOLD_DAYS,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculateCreatorBalance,
+  calculateCreatorBalancesByCurrency,
   commissionBasisMinor,
   computeCommissionMinor,
   formatRate,
@@ -158,5 +159,87 @@ describe("formatRate", () => {
     expect(formatRate(1250)).toBe("12.5%");
     expect(formatRate(500)).toBe("5%");
     expect(formatRate(5000)).toBe("50%");
+  });
+});
+
+// A creator can partner with shops in any of the three supported countries, so
+// their ledger genuinely mixes currencies. calculateCreatorBalance has no
+// currency dimension, and the portal used to sum a mixed ledger through it and
+// label the result with whichever row sorted first.
+// Found by /qa on 2026-09-02
+describe("calculateCreatorBalancesByCurrency", () => {
+  it("keeps cedis and naira apart instead of adding them", () => {
+    const balances = calculateCreatorBalancesByCurrency({
+      commissions: [
+        { status: "payable", amountMinor: 24_000, currency: "GHS" },
+        { status: "payable", amountMinor: 500_000, currency: "NGN" },
+      ],
+    });
+
+    expect(balances.GHS?.owedNowMinor).toBe(24_000);
+    expect(balances.NGN?.owedNowMinor).toBe(500_000);
+    // The bug this replaces produced a single 524,000.
+    expect(balances.GHS?.owedNowMinor).not.toBe(524_000);
+  });
+
+  it("keeps XOF separate, where combining is most wrong", () => {
+    // XOF has no minor unit: 12,000 XOF is twelve thousand francs, while
+    // 12,000 GHS minor units are GH₵120. Summed they are meaningless.
+    const balances = calculateCreatorBalancesByCurrency({
+      commissions: [
+        { status: "payable", amountMinor: 12_000, currency: "XOF" },
+        { status: "payable", amountMinor: 12_000, currency: "GHS" },
+      ],
+    });
+
+    expect(balances.XOF?.owedNowMinor).toBe(12_000);
+    expect(balances.GHS?.owedNowMinor).toBe(12_000);
+    expect(Object.keys(balances)).toHaveLength(2);
+  });
+
+  it("matches calculateCreatorBalance exactly for a single-currency creator", () => {
+    const commissions = [
+      { status: "payable" as const, amountMinor: 5_000 },
+      { status: "pending" as const, amountMinor: 2_500 },
+      { status: "paid" as const, amountMinor: 1_000 },
+    ];
+    const adjustments = [{ deltaMinor: -500 }];
+
+    const grouped = calculateCreatorBalancesByCurrency({
+      commissions: commissions.map((c) => ({ ...c, currency: "GHS" as const })),
+      adjustments: adjustments.map((a) => ({ ...a, currency: "GHS" as const })),
+    });
+
+    expect(grouped.GHS).toEqual(calculateCreatorBalance({ commissions, adjustments }));
+    expect(Object.keys(grouped)).toEqual(["GHS"]);
+  });
+
+  it("applies an adjustment only within its own currency", () => {
+    const balances = calculateCreatorBalancesByCurrency({
+      commissions: [
+        { status: "payable", amountMinor: 10_000, currency: "GHS" },
+        { status: "payable", amountMinor: 10_000, currency: "NGN" },
+      ],
+      adjustments: [{ deltaMinor: -4_000, currency: "GHS" }],
+    });
+
+    expect(balances.GHS?.owedNowMinor).toBe(6_000);
+    expect(balances.NGN?.owedNowMinor).toBe(10_000);
+  });
+
+  it("still reports a currency whose only row is an adjustment", () => {
+    // A reversal can outlive the commission it cancelled; the carry-over has to
+    // survive or the creator's next payout silently overpays.
+    const balances = calculateCreatorBalancesByCurrency({
+      commissions: [],
+      adjustments: [{ deltaMinor: -750, currency: "NGN" }],
+    });
+
+    expect(balances.NGN?.carryOverMinor).toBe(-750);
+    expect(balances.NGN?.owedNowMinor).toBe(0);
+  });
+
+  it("returns nothing for an empty ledger", () => {
+    expect(calculateCreatorBalancesByCurrency({ commissions: [] })).toEqual({});
   });
 });

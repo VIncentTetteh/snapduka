@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { appOrigin } from "@/lib/app-url";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { normalizeToOne } from "@/lib/storefront/media";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function CreatorLinksPage() {
   const [{ data: links }, { data: attributions }] = await Promise.all([
     supabase
       .from("campaign_links")
-      .select("id,name,token,active,creator_partnership_id")
+      .select("id,name,token,active,creator_partnership_id,shops(display_name)")
       .not("creator_partnership_id", "is", null),
     supabase.rpc("campaign_link_totals"),
   ]);
@@ -47,6 +48,11 @@ export default async function CreatorLinksPage() {
             return (
               <Panel key={link.id} className="px-3.5 py-3">
                 <p className="text-[13.5px] font-bold text-ink">{link.name}</p>
+                {/* Which shop this link earns from. A creator with links across
+                    several shops could not tell them apart otherwise. */}
+                <p className="mt-0.5 text-[12px] text-ink-muted">
+                  {normalizeToOne(link.shops)?.display_name ?? "A SnapDuka shop"}
+                </p>
                 <div className="mt-1.5 flex items-center justify-between gap-2">
                   <code className="truncate font-mono text-[12.5px] text-ink-soft">
                     {origin}/l/{link.token}

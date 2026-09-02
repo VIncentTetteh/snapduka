@@ -5,6 +5,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { formatMoney } from "@/lib/i18n";
+import { fetchPartnerShops } from "@/lib/creators/partner-shops";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
 
@@ -24,9 +25,11 @@ export default async function CreatorPaymentsPage({
 
   const { data: payments } = await supabase
     .from("creator_commission_payments")
-    .select("id,reference,amount_minor,currency,method,marked_at,confirmed_at,disputed_at,dispute_note")
+    .select("id,reference,amount_minor,currency,method,marked_at,confirmed_at,disputed_at,dispute_note,seller_account_id")
     .eq("creator_id", actor.creatorId)
     .order("marked_at", { ascending: false });
+
+  const shops = await fetchPartnerShops((payments ?? []).map((p) => p.seller_account_id));
 
   return (
     <main className="sd-main">
@@ -61,6 +64,11 @@ export default async function CreatorPaymentsPage({
                   <div>
                     <p className="text-[15px] font-bold text-ink">
                       {formatMoney(payment.amount_minor, payment.currency as CurrencyCode)}
+                    </p>
+                    {/* Who paid it. A creator confirming money received needs to
+                        know which shop it came from before they can agree. */}
+                    <p className="text-[12.5px] font-semibold text-ink-soft">
+                      {shops.get(payment.seller_account_id)?.displayName ?? "A SnapDuka shop"}
                     </p>
                     <p className="text-[12px] text-ink-muted">
                       {payment.reference} · {payment.method.replace("_", " ")} ·{" "}

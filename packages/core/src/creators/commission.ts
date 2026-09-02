@@ -110,6 +110,42 @@ export function calculateCreatorBalance(input: {
   };
 }
 
+/**
+ * The same roll-up, split by currency.
+ *
+ * A creator can hold a partnership with any number of shops and nothing
+ * restricts them to one country, so their ledger genuinely mixes GHS, NGN and
+ * XOF. `calculateCreatorBalance` has no currency dimension at all, so summing a
+ * mixed ledger through it adds cedis to naira and labels the result with
+ * whichever row happened to come first. XOF makes that worse rather than
+ * better: it has no minor unit, so 12,000 XOF and 12,000 pesewas differ by two
+ * orders of magnitude and still add.
+ *
+ * Currencies are reported side by side and never combined — converting would
+ * need an FX rate per commission to be auditable, and a wrong rate here is
+ * wrong money.
+ */
+export function calculateCreatorBalancesByCurrency(input: {
+  commissions: { status: CommissionStatus; amountMinor: number; currency: CurrencyCode }[];
+  adjustments?: { deltaMinor: number; currency: CurrencyCode }[];
+}): Partial<Record<CurrencyCode, CreatorBalance>> {
+  const currencies = new Set<CurrencyCode>([
+    ...input.commissions.map((commission) => commission.currency),
+    // An adjustment can be the only row in its currency — a reversal that
+    // outlives the commission it cancelled still has to show as carry-over.
+    ...(input.adjustments ?? []).map((adjustment) => adjustment.currency),
+  ]);
+
+  const balances: Partial<Record<CurrencyCode, CreatorBalance>> = {};
+  for (const currency of currencies) {
+    balances[currency] = calculateCreatorBalance({
+      commissions: input.commissions.filter((commission) => commission.currency === currency),
+      adjustments: (input.adjustments ?? []).filter((adjustment) => adjustment.currency === currency),
+    });
+  }
+  return balances;
+}
+
 /** "12.5%" from 1250 bps, without trailing zeroes on whole percentages. */
 export function formatRate(rateBps: number): string {
   const percent = rateBps / 100;
