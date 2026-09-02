@@ -36,12 +36,18 @@ values
   ('d3d30000-0000-4000-8000-000000000002', 'b3b30000-0000-4000-8000-000000000001',
    'c3c30000-0000-4000-8000-000000000001', 'WhatsApp status', 'tok-whatsapp-1', 'whatsapp', '/');
 
+-- orders.customer_id is NOT NULL, so the conversion needs a real buyer.
+insert into public.customers (id, seller_account_id, name, email, phone, country)
+values ('e3e30000-0000-4000-8000-0000000000c1', 'b3b30000-0000-4000-8000-000000000001',
+        'Campaign Buyer', 'buyer@campaign.test', '+233201234570', 'GH');
+
 insert into public.orders (
-  id, shop_id, seller_account_id, currency, status, payment_status, fulfillment_status,
-  payment_method, subtotal_minor, delivery_minor, total_minor,
+  id, shop_id, seller_account_id, customer_id, currency, status, payment_status,
+  fulfillment_status, payment_method, subtotal_minor, delivery_minor, total_minor,
   buyer_snapshot, fulfillment_method_snapshot, created_at)
 values ('e3e30000-0000-4000-8000-000000000001', 'c3c30000-0000-4000-8000-000000000001',
-        'b3b30000-0000-4000-8000-000000000001', 'GHS', 'completed', 'paid', 'fulfilled',
+        'b3b30000-0000-4000-8000-000000000001', 'e3e30000-0000-4000-8000-0000000000c1',
+        'GHS', 'completed', 'paid', 'fulfilled',
         'paystack', 5000, 0, 5000, '{"name":"Buyer"}'::jsonb, '{"type":"pickup"}'::jsonb, now());
 
 -- Three plain clicks and one conversion on the first link; one click on the second.

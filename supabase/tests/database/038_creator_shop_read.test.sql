@@ -41,9 +41,11 @@ values
   ('d4d40000-0000-4000-8000-000000000002', 'c4c40000-0000-4000-8000-000000000002',
    'stranger-shop', 'Stranger Shop', 'GH', 'GHS', 'draft');
 
-insert into public.creator_partnerships (seller_account_id, creator_id, status, rate_bps, hold_days, currency)
+-- creator_partnerships_accepted_check: an active or paused partnership must
+-- carry accepted_at.
+insert into public.creator_partnerships (seller_account_id, creator_id, status, rate_bps, hold_days, currency, accepted_at)
 values ('c4c40000-0000-4000-8000-000000000001', 'b4b40000-0000-4000-8000-000000000001',
-        'active', 1000, 14, 'GHS');
+        'active', 1000, 14, 'GHS', now());
 
 select is(
   (select count(*) from pg_policy

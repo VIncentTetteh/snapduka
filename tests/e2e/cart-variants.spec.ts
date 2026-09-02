@@ -9,5 +9,8 @@ test("buyer selects a variant and carries it through the persistent cart", async
   await cart.click();
   await expect(page.getByRole("heading", { name: "Complete your order" })).toBeVisible();
   await expect(page.getByText("Large", { exact: true })).toBeVisible();
-  await expect(page.getByText("GHS 145.00").first()).toBeVisible();
+  // The storefront renders the local symbol and drops pesewas on a whole
+  // amount, so this is "GH₵ 145" rather than the ISO "GHS 145.00" that
+  // formatMoney still produces for seller-facing surfaces.
+  await expect(page.getByText("GH₵ 145").first()).toBeVisible();
 });
