@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 
 import { appOrigin } from "@/lib/app-url";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveServerActor, type Actor, type SellerActor } from "@/lib/auth/actor";
 import { effectiveSubscriptionState, type SubscriptionState } from "@/lib/billing/subscriptions";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -15,6 +15,28 @@ function fail(message: string): never {
   redirect(`/dashboard/settings/billing?error=${encodeURIComponent(message)}`);
 }
 
+/**
+ * Paying us is not the same as being paid by us.
+ *
+ * These actions used to `return` silently unless the account was `active`, but
+ * a seller is `pending` from signup until verification completes — so on a live
+ * shop the Upgrade button did nothing at all: no charge, no redirect, no error,
+ * nothing to tell the seller why. Verification gates payouts, which is where
+ * the risk actually sits. Taking a subscription payment from a pending seller
+ * is exactly what should happen.
+ *
+ * Only accounts genuinely switched off are refused, and every refusal now says
+ * so out loud.
+ */
+function assertCanChangePlan(actor: Actor): asserts actor is SellerActor {
+  if (actor.kind !== "seller") fail("Sign in as a seller to change your plan.");
+  if (actor.role) fail("Only the account owner can change the plan.");
+  if (actor.status === "suspended") {
+    fail("This account is suspended, so its plan cannot be changed. Contact support.");
+  }
+  if (actor.status === "closed") fail("This account is closed, so its plan cannot be changed.");
+}
+
 const TIER: Record<string, number> = { free: 0, growth: 1, scale: 2 };
 // Yearly is the bigger commitment, so moving to it is charged now like any
 // other upgrade, and moving off it waits for the paid year to finish.
@@ -22,11 +44,17 @@ const INTERVAL_RANK: Record<string, number> = { monthly: 0, yearly: 1 };
 
 export async function changePlan(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || actor.role || actor.status !== "active") return;
+  assertCanChangePlan(actor);
   const planCode = String(formData.get("planCode") ?? "");
-  const interval = String(formData.get("interval") ?? "monthly");
-  if (!["free", "growth", "scale"].includes(planCode)) return;
-  if (planCode !== "free" && !["monthly", "yearly"].includes(interval)) return;
+  const intervalEntry = formData.get("interval");
+  const requestedInterval =
+    typeof intervalEntry === "string" && ["monthly", "yearly"].includes(intervalEntry)
+      ? intervalEntry
+      : null;
+  if (!["free", "growth", "scale"].includes(planCode)) fail("That plan does not exist.");
+  if (planCode !== "free" && intervalEntry !== null && !requestedInterval) {
+    fail("Choose either monthly or yearly billing.");
+  }
   if (!process.env.PAYSTACK_SECRET_KEY) fail("Online billing is not configured yet. Contact support.");
 
   const supabase = await createClient();
@@ -52,6 +80,9 @@ export async function changePlan(formData: FormData) {
   const existingPriceRow = existing?.plan_prices as { interval?: string } | { interval?: string }[] | null;
   const existingInterval =
     (Array.isArray(existingPriceRow) ? existingPriceRow[0]?.interval : existingPriceRow?.interval) ?? "monthly";
+  // Missing interval means "keep my current cadence" for an existing paid
+  // subscription, while new subscriptions sensibly default to monthly.
+  const interval = requestedInterval ?? (existing ? existingInterval : "monthly");
   const existingState = existing
     ? effectiveSubscriptionState({ state: existing.state as SubscriptionState, graceEndsAt: existing.grace_ends_at })
     : "expired";
@@ -76,10 +107,9 @@ export async function changePlan(formData: FormData) {
       (targetTier === currentTier &&
         (INTERVAL_RANK[interval] ?? 0) > (INTERVAL_RANK[existingInterval] ?? 0)));
 
-  // Yearly -> monthly must not refund the remainder of a paid year, so it is
-  // scheduled. Every other scheduled change keeps whatever interval the seller
-  // is already billed on.
-  const scheduledInterval = isIntervalChange ? interval : existingInterval;
+  // Respect an explicitly selected cadence on a tier downgrade. Legacy callers
+  // that omit it still preserve the seller's existing billing interval.
+  const scheduledInterval = requestedInterval ?? existingInterval;
 
   if (!isUpgrade) {
     // Downgrade or cancel: keep current entitlements until current_period_end,
@@ -267,7 +297,7 @@ export async function cancelSubscription() {
  */
 export async function cancelPendingUpgrade() {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || actor.role || actor.status !== "active") return;
+  assertCanChangePlan(actor);
 
   const admin = createAdminClient();
   await admin
@@ -282,4 +312,65 @@ export async function cancelPendingUpgrade() {
     .eq("pending_change_type", "upgrade");
 
   revalidatePath("/dashboard/settings/billing");
+}
+
+/**
+ * Calls off a scheduled downgrade or cancellation.
+ *
+ * A downgrade disables the Paystack subscription immediately and parks the new
+ * plan in the pending_* columns for the cron to apply at period end. There was
+ * no way back from that: the cancel control was hidden once anything was
+ * pending, and re-picking the current plan was rejected as "You are already on
+ * this plan" — true, but only until the period ended. Sellers were dropped with
+ * no way to stop it.
+ *
+ * Paystack is re-enabled BEFORE the pending change is cleared. The other order
+ * would leave the row claiming an active plan that silently never renews, which
+ * is the worse of the two failures: the seller sees nothing wrong until their
+ * card is never charged and their plan lapses anyway.
+ */
+export async function keepCurrentPlan() {
+  const actor = await resolveServerActor();
+  assertCanChangePlan(actor);
+
+  const admin = createAdminClient();
+  const supabase = await createClient();
+  const { data: existing, error } = await supabase
+    .from("seller_subscriptions")
+    .select("id,pending_change_type,provider_subscription_code,provider_email_token")
+    .eq("seller_account_id", actor.sellerAccountId)
+    .maybeSingle();
+  if (error) {
+    console.error("[keepCurrentPlan] seller_subscriptions query failed", error);
+    fail("Could not load your subscription. Try again shortly.");
+  }
+  if (!existing) fail("There is no subscription to keep.");
+  if (existing.pending_change_type !== "downgrade" && existing.pending_change_type !== "cancel") {
+    fail("There is no scheduled change to call off.");
+  }
+
+  if (existing.provider_subscription_code && existing.provider_email_token) {
+    try {
+      await paystackProvider().enableSubscription(
+        existing.provider_subscription_code,
+        existing.provider_email_token,
+      );
+    } catch {
+      fail("Paystack could not restart your renewal. Try again shortly.");
+    }
+  }
+
+  await admin
+    .from("seller_subscriptions")
+    .update({
+      pending_change_type: null,
+      pending_plan_id: null,
+      pending_plan_version: null,
+      pending_price_id: null,
+      cancelled_at: null,
+    })
+    .eq("id", existing.id);
+
+  revalidatePath("/dashboard/settings/billing");
+  revalidatePath("/dashboard", "layout");
 }

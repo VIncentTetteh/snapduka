@@ -95,7 +95,7 @@ describe("writeAuditEvent", () => {
 
     expect(rpc).toHaveBeenCalledWith(
       "write_audit_event",
-      expect.objectContaining({ p_entity_id: null, p_before_data: null, p_after_data: null, p_metadata: {} }),
+      expect.objectContaining({ p_entity_id: undefined, p_before_data: null, p_after_data: null, p_metadata: {} }),
     );
   });
 });

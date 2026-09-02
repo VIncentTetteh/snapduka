@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 
 import { mapPaystackSubscriptionEvent } from "@/lib/billing/subscriptions";
 import { verifyPaystackWebhook } from "@/lib/payments/webhook";
+import type { Database } from "@snapduka/core";
+
+type SubscriptionUpdate = Database["public"]["Tables"]["seller_subscriptions"]["Update"];
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true, applied: true });
   }
 
-  const update: Record<string, unknown> = { state: nextState, updated_at: nowIso };
+  const update: SubscriptionUpdate = { state: nextState, updated_at: nowIso };
   if (nextState === "past_due") update.grace_ends_at = new Date(Date.now() + 7 * 86_400_000).toISOString();
   if (nextState === "active") {
     update.grace_ends_at = null;
@@ -100,9 +103,9 @@ export async function POST(request: Request) {
     // means the seller lands on the plan they paid for either way, and the
     // event_key insert above keeps it from being applied twice.
     if (subscription.pending_change_type === "upgrade") {
-      update.plan_id = subscription.pending_plan_id;
-      update.plan_version = subscription.pending_plan_version;
-      update.price_id = subscription.pending_price_id;
+      update.plan_id = subscription.pending_plan_id ?? undefined;
+      update.plan_version = subscription.pending_plan_version ?? undefined;
+      update.price_id = subscription.pending_price_id ?? undefined;
       update.pending_change_type = null;
       update.pending_plan_id = null;
       update.pending_plan_version = null;

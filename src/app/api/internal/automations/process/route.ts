@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { evaluateAutomation } from "@/lib/automation/engine";
+import { asJson } from "@/lib/db/json";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
     }
     try {
       if (rule.action.type === "notify") {
-        await admin.from("notifications").insert({ channel: "in_app", payload: { reference: event.data.reference ?? "Order", status: rule.action.value || event.type }, recipient: run.seller_account_id, seller_account_id: run.seller_account_id, template: "seller_order_update" });
+        await admin.from("notifications").insert({ channel: "in_app", payload: asJson({ reference: event.data.reference ?? "Order", status: rule.action.value || event.type }), recipient: run.seller_account_id, seller_account_id: run.seller_account_id, template: "seller_order_update" });
       } else if (rule.action.type === "tag_customer") {
         const customerId = String(event.data.customerId ?? "");
         if (!customerId) throw new Error("Event has no customer.");

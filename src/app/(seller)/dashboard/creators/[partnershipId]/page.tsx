@@ -140,7 +140,7 @@ export default async function CreatorDetailPage({
       ) : null}
 
       {/* Links */}
-      <Panel className="mb-5">
+      <Panel className="mb-5 p-4.5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-[14px] font-bold text-ink">Their links</h2>
           <form action={createCreatorLink}>
@@ -174,7 +174,7 @@ export default async function CreatorDetailPage({
 
       {/* Mark paid */}
       {payable.length > 0 ? (
-        <Panel className="mb-5">
+        <Panel className="mb-5 p-4.5">
           <h2 className="text-[14px] font-bold text-ink">Record a payment</h2>
           <p className="mt-1 mb-3 text-[12.5px] leading-[1.6] text-ink-soft">
             Send {creator?.display_name ?? "the creator"} the money first —
@@ -228,7 +228,7 @@ export default async function CreatorDetailPage({
       ) : null}
 
       {/* Ledger */}
-      <Panel className="mb-5">
+      <Panel className="mb-5 p-4.5">
         <h2 className="mb-2.5 text-[14px] font-bold text-ink">Commission history</h2>
         {(commissions ?? []).length === 0 ? (
           <EmptyState title="No sales yet" body="Commission appears here once an order through their link is paid." />
@@ -267,7 +267,7 @@ export default async function CreatorDetailPage({
       </Panel>
 
       {(payments ?? []).length > 0 ? (
-        <Panel className="mb-5">
+        <Panel className="mb-5 p-4.5">
           <h2 className="mb-2 text-[14px] font-bold text-ink">Payments you recorded</h2>
           <ul className="grid gap-2">
             {(payments ?? []).map((payment) => (
@@ -292,7 +292,7 @@ export default async function CreatorDetailPage({
       ) : null}
 
       {/* Terms */}
-      <Panel>
+      <Panel className="p-4.5">
         <h2 className="mb-3 text-[14px] font-bold text-ink">Partnership</h2>
         <form action={updatePartnership} className="grid gap-3 sm:grid-cols-[140px_auto_auto] sm:items-end">
           <input name="partnershipId" type="hidden" value={partnershipId} />

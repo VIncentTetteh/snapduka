@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.shop.snapduka.app"],
+        "components": [
+          { "/": "/dashboard/orders/*", "comment": "Open an order in the seller app" },
+          { "/": "/dashboard/products/*", "comment": "Open a product in the seller app" },
+          { "/": "/dashboard", "comment": "Open the seller app" }
+        ]
+      }
+    ]
+  }
+}

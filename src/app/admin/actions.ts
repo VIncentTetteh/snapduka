@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { canTransitionCase, type CaseState } from "@/lib/support/transitions";
+import { CASE_STATES, COUNTRIES, oneOf } from "@/lib/db/enums";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditEvent } from "@/lib/audit/write";
 import { paystackProvider } from "@/lib/payments/paystack";
@@ -14,11 +15,11 @@ export async function resolveCaseAction(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "operator") return;
   const caseId = String(formData.get("caseId"));
-  const next = String(formData.get("status")) as CaseState;
+  const next = oneOf(String(formData.get("status")), CASE_STATES);
   const resolution = String(formData.get("resolution") ?? "").trim();
   const admin = createAdminClient();
   const { data: current } = await admin.from("support_cases").select("status,order_id").eq("id",caseId).maybeSingle();
-  if (!current || !canTransitionCase(current.status,next) || (next === "resolved" && !resolution)) return;
+  if (!next || !current || !canTransitionCase(current.status as CaseState, next) || (next === "resolved" && !resolution)) return;
   await admin.from("support_cases").update({ status: next, resolution: resolution || null }).eq("id",caseId);
   await admin.from("orders").update({ dispute_status: next }).eq("id",current.order_id);
   await admin.from("case_messages").insert({ case_id: caseId, actor_type: "admin", actor_id: actor.userId, body: resolution || `Case moved to ${next}`, operator_only: false });
@@ -91,9 +92,9 @@ export async function approveVerificationAction(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "operator") return;
   const sellerId = String(formData.get("sellerId"));
-  const decision = String(formData.get("decision"));
+  const decision = oneOf(String(formData.get("decision")), ["verified", "rejected"] as const);
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!sellerId || !reason || !["verified", "rejected"].includes(decision)) return;
+  if (!sellerId || !reason || !decision) return;
 
   const admin = createAdminClient();
   const { data: seller } = await admin
@@ -244,9 +245,9 @@ export async function updatePlanPriceAction(formData: FormData) {
 export async function updatePlatformFeeAction(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "operator") return;
-  const country = String(formData.get("country") ?? "").trim();
+  const country = oneOf(String(formData.get("country") ?? "").trim(), COUNTRIES);
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!reason || !["GH", "NG", "CI"].includes(country)) return;
+  if (!reason || !country) return;
 
   const validated = validateFeePercent(String(formData.get("feePercent") ?? ""));
   if (!validated.ok) return;
@@ -289,8 +290,8 @@ export async function updatePlatformFeeAction(formData: FormData) {
 export async function syncPlatformFeeAction(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "operator" || formData.get("confirm") !== "yes") return;
-  const country = String(formData.get("country") ?? "").trim();
-  if (!["GH", "NG", "CI"].includes(country)) return;
+  const country = oneOf(String(formData.get("country") ?? "").trim(), COUNTRIES);
+  if (!country) return;
 
   const admin = createAdminClient();
   const { data: config } = await admin
@@ -388,9 +389,9 @@ export async function setCreatorStatusAction(formData: FormData) {
   if (actor.kind !== "operator") redirect("/login?next=/admin/creators");
 
   const creatorId = String(formData.get("creatorId"));
-  const status = String(formData.get("status"));
+  const status = oneOf(String(formData.get("status")), ["active", "suspended"] as const);
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!reason || !["active", "suspended"].includes(status)) return;
+  if (!reason || !status) return;
 
   const admin = createAdminClient();
   const { data: creator } = await admin

@@ -1,0 +1,4 @@
+# The deployed unit is this repository on its own: Vercel builds it without the
+# surrounding monorepo, so @snapduka/core has to resolve from inside here.
+packages:
+  - "packages/*"

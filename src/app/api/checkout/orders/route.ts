@@ -56,9 +56,9 @@ export async function POST(request: Request) {
     p_lines: parsed.data.lines,
     p_idempotency_key: parsed.data.idempotencyKey,
     p_payment_method: parsed.data.paymentMethod,
-    p_promotion_code: typeof growth.promotionCode === "string" ? growth.promotionCode : null,
-    p_campaign_token: attribution?.token ?? bodyToken,
-    p_click_id: attribution?.clickId ?? null,
+    p_promotion_code: typeof growth.promotionCode === "string" ? growth.promotionCode : undefined,
+    p_campaign_token: attribution?.token ?? bodyToken ?? undefined,
+    p_click_id: attribution?.clickId ?? undefined,
   });
 
   if (error) {

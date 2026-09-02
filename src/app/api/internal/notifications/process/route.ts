@@ -24,12 +24,19 @@ export async function POST(request: Request) {
     if (!claimed) continue;
     try {
       const origin = await appOrigin();
-      const trackingUrl = claimed.payload.trackingToken
-        ? `${origin}/orders/${claimed.payload.trackingToken}`
+      // notifications.payload is jsonb, so it arrives as `Json` — an array or a
+      // scalar are both valid there. Narrowing once means the rest of this loop
+      // cannot read a property off something that has none.
+      const payload: Record<string, unknown> =
+        claimed.payload && typeof claimed.payload === "object" && !Array.isArray(claimed.payload)
+          ? (claimed.payload as Record<string, unknown>)
+          : {};
+      const trackingUrl = payload.trackingToken
+        ? `${origin}/orders/${String(payload.trackingToken)}`
         : origin;
       const template = orderUpdateTemplate({
-        reference: String(claimed.payload.reference),
-        status: String(claimed.payload.status),
+        reference: String(payload.reference),
+        status: String(payload.status),
         trackingUrl: String(trackingUrl),
       });
       if (claimed.channel === "email") {
@@ -39,7 +46,15 @@ export async function POST(request: Request) {
         const result = await sendWhatsApp(claimed.recipient, template.text);
         if (!result.delivered) throw new Error(result.reason);
       } else if (claimed.channel === "push") {
-        const result = await sendPush(claimed.recipient, template.subject, template.text, String(trackingUrl));
+        // orderId rides along so tapping the notification on a phone opens that
+        // order rather than the app's home tab.
+        const result = await sendPush(
+          claimed.recipient,
+          template.subject,
+          template.text,
+          String(trackingUrl),
+          payload.orderId ? { orderId: String(payload.orderId) } : undefined,
+        );
         if (!result.delivered) throw new Error(result.reason);
       } else if (claimed.channel === "sms") {
         const result = await sendSms(claimed.recipient, template.text);

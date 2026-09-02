@@ -168,7 +168,10 @@ async function sellerModel(actor: SellerActor): Promise<OnboardingWizardModel> {
           bankCode: settlementResult.data.bank_code,
           bankName: settlementResult.data.bank_name,
           accountLast4: settlementResult.data.account_last4,
-          status: settlementResult.data.status,
+          // settlement_profiles.status is a text column; the wizard only knows
+          // how to render the two states it can actually be in, so anything
+          // else is treated as still pending rather than rendered blank.
+          status: settlementResult.data.status === "active" ? "active" : "pending",
         }
       : null,
     policyAccepted: facts.policyAccepted,

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
   disableSubscription: vi.fn(),
+  enableSubscription: vi.fn(),
   createPlan: vi.fn(),
   initializeSubscription: vi.fn(),
   redirect: vi.fn((url: string) => {
@@ -21,12 +22,13 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/payments/paystack", () => ({
   paystackProvider: () => ({
     disableSubscription: mocks.disableSubscription,
+    enableSubscription: mocks.enableSubscription,
     createPlan: mocks.createPlan,
     initializeSubscription: mocks.initializeSubscription,
   }),
 }));
 
-import { cancelSubscription, changePlan } from "./actions";
+import { cancelSubscription, changePlan, keepCurrentPlan } from "./actions";
 
 function formData(values: Record<string, string>) {
   const data = new FormData();
@@ -334,6 +336,28 @@ describe("changePlan", () => {
     expect(priceQuery.eq).toHaveBeenCalledWith("interval", "yearly");
   });
 
+  it("a tier downgrade uses an explicitly selected interval", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    const existing = {
+      id: "sub-1", state: "active", grace_ends_at: null, current_period_end: "2027-01-01T00:00:00Z",
+      provider_subscription_code: null, provider_email_token: null,
+      plans: { code: "scale" }, plan_prices: { interval: "yearly" },
+    };
+    const priceQuery = queryMock({ data: { id: "price-growth-monthly" } });
+    const fromRead = vi.fn((table: string) => {
+      if (table === "seller_subscriptions") return queryMock({ data: existing });
+      if (table === "plans") return queryMock({ data: { id: "plan-growth", version: 2 } });
+      if (table === "plan_prices") return priceQuery;
+      return queryMock({ data: null });
+    });
+    mocks.createClient.mockResolvedValue({ from: fromRead });
+    mocks.createAdminClient.mockReturnValue({ from: () => ({ update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }) });
+
+    await changePlan(formData({ planCode: "growth", interval: "monthly" }));
+
+    expect(priceQuery.eq).toHaveBeenCalledWith("interval", "monthly");
+  });
+
   it("already on this plan AND interval is rejected", async () => {
     mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
     const existing = {
@@ -373,5 +397,123 @@ describe("cancelSubscription", () => {
     mocks.createClient.mockResolvedValue({ from: () => queryMock({ data: null }) });
 
     await expect(cancelSubscription()).rejects.toThrow("NEXT_REDIRECT");
+  });
+});
+
+// Regression: ISSUE-011 — every real merchant was `pending` (verification not
+// finished), and both billing actions opened with a silent `return` unless the
+// account was exactly `active`. Clicking Upgrade did nothing: no charge, no
+// redirect, no error. Confirmed against production, where 4 of 5 sellers were
+// pending and therefore could not pay at all.
+// Found by /qa on 2026-09-01
+describe("changePlan account guard", () => {
+  const base = { data: null };
+
+  function wireMinimalClient() {
+    mocks.createClient.mockResolvedValue({ from: () => queryMock(base) });
+    mocks.createAdminClient.mockReturnValue({ from: () => queryMock(base) });
+  }
+
+  it("lets a pending seller subscribe — verification gates payouts, not paying us", async () => {
+    mocks.resolveServerActor.mockResolvedValue({ ...SELLER_ACTOR, status: "pending" });
+    const fromRead = vi.fn((table: string) => {
+      if (table === "seller_subscriptions") return queryMock({ data: null });
+      if (table === "plans") return queryMock({ data: { id: "plan-growth", name: "Growth", version: 1 } });
+      if (table === "plan_prices") {
+        return queryMock({
+          data: { id: "price-1", amount_minor: 6000, currency: "GHS", interval: "monthly", provider_plan_code: "PLN_g" },
+        });
+      }
+      return queryMock({ data: null });
+    });
+    mocks.createClient.mockResolvedValue({ from: fromRead });
+    mocks.createAdminClient.mockReturnValue({
+      from: () => ({ upsert: vi.fn().mockResolvedValue({ error: null }), delete: () => ({ eq: () => ({ eq: vi.fn() }) }) }),
+    });
+    mocks.initializeSubscription.mockResolvedValue({ authorizationUrl: "https://checkout.paystack.com/p", reference: "r" });
+
+    await expect(changePlan(formData({ planCode: "growth", interval: "monthly" }))).rejects.toThrow(
+      "NEXT_REDIRECT:https://checkout.paystack.com/p",
+    );
+    expect(mocks.initializeSubscription).toHaveBeenCalled();
+  });
+
+  it("tells a suspended seller why instead of doing nothing", async () => {
+    mocks.resolveServerActor.mockResolvedValue({ ...SELLER_ACTOR, status: "suspended" });
+    wireMinimalClient();
+
+    await expect(changePlan(formData({ planCode: "growth" }))).rejects.toThrow(/suspended/i);
+    expect(mocks.initializeSubscription).not.toHaveBeenCalled();
+  });
+
+  it("tells a closed account why instead of doing nothing", async () => {
+    mocks.resolveServerActor.mockResolvedValue({ ...SELLER_ACTOR, status: "closed" });
+    wireMinimalClient();
+
+    await expect(changePlan(formData({ planCode: "growth" }))).rejects.toThrow(/closed/i);
+  });
+
+  it("refuses a team member out loud rather than silently", async () => {
+    mocks.resolveServerActor.mockResolvedValue({ ...SELLER_ACTOR, role: "manager" });
+    wireMinimalClient();
+
+    await expect(changePlan(formData({ planCode: "growth" }))).rejects.toThrow(/owner/i);
+  });
+});
+
+// Regression: ISSUE-007 — a scheduled downgrade or cancellation was a one-way
+// door. The cancel control was hidden once anything was pending, and picking
+// the current plan again was rejected as "already on this plan", so sellers
+// were dropped at period end with no way to stop it.
+describe("keepCurrentPlan", () => {
+  it("restarts the Paystack renewal BEFORE clearing the pending change", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    const order: string[] = [];
+    mocks.enableSubscription.mockImplementation(async () => { order.push("paystack"); });
+    const update = vi.fn(() => { order.push("db"); return { eq: vi.fn().mockResolvedValue({ error: null }) }; });
+    mocks.createClient.mockResolvedValue({
+      from: () => queryMock({
+        data: {
+          id: "sub-1", pending_change_type: "downgrade",
+          provider_subscription_code: "SUB_x", provider_email_token: "tok_x",
+        },
+      }),
+    });
+    mocks.createAdminClient.mockReturnValue({ from: () => ({ update }) });
+
+    await keepCurrentPlan();
+
+    expect(mocks.enableSubscription).toHaveBeenCalledWith("SUB_x", "tok_x");
+    expect(order).toEqual(["paystack", "db"]);
+  });
+
+  it("leaves the pending change in place when Paystack refuses", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    mocks.enableSubscription.mockRejectedValue(new Error("paystack down"));
+    const update = vi.fn(() => ({ eq: vi.fn() }));
+    mocks.createClient.mockResolvedValue({
+      from: () => queryMock({
+        data: {
+          id: "sub-1", pending_change_type: "cancel",
+          provider_subscription_code: "SUB_x", provider_email_token: "tok_x",
+        },
+      }),
+    });
+    mocks.createAdminClient.mockReturnValue({ from: () => ({ update }) });
+
+    // Clearing it anyway would leave the row claiming an active plan that
+    // silently never renews — worse than the scheduled change it undid.
+    await expect(keepCurrentPlan()).rejects.toThrow(/renewal/i);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("refuses when there is no scheduled change to call off", async () => {
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    mocks.createClient.mockResolvedValue({
+      from: () => queryMock({ data: { id: "sub-1", pending_change_type: null } }),
+    });
+    mocks.createAdminClient.mockReturnValue({ from: () => ({ update: vi.fn() }) });
+
+    await expect(keepCurrentPlan()).rejects.toThrow(/scheduled/i);
   });
 });

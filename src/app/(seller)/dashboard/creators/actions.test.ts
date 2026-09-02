@@ -228,7 +228,7 @@ describe("markCommissionsPaid", () => {
       p_commission_ids: ["a", "b"],
       p_method: "mobile_money",
       p_external_reference: "MOMO123",
-      p_note: null,
+      p_note: undefined,
     });
   });
 

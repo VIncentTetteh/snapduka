@@ -104,7 +104,7 @@ export async function POST(request: Request) {
       const { data: price } = await admin
         .from("plan_prices")
         .select("id,amount_minor,currency,interval,provider_plan_code,plans(name)")
-        .eq("id", row.pending_price_id)
+        .eq("id", row.pending_price_id!)
         .maybeSingle();
       if (!price) {
         failed += 1;
@@ -148,9 +148,9 @@ export async function POST(request: Request) {
           admin
             .from("seller_subscriptions")
             .update({
-              plan_id: row.pending_plan_id,
-              plan_version: row.pending_plan_version,
-              price_id: row.pending_price_id,
+              plan_id: row.pending_plan_id ?? undefined,
+              plan_version: row.pending_plan_version ?? undefined,
+              price_id: row.pending_price_id ?? undefined,
               state: "active",
               current_period_start: now.toISOString(),
               current_period_end: periodEnd(now, price.interval),

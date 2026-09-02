@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { safeNextPath } from "@/lib/auth/redirect";
+import { COUNTRIES, oneOf } from "@/lib/db/enums";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -31,15 +32,16 @@ export async function createCreatorProfile(formData: FormData): Promise<never> {
   if (!/^\+[1-9][0-9]{7,14}$/.test(contactPhone)) {
     fail("Enter your phone in international format, starting with +.");
   }
-  if (!["GH", "NG", "CI"].includes(country)) fail("Choose a country.");
+  const creatorCountry = oneOf(country, COUNTRIES);
+  if (!creatorCountry) fail("Choose a country.");
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("bootstrap_creator_account", {
     p_handle: handle,
     p_display_name: displayName,
     p_contact_phone: contactPhone,
-    p_country: country,
-    p_contact_email: actor.email,
+    p_country: creatorCountry!,
+    p_contact_email: actor.email ?? undefined,
   });
 
   if (error) {
