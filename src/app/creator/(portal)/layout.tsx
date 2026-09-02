@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { LogoMark } from "@/components/ui/logo";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext, resolveServerActor } from "@/lib/auth/actor";
 
 export const dynamic = "force-dynamic";
 
@@ -26,14 +26,15 @@ const NAV = [
  * that redirects to /creator/start is an infinite loop.
  */
 export default async function CreatorLayout({ children }: { children: ReactNode }) {
-  const actor = await resolveServerActor();
+  const [actor, creator] = await Promise.all([resolveServerActor(), resolveCreatorContext()]);
 
   if (!actor.authenticated) redirect("/login?next=/creator");
-  // An authenticated user with no creator profile yet: send them to make one
-  // rather than to a dead end. Sellers keep their own dashboard.
-  if (actor.kind === "seller") redirect("/dashboard");
   if (actor.kind === "operator") redirect("/admin");
-  if (actor.kind !== "creator") redirect("/creator/start");
+  // Gated on the creator profile, not on the actor kind. A shop owner promoting
+  // someone else's shop resolves as a seller and still belongs here.
+  if (!creator) redirect("/creator/start");
+  // Shown only when they have somewhere to switch back to.
+  const alsoSeller = actor.kind === "seller";
 
   return (
     <div className="flex min-h-svh flex-col bg-paper text-ink">
@@ -48,7 +49,7 @@ export default async function CreatorLayout({ children }: { children: ReactNode 
           </span>
           <div className="flex-1" />
           <span className="hidden truncate text-[12.5px] font-semibold text-ink-soft sm:block">
-            @{actor.handle}
+            @{creator.handle}
           </span>
         </div>
         <nav aria-label="Creator navigation" className="mx-auto flex max-w-[900px] gap-1 overflow-x-auto px-4 sm:px-6">
@@ -61,6 +62,16 @@ export default async function CreatorLayout({ children }: { children: ReactNode 
               {item.label}
             </Link>
           ))}
+          {/* Only rendered for someone who also owns a shop, so the two
+              contexts on one account stay reachable from each other. */}
+          {alsoSeller ? (
+            <Link
+              href="/dashboard"
+              className="-mb-px ml-auto whitespace-nowrap border-b-2 border-transparent px-3 pb-2.5 pt-1 text-[13.5px] font-semibold text-accent no-underline hover:text-accent-deep"
+            >
+              My shop →
+            </Link>
+          ) : null}
         </nav>
       </header>
       <div className="mx-auto w-full max-w-[900px] flex-1 px-4 pb-16 pt-6 sm:px-6">{children}</div>

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, Panel } from "@/components/ui/surface";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext } from "@/lib/auth/actor";
 import { formatRate } from "@/lib/creators/commission";
 import { fetchPartnerShops } from "@/lib/creators/partner-shops";
 import { createClient } from "@/lib/supabase/server";
@@ -19,14 +19,15 @@ const TONE: Record<string, "success" | "warn" | "neutral"> = {
 };
 
 export default async function CreatorPartnersPage() {
-  const actor = await resolveServerActor();
-  if (actor.kind !== "creator") return null;
+  const creator = await resolveCreatorContext();
+  // Gated on the creator profile so a shop owner promoting another shop qualifies.
+  if (!creator) return null;
   const supabase = await createClient();
 
   const { data: partnerships } = await supabase
     .from("creator_partnerships")
     .select("id,status,rate_bps,hold_days,currency,seller_account_id")
-    .eq("creator_id", actor.creatorId)
+    .eq("creator_id", creator.creatorId)
     .order("invited_at", { ascending: false });
 
   const shops = await fetchPartnerShops((partnerships ?? []).map((p) => p.seller_account_id));

@@ -2,15 +2,16 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { appOrigin } from "@/lib/app-url";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext } from "@/lib/auth/actor";
 import { normalizeToOne } from "@/lib/storefront/media";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function CreatorLinksPage() {
-  const actor = await resolveServerActor();
-  if (actor.kind !== "creator") return null;
+  const creator = await resolveCreatorContext();
+  // Gated on the creator profile so a shop owner promoting another shop qualifies.
+  if (!creator) return null;
   const supabase = await createClient();
   const origin = await appOrigin();
 

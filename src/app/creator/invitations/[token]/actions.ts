@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import { redirect } from "next/navigation";
 
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext, resolveServerActor } from "@/lib/auth/actor";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -21,8 +21,11 @@ export async function acceptCreatorInvitation(formData: FormData): Promise<never
   if (!actor.authenticated || actor.kind === "operator") {
     redirect(`/login?next=/creator/invitations/${token}`);
   }
-  // No profile yet: make one, then come back and accept.
-  if (actor.kind !== "creator") {
+  // No profile yet: make one, then come back and accept. Resolved from the
+  // creator row rather than the actor kind, because a shop owner accepting
+  // another shop's invite still resolves as a seller.
+  const creator = await resolveCreatorContext();
+  if (!creator) {
     redirect(`/creator/start?next=${encodeURIComponent(`/creator/invitations/${token}`)}`);
   }
 
@@ -47,7 +50,7 @@ export async function acceptCreatorInvitation(formData: FormData): Promise<never
   const { error } = await admin.from("creator_partnerships").upsert(
     {
       seller_account_id: invite.seller_account_id,
-      creator_id: actor.creatorId,
+      creator_id: creator.creatorId,
       status: "active",
       rate_bps: invite.rate_bps,
       hold_days: invite.hold_days,

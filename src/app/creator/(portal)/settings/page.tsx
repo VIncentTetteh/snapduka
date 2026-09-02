@@ -1,7 +1,7 @@
 import { Field, inputClasses } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { PageHeader, Panel } from "@/components/ui/surface";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
 
 import { updateCreatorProfile } from "./actions";
@@ -13,15 +13,16 @@ export default async function CreatorSettingsPage({
 }: {
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
-  const actor = await resolveServerActor();
-  if (actor.kind !== "creator") return null;
+  const context = await resolveCreatorContext();
+  // Gated on the creator profile so a shop owner promoting another shop qualifies.
+  if (!context) return null;
   const params = await searchParams;
   const supabase = await createClient();
 
   const { data: creator } = await supabase
     .from("creators")
     .select("display_name,handle,contact_phone,contact_email,payout_details")
-    .eq("id", actor.creatorId)
+    .eq("id", context.creatorId)
     .maybeSingle();
 
   const payout = (creator?.payout_details ?? {}) as Record<string, string>;

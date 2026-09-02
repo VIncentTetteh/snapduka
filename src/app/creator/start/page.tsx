@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Field, inputClasses } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { PageHeader, Panel } from "@/components/ui/surface";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext, resolveServerActor } from "@/lib/auth/actor";
 
 import { createCreatorProfile } from "./actions";
 
@@ -23,8 +23,11 @@ export default async function CreatorStartPage({
   const params = await searchParams;
 
   if (!actor.authenticated) redirect("/login?next=/creator/start");
-  if (actor.kind === "creator") redirect("/creator");
-  if (actor.kind === "seller") redirect("/dashboard");
+  if (actor.kind === "operator") redirect("/admin");
+  // A shop owner setting up a creator profile to promote someone else's shop is
+  // a legitimate action; this used to bounce them to their own dashboard with no
+  // explanation, which made every invite they clicked look broken.
+  if (await resolveCreatorContext()) redirect("/creator");
 
   return (
     <main className="sd-main mx-auto max-w-[440px] px-4 py-10 sm:px-6">

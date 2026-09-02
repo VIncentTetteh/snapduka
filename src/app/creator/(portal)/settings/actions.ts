@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
 
 export async function updateCreatorProfile(formData: FormData): Promise<void> {
-  const actor = await resolveServerActor();
-  if (actor.kind !== "creator") return;
+  const creator = await resolveCreatorContext();
+  // Gated on the creator profile so a shop owner promoting another shop qualifies.
+  if (!creator) return;
 
   const displayName = String(formData.get("displayName") ?? "").trim();
   const contactPhone = String(formData.get("contactPhone") ?? "").replace(/[\s()-]/g, "");
@@ -33,7 +34,7 @@ export async function updateCreatorProfile(formData: FormData): Promise<void> {
       contact_phone: contactPhone,
       payout_details: momoName ? { momoName } : {},
     })
-    .eq("id", actor.creatorId);
+    .eq("id", creator.creatorId);
 
   if (error) fail("Those details could not be saved.");
 

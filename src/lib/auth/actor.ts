@@ -208,3 +208,40 @@ export async function resolveServerActor(
 ): Promise<Actor> {
   return resolveActor(dependencies ?? (await createSupabaseDependencies()));
 }
+
+export type CreatorContext = {
+  creatorId: string;
+  handle: string;
+  country: CreatorIdentity["country"];
+};
+
+/**
+ * The creator profile behind the current session, whether or not that person
+ * also owns a shop.
+ *
+ * `resolveActor` resolves a seller before it ever looks for a creator row, and
+ * deliberately so: 87 guards across the dashboard read `actor.kind === "seller"`
+ * and none of them should move. The side effect was that a shop owner could
+ * never be a creator for a *different* shop — they clicked an invite, were sent
+ * to /creator/start, were bounced straight back to /dashboard, and reasonably
+ * concluded the link was broken. The database always allowed this; the
+ * arms-length trigger blocks being a creator for your own shop and nothing else,
+ * and current_creator_id() resolves from auth.uid() independently of any seller
+ * account, so RLS has been ready the whole time.
+ *
+ * Resolved separately rather than folded into the actor so seller page loads do
+ * not pay for a creator lookup they will never read.
+ */
+export async function resolveCreatorContext(
+  dependencies?: ActorResolverDependencies,
+): Promise<CreatorContext | null> {
+  const resolved = dependencies ?? (await createSupabaseDependencies());
+  const user = await resolved.getVerifiedUser();
+  // An operator is staff, not a creator; never resolve one into a payable identity.
+  if (!user || user.appMetadata.snapduka_role === "operator") return null;
+
+  const creator = await resolved.getCreatorByAuthUserId?.(user.id);
+  if (!creator) return null;
+
+  return { creatorId: creator.id, handle: creator.handle, country: creator.country };
+}

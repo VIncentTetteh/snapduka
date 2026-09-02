@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -12,8 +12,9 @@ import { createClient } from "@/lib/supabase/server";
  * the record rather than a nicety.
  */
 export async function respondToPayment(formData: FormData): Promise<void> {
-  const actor = await resolveServerActor();
-  if (actor.kind !== "creator") return;
+  const creator = await resolveCreatorContext();
+  // Gated on the creator profile so a shop owner promoting another shop qualifies.
+  if (!creator) return;
 
   const paymentId = String(formData.get("paymentId") ?? "");
   const action = String(formData.get("action") ?? "");

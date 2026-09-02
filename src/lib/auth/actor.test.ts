@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   resolveActor,
+  resolveCreatorContext,
   resolveServerActor,
   type ActorResolverDependencies,
   type SellerAccountIdentity,
@@ -211,5 +212,83 @@ describe("resolveActor — creator", () => {
 
     expect(actor.kind).toBe("operator");
     expect(getCreator).not.toHaveBeenCalled();
+  });
+});
+
+// resolveActor resolves a seller before it ever looks for a creator row, which
+// is deliberate — 87 dashboard guards read actor.kind === "seller". The side
+// effect was that a shop owner could never be a creator for a different shop:
+// they clicked an invite, were sent to /creator/start, were bounced back to
+// /dashboard, and reasonably concluded the link was broken.
+// Found by /qa on 2026-09-02
+describe("resolveCreatorContext", () => {
+  const creatorRow = {
+    id: "00000000-0000-0000-0000-000000000301",
+    handle: "ama_sika",
+    country: "GH" as const,
+  };
+
+  function deps(
+    verifiedUser: VerifiedAuthUser | null,
+    seller: SellerAccountIdentity | null,
+    creator: typeof creatorRow | null,
+  ): ActorResolverDependencies {
+    return {
+      getVerifiedUser: vi.fn().mockResolvedValue(verifiedUser),
+      getSellerByAuthUserId: vi.fn().mockResolvedValue(seller),
+      getCreatorByAuthUserId: vi.fn().mockResolvedValue(creator),
+    };
+  }
+
+  it("resolves a creator who owns no shop", async () => {
+    await expect(resolveCreatorContext(deps(user, null, creatorRow))).resolves.toEqual({
+      creatorId: creatorRow.id,
+      handle: "ama_sika",
+      country: "GH",
+    });
+  });
+
+  it("resolves a creator who ALSO owns a shop — the whole point of the change", async () => {
+    const dependencies = deps(user, activeSeller, creatorRow);
+
+    // resolveActor still calls them a seller, and must keep doing so.
+    await expect(resolveActor(dependencies)).resolves.toMatchObject({ kind: "seller" });
+    // But the creator profile is still reachable.
+    await expect(resolveCreatorContext(dependencies)).resolves.toMatchObject({
+      creatorId: creatorRow.id,
+    });
+  });
+
+  it("returns null for a seller with no creator profile", async () => {
+    await expect(resolveCreatorContext(deps(user, activeSeller, null))).resolves.toBeNull();
+  });
+
+  it("returns null when nobody is signed in", async () => {
+    await expect(resolveCreatorContext(deps(null, null, creatorRow))).resolves.toBeNull();
+  });
+
+  it("never resolves an operator into a payable creator identity", async () => {
+    const operator: VerifiedAuthUser = {
+      ...user,
+      appMetadata: { snapduka_role: "operator" },
+    };
+
+    await expect(resolveCreatorContext(deps(operator, null, creatorRow))).resolves.toBeNull();
+  });
+
+  it("leaves seller resolution untouched, so dashboard guards cannot regress", async () => {
+    // The regression this change could introduce: a creator profile must never
+    // turn a seller into a non-seller actor, or every actor.kind === "seller"
+    // guard in the dashboard starts rejecting a legitimate owner.
+    const actor = await resolveActor(deps(user, activeSeller, creatorRow));
+
+    expect(actor.kind).toBe("seller");
+    expect(actor).toMatchObject({ sellerAccountId: activeSeller.id, status: "active" });
+  });
+
+  it("still resolves a creator-only user as kind creator, so the dashboard rejects them", async () => {
+    const actor = await resolveActor(deps(user, null, creatorRow));
+
+    expect(actor.kind).toBe("creator");
   });
 });

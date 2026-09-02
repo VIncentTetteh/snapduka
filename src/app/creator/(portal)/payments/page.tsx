@@ -3,7 +3,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { inputClasses } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { PageHeader, Panel } from "@/components/ui/surface";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext } from "@/lib/auth/actor";
 import { formatMoney } from "@/lib/i18n";
 import { fetchPartnerShops } from "@/lib/creators/partner-shops";
 import { createClient } from "@/lib/supabase/server";
@@ -18,15 +18,16 @@ export default async function CreatorPaymentsPage({
 }: {
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
-  const actor = await resolveServerActor();
-  if (actor.kind !== "creator") return null;
+  const creator = await resolveCreatorContext();
+  // Gated on the creator profile so a shop owner promoting another shop qualifies.
+  if (!creator) return null;
   const params = await searchParams;
   const supabase = await createClient();
 
   const { data: payments } = await supabase
     .from("creator_commission_payments")
     .select("id,reference,amount_minor,currency,method,marked_at,confirmed_at,disputed_at,dispute_note,seller_account_id")
-    .eq("creator_id", actor.creatorId)
+    .eq("creator_id", creator.creatorId)
     .order("marked_at", { ascending: false });
 
   const shops = await fetchPartnerShops((payments ?? []).map((p) => p.seller_account_id));

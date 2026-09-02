@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { DashboardHeader } from "@/components/seller/dashboard-header";
 import { MobileNav } from "@/components/seller/mobile-nav";
 import { SidebarNav } from "@/components/seller/sidebar-nav";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext, resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan } from "@/lib/billing/resolve";
 import { createClient } from "@/lib/supabase/server";
 
@@ -33,12 +33,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     getSellerPlan(actor.sellerAccountId),
   ]);
 
+  // A shop owner can also hold a creator profile for someone else's shop; the
+  // nav link is the only way back to it, since they always resolve as a seller.
+  const isCreator = Boolean(await resolveCreatorContext());
+
   const shopName = shop?.display_name ?? "SnapDuka";
   const ownerName = account?.contact_name ?? shopName;
 
   return (
     <div className="flex min-h-svh bg-paper text-ink">
-      <SidebarNav shopName={shopName} planName={plan.planName} planCode={plan.planCode} />
+      <SidebarNav shopName={shopName} planName={plan.planName} planCode={plan.planCode} isCreator={isCreator} />
       <div className="min-w-0 flex-1">
         <DashboardHeader
           isPublished={shop?.status === "published"}

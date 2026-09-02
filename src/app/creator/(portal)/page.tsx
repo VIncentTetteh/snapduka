@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Panel } from "@/components/ui/surface";
 import { PageHeader } from "@/components/ui/surface";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext } from "@/lib/auth/actor";
 import {
   calculateCreatorBalancesByCurrency,
   formatRate,
@@ -23,25 +23,26 @@ const TONE: Record<string, "success" | "warn" | "neutral" | "danger"> = {
 };
 
 export default async function CreatorEarningsPage() {
-  const actor = await resolveServerActor();
-  if (actor.kind !== "creator") return null;
+  const creator = await resolveCreatorContext();
+  // Gated on the creator profile so a shop owner promoting another shop qualifies.
+  if (!creator) return null;
   const supabase = await createClient();
 
   const [{ data: commissions }, { data: adjustments }, { data: payments }] = await Promise.all([
     supabase
       .from("creator_commissions")
       .select("id,status,amount_minor,basis_minor,rate_bps,currency,order_reference,order_placed_at,payable_at,shop_display_name,reversal_reason")
-      .eq("creator_id", actor.creatorId)
+      .eq("creator_id", creator.creatorId)
       .order("order_placed_at", { ascending: false })
       .limit(50),
     supabase
       .from("creator_commission_adjustments")
       .select("delta_minor,currency")
-      .eq("creator_id", actor.creatorId),
+      .eq("creator_id", creator.creatorId),
     supabase
       .from("creator_commission_payments")
       .select("id,reference,amount_minor,currency,method,marked_at,confirmed_at,disputed_at")
-      .eq("creator_id", actor.creatorId)
+      .eq("creator_id", creator.creatorId)
       .order("marked_at", { ascending: false })
       .limit(10),
   ]);
@@ -67,7 +68,7 @@ export default async function CreatorEarningsPage() {
 
   return (
     <main className="sd-main">
-      <PageHeader title="Your earnings" sub={`Signed in as @${actor.handle}`} />
+      <PageHeader title="Your earnings" sub={`Signed in as @${creator.handle}`} />
 
       {/* Stated plainly and up front: this is the single most important thing a
           creator needs to understand about how they get paid. */}

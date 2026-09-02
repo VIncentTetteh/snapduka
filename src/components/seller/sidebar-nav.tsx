@@ -94,11 +94,14 @@ export function SidebarNav({
   shopName,
   planName = "Free",
   planCode = "free",
+  isCreator = false,
 }: {
   shopName: string;
   isVerified?: boolean;
   planName?: string;
   planCode?: string;
+  /** This account also holds a creator profile for someone else's shop. */
+  isCreator?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -147,6 +150,19 @@ export function SidebarNav({
             </div>
           </div>
         ))}
+
+        {/* Only for an account that is also a creator elsewhere, so the two
+            contexts stay reachable from each other. */}
+        {isCreator ? (
+          <div className="mt-3 border-t border-line pt-3">
+            <Link
+              href="/creator"
+              className="flex items-center gap-2.5 rounded-[10px] px-3 py-2 text-[13.5px] font-semibold text-accent no-underline transition-colors hover:bg-accent-tint"
+            >
+              Creator portal →
+            </Link>
+          </div>
+        ) : null}
       </nav>
 
       {/* Plan card */}
