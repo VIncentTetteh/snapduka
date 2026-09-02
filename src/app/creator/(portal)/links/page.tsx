@@ -20,16 +20,14 @@ export default async function CreatorLinksPage() {
       .from("campaign_links")
       .select("id,name,token,active,creator_partnership_id")
       .not("creator_partnership_id", "is", null),
-    supabase.from("campaign_attributions").select("campaign_id,order_id,click_count"),
+    supabase.rpc("campaign_link_totals"),
   ]);
 
-  const stats = new Map<string, { clicks: number; orders: number }>();
-  for (const row of attributions ?? []) {
-    const entry = stats.get(row.campaign_id) ?? { clicks: 0, orders: 0 };
-    if (row.order_id) entry.orders += 1;
-    else entry.clicks += row.click_count ?? 1;
-    stats.set(row.campaign_id, entry);
-  }
+  // Grouped in Postgres: reducing the raw rows here silently stopped counting
+  // past PostgREST's 1000-row response cap.
+  const stats = new Map<string, { clicks: number; orders: number }>(
+    (attributions ?? []).map((row) => [row.campaign_id, { clicks: row.clicks, orders: row.orders }]),
+  );
 
   return (
     <main className="sd-main">

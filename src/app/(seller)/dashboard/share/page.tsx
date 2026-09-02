@@ -2,6 +2,7 @@ import Link from "next/link";
 import QRCode from "qrcode";
 
 import { disconnectSocialAccountAction, generateShareLinksAction } from "./actions";
+import { inputClasses } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
   isSocialProviderConfigured,
@@ -31,6 +32,8 @@ const TABS = [
   { id: "analytics", label: "Analytics" },
 ] as const;
 
+const PRODUCT_PICKER_LIMIT = 24;
+
 const CHANNEL_LABEL: Record<string, string> = {
   tiktok: "TikTok",
   instagram: "Instagram",
@@ -42,7 +45,7 @@ const CHANNEL_LABEL: Record<string, string> = {
 export default async function ShareStudioPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; product?: string }>;
+  searchParams: Promise<{ tab?: string; product?: string; q?: string }>;
 }) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
@@ -51,6 +54,9 @@ export default async function ShareStudioPage({
   const origin = await appOrigin();
   const originHost = new URL(origin).host;
   const supabase = await createClient();
+  // The picker is a horizontal strip, so it stays a shortlist; search is how a
+  // seller reaches anything outside it. PostgREST would cap us anyway.
+  const productSearch = (params.q ?? "").trim().slice(0, 60);
 
   const [{ data: shop }, { data: products }, { data: links }, { data: attributions }, eventCounts, { count: paidOrders }] =
     await Promise.all([
@@ -59,23 +65,29 @@ export default async function ShareStudioPage({
         .select("id,slug,display_name")
         .eq("seller_account_id", actor.sellerAccountId)
         .maybeSingle(),
-      supabase
-        .from("products")
-        .select("id,name,currency,price_minor,video_url")
-        .eq("seller_account_id", actor.sellerAccountId)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(12),
+      productSearch
+        ? supabase
+            .from("products")
+            .select("id,name,currency,price_minor,video_url")
+            .eq("seller_account_id", actor.sellerAccountId)
+            .eq("status", "active")
+            .ilike("name", `%${productSearch}%`)
+            .order("name")
+            .limit(PRODUCT_PICKER_LIMIT)
+        : supabase
+            .from("products")
+            .select("id,name,currency,price_minor,video_url")
+            .eq("seller_account_id", actor.sellerAccountId)
+            .eq("status", "active")
+            .order("created_at", { ascending: false })
+            .limit(PRODUCT_PICKER_LIMIT),
       supabase
         .from("campaign_links")
         .select("id,name,token,channel,destination_path,active")
         .eq("seller_account_id", actor.sellerAccountId)
         .eq("active", true)
         .order("created_at", { ascending: false }),
-      supabase
-        .from("campaign_attributions")
-        .select("campaign_id,order_id,click_count")
-        .eq("seller_account_id", actor.sellerAccountId),
+      supabase.rpc("campaign_link_totals"),
       fetchEventCounts(actor.sellerAccountId),
       supabase
         .from("orders")
@@ -100,7 +112,20 @@ export default async function ShareStudioPage({
     );
   }
 
-  const selectedProduct = products?.find((product) => product.id === params.product) ?? null;
+  // Looking the selection up only inside the shortlist meant a link to any
+  // product outside it silently shared the storefront instead. Fetch it
+  // directly when the shortlist does not happen to contain it.
+  const listedProduct = products?.find((product) => product.id === params.product) ?? null;
+  const { data: fetchedProduct } = params.product && !listedProduct
+    ? await supabase
+        .from("products")
+        .select("id,name,currency,price_minor,video_url")
+        .eq("seller_account_id", actor.sellerAccountId)
+        .eq("status", "active")
+        .eq("id", params.product)
+        .maybeSingle()
+    : { data: null };
+  const selectedProduct = listedProduct ?? fetchedProduct;
   const destinationPath = selectedProduct
     ? `/${shop.slug}/products/${selectedProduct.id}`
     : `/${shop.slug}`;
@@ -108,13 +133,12 @@ export default async function ShareStudioPage({
   const storeUrl = `${origin}/${shop.slug}`;
   const targetUrl = selectedProduct ? `${origin}${destinationPath}` : storeUrl;
 
-  // A row with an order_id is a conversion, not a click. Counting every row as
-  // a click meant each order silently incremented the click total too.
+  // Grouped in Postgres — reducing the raw rows here stopped counting past
+  // PostgREST's 1000-row cap. The conversion/click split lives in the RPC now:
+  // a row with an order_id is a conversion, not a click.
   const clicksByCampaign = (attributions ?? []).reduce<Record<string, { clicks: number; orders: number }>>(
-    (acc, attribution) => {
-      const entry = (acc[attribution.campaign_id] ??= { clicks: 0, orders: 0 });
-      if (attribution.order_id) entry.orders += 1;
-      else entry.clicks += attribution.click_count ?? 1;
+    (acc, row) => {
+      acc[row.campaign_id] = { clicks: row.clicks, orders: row.orders };
       return acc;
     },
     {},
@@ -127,9 +151,7 @@ export default async function ShareStudioPage({
 
   const qrDataUrl = await QRCode.toDataURL(targetUrl, { width: 480, margin: 2 });
 
-  const totalClicks = (attributions ?? [])
-    .filter((attribution) => !attribution.order_id)
-    .reduce((sum, attribution) => sum + (attribution.click_count ?? 1), 0);
+  const totalClicks = (attributions ?? []).reduce((sum, row) => sum + row.clicks, 0);
   const visits = eventCounts.visit;
   const checkoutStarts = eventCounts.checkout_start;
 
@@ -192,6 +214,22 @@ export default async function ShareStudioPage({
               </div>
               <p className="max-w-[42ch] truncate font-mono text-[11.5px] text-ink-muted">{targetUrl}</p>
             </div>
+            <form className="mb-3 flex gap-2" role="search">
+              <input
+                aria-label="Search your products"
+                className={inputClasses(false, "flex-1")}
+                defaultValue={productSearch}
+                name="q"
+                placeholder="Search your products…"
+                type="search"
+              />
+              <SubmitButton
+                className="min-h-11 flex-none cursor-pointer rounded-[10px] border border-line-input bg-white px-4 text-[13px] font-semibold text-ink transition-colors hover:border-[#B9AC98] disabled:cursor-wait disabled:opacity-60"
+                pendingLabel="Searching…"
+              >
+                Search
+              </SubmitButton>
+            </form>
             <div className="flex gap-2 overflow-x-auto pb-0.5">
               <Link
                 href="/dashboard/share"
@@ -219,6 +257,14 @@ export default async function ShareStudioPage({
                 </Link>
               ))}
             </div>
+            {productSearch && (products ?? []).length === 0 ? (
+              <p className="mt-2.5 text-[12.5px] text-ink-muted">
+                No active product matches “{productSearch}”.{" "}
+                <Link className="font-semibold text-accent no-underline" href="/dashboard/share">
+                  Clear search
+                </Link>
+              </p>
+            ) : null}
           </Panel>
 
           <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.25fr)_340px]">
