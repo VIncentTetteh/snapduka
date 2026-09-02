@@ -122,7 +122,7 @@ export default async function AdminCreatorsPage({
       {filtered.length === 0 ? (
         <EmptyState title="No creators" body="Creators appear here once a seller invites one and they accept." />
       ) : (
-        <Panel>
+        <Panel className="p-4.5">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-[13px]">
               <thead>

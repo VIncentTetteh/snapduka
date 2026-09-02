@@ -80,7 +80,7 @@ export default async function CreatorEarningsPage() {
       </div>
 
       {(payments ?? []).length > 0 ? (
-        <Panel className="mb-5">
+        <Panel className="mb-5 p-4.5">
           <h2 className="mb-2 text-[14px] font-bold text-ink">Payments</h2>
           <ul className="grid gap-2">
             {(payments ?? []).map((payment) => (
@@ -106,7 +106,7 @@ export default async function CreatorEarningsPage() {
         </Panel>
       ) : null}
 
-      <Panel>
+      <Panel className="p-4.5">
         <h2 className="mb-2.5 text-[14px] font-bold text-ink">Sales from your links</h2>
         {(commissions ?? []).length === 0 ? (
           <EmptyState
