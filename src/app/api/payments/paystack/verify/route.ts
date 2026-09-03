@@ -9,6 +9,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const schema = z.object({ reference: z.string().min(8).max(120) });
 
 /**
+ * Paystack states that mean the transaction will never complete. Anything else
+ * non-success ('ongoing', 'pending', 'queued') is still in progress.
+ */
+const TERMINAL_PROVIDER_FAILURES = new Set(["abandoned", "failed", "reversed"]);
+
+/**
  * Buyer-initiated payment confirmation, called when Paystack redirects back
  * to the tracking page. Verifies the transaction with Paystack and applies
  * the same idempotent RPC the webhook uses — this is the primary confirmation
@@ -52,7 +58,24 @@ export async function POST(request: Request) {
   }
 
   if (verified.status !== "success") {
-    return NextResponse.json({ paymentStatus: attempt.status, providerStatus: verified.status });
+    // Close the attempt out when Paystack says it is over. Without this the row
+    // stays 'pending' forever: two such rows sat in production for a month,
+    // indistinguishable from a payment still in flight, and every abandoned
+    // checkout adds another. 'ongoing' and 'pending' are NOT terminal — the
+    // buyer is still on the payment page and the attempt must stay open.
+    const settledStatus = TERMINAL_PROVIDER_FAILURES.has(verified.status)
+      ? "failed"
+      : attempt.status;
+
+    if (settledStatus !== attempt.status) {
+      await admin
+        .from("payment_attempts")
+        .update({ status: settledStatus })
+        .eq("reference", reference)
+        // Never overwrite a terminal state: a webhook may have landed first.
+        .eq("status", "pending");
+    }
+    return NextResponse.json({ paymentStatus: settledStatus, providerStatus: verified.status });
   }
 
   // Same shape the webhook passes; the RPC re-validates status, amount and
