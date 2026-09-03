@@ -26,6 +26,19 @@ export async function resolveCaseAction(formData: FormData) {
   revalidatePath(`/admin/cases/${caseId}`); revalidatePath("/admin/cases");
 }
 
+/**
+ * Sends the operator back to the queue with a stated reason.
+ *
+ * reviewPayoutAction used to refuse with a bare `return`: the page re-rendered
+ * unchanged and the natural read was that the decision had gone through. On the
+ * one action that releases money that is not acceptable, and it is the same
+ * defect that made billing silently unpayable (changePlan opened with a silent
+ * return, so sellers could not pay and were never told why).
+ */
+function refusePayoutReview(message: string): never {
+  redirect(`/admin/payouts?error=${encodeURIComponent(message)}`);
+}
+
 export async function reviewPayoutAction(formData: FormData) {
   const actor = await resolveServerActor();
   if (actor.kind !== "operator") redirect("/login?next=/admin/payouts");
@@ -40,7 +53,10 @@ export async function reviewPayoutAction(formData: FormData) {
   // provider can know money actually moved. An operator marking a payout paid
   // by hand would leave the seller's balance debited, no transfer in existence,
   // and the books claiming it was settled.
-  if (!reason || !["approved", "rejected"].includes(decision)) return;
+  if (!reason) refusePayoutReview("Add an operational reason before deciding.");
+  if (!["approved", "rejected"].includes(decision)) {
+    refusePayoutReview("Choose approve or reject.");
+  }
 
   const admin = createAdminClient();
   const { data: payout } = await admin
@@ -48,7 +64,7 @@ export async function reviewPayoutAction(formData: FormData) {
     .select("id,status,seller_account_id,amount_minor,currency")
     .eq("id", payoutId)
     .maybeSingle();
-  if (!payout) return;
+  if (!payout) refusePayoutReview("That payout request no longer exists.");
 
   // Approving is the trigger: the execute worker picks up 'approved' rows every
   // two minutes, sends the transfer, and the webhook settles it.
@@ -56,7 +72,12 @@ export async function reviewPayoutAction(formData: FormData) {
     requested: ["approved", "rejected"],
     approved: ["rejected"],
   };
-  if (!allowed[payout.status]?.includes(decision)) return;
+  if (!allowed[payout.status]?.includes(decision)) {
+    // Almost always a second operator got there first, or the page is stale.
+    refusePayoutReview(
+      `This payout is already ${payout.status}, so it cannot be ${decision} now. Reload the queue.`,
+    );
+  }
 
   await admin
     .from("payout_requests")

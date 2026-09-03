@@ -27,7 +27,7 @@ const STATUS: Record<string, { label: string; tone: BadgeTone }> = {
 export default async function AdminPayoutsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; error?: string }>;
 }) {
   const filters = await searchParams;
   const status = FILTERS.some((f) => f.value === filters.status) ? (filters.status ?? "") : "";
@@ -48,6 +48,15 @@ export default async function AdminPayoutsPage({
         title="Payout approvals"
         sub="Every decision requires an operational reason and is written to the audit log."
       />
+
+      {filters.error ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-danger-line bg-danger-tint px-4 py-3 text-[13px] font-semibold text-danger"
+        >
+          {filters.error}
+        </div>
+      ) : null}
 
       <div className="mb-4">
         <FilterPills
