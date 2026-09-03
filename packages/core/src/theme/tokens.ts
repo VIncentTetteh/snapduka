@@ -9,6 +9,11 @@ export const tokens = {
     surface: "#FFFFFF", // cards
     accent: "#0E7C5A", // brand green
     accentInk: "#FFFFFF", // text on accent
+    // A selected control needs a fill of its own. Filter chips used `paper`,
+    // which IS the page background, so the selected chip sank into the page
+    // while the unselected ones sat on white and looked picked instead.
+    accentTint: "#E4F1EB", // selected-control fill
+    accentDeep: "#0A5A42", // text on accentTint
     warning: "#B4690E",
     danger: "#B42318",
     success: "#0E7C5A",
