@@ -96,3 +96,56 @@ export async function getPublicProduct(shopId: string, productId: string) {
   if (error) throw new Error("Unable to load this product.", { cause: error });
   return data;
 }
+
+/**
+ * Published reviews for one product, newest first.
+ *
+ * Read with the publishable key like every other storefront query, so the
+ * public RLS policy — published reviews on published shops — is what decides
+ * what a visitor sees. A hidden review is invisible here by construction rather
+ * than by a filter someone could forget.
+ */
+export async function getProductReviews(productId: string, limit = 20) {
+  const { data, error } = await publicClient()
+    .from("product_reviews")
+    .select("id, author_name, rating, body, seller_reply, seller_replied_at, created_at")
+    .eq("product_id", productId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error("Unable to load reviews.", { cause: error });
+  return data ?? [];
+}
+
+export type ReviewStats = { reviewCount: number; ratingAvg: number };
+
+/**
+ * Rating and count for a set of products, for the grid.
+ *
+ * One query for the whole page rather than one per card — the storefront grid
+ * shows 24 products, and 24 round trips to render a star row is exactly the
+ * kind of thing that makes a catalogue feel slow on a phone.
+ */
+export async function getReviewStats(
+  productIds: string[],
+): Promise<Map<string, ReviewStats>> {
+  const stats = new Map<string, ReviewStats>();
+  if (productIds.length === 0) return stats;
+
+  const { data, error } = await publicClient()
+    .from("product_review_stats")
+    .select("product_id, review_count, rating_avg")
+    .in("product_id", productIds);
+
+  // Ratings are decoration on the grid: a failure here should not take the
+  // catalogue down with it.
+  if (error) return stats;
+
+  for (const row of data ?? []) {
+    stats.set(row.product_id as string, {
+      reviewCount: Number(row.review_count),
+      ratingAvg: Number(row.rating_avg),
+    });
+  }
+  return stats;
+}

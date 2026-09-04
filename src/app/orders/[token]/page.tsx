@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { OrderStatusPoller } from "@/components/storefront/order-status-poller";
 import { Timeline, type TimelineStep } from "@/components/ui/timeline";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
+import { ReviewForm } from "@/components/storefront/review-form";
 import { isSafeHttpUrl } from "@/lib/catalog/video";
 import { courierLabel, type CourierKey } from "@/lib/couriers/catalogue";
 import { buyerInitiatedWhatsApp } from "@/lib/notifications/whatsapp";
@@ -121,6 +122,9 @@ export default async function TrackingPage({
     line_total_minor: number;
   }[];
   const subtotal = lines.reduce((sum, line) => sum + line.line_total_minor, 0);
+  // Mirrors PAID_STATES in @/lib/reviews/submit — the action refuses anything
+  // else anyway, so showing the form would only be a dead end.
+  const canReview = ["paid", "partially_refunded"].includes(order.payment_status);
 
   const statusLine = [
     PAYMENT_LABEL[order.payment_status as string],
@@ -236,6 +240,18 @@ export default async function TrackingPage({
                 </span>
               </span>
               <span className="text-[13px] font-bold">{fmt(line.line_total_minor, order.currency)}</span>
+              {/* Reviewing is offered only once the order is paid for and only
+                  for a line whose product still exists — the review table keys
+                  on product_id, and an abandoned checkout is not a customer. */}
+              {canReview && line.product_id ? (
+                <span className="col-span-3">
+                  <ReviewForm
+                    productId={line.product_id}
+                    productName={line.product_name}
+                    token={token}
+                  />
+                </span>
+              ) : null}
             </div>
           ))}
           <div className="grid gap-1.5 px-4.5 py-3.5">

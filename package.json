@@ -30,7 +30,7 @@
     "seed:demo": "node scripts/seed-demo.mjs",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
-    "db:types": "supabase gen types typescript --local > ../packages/core/src/supabase-types.ts"
+    "db:types": "supabase gen types typescript --local > packages/core/src/supabase-types.ts"
   },
   "dependencies": {
     "@snapduka/core": "workspace:*",

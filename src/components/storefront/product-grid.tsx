@@ -4,6 +4,7 @@ import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { deriveAvailability } from "@/lib/catalog/inventory";
 import { mainImageUrl } from "@/lib/storefront/media";
 import { formatPrice } from "@/lib/storefront/price";
+import { RatingStars } from "@/components/storefront/rating-stars";
 
 type Product = {
   id: string;
@@ -22,10 +23,13 @@ export function ProductGrid({
   slug,
   products,
   campaign,
+  reviewStats,
 }: {
   slug: string;
   products: Product[];
   campaign?: string;
+  /** Ratings by product id. Absent for a shop with no reviews yet. */
+  reviewStats?: Map<string, { reviewCount: number; ratingAvg: number }>;
 }) {
   if (!products.length) {
     return (
@@ -41,6 +45,7 @@ export function ProductGrid({
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(min(46%,220px),1fr))] gap-3.5">
       {products.map((product) => {
+        const rating = reviewStats?.get(product.id);
         const availability = deriveAvailability({
           policy: product.inventory_policy,
           stock: product.stock_quantity,
@@ -106,6 +111,14 @@ export function ProductGrid({
                   {price}
                 </span>
               </span>
+              {/* Only once a product has been reviewed — an empty star row on
+                  every card reads as "nobody has bought this". */}
+              {rating ? (
+                <span className="mt-1.5 flex items-center gap-1">
+                  <RatingStars rating={rating.ratingAvg} showCount={false} />
+                  <span className="text-[11.5px] text-ink-muted">({rating.reviewCount})</span>
+                </span>
+              ) : null}
             </span>
           </Link>
         );

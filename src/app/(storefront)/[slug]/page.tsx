@@ -9,6 +9,7 @@ import {
   getPublicCollections,
   getPublicProducts,
   getPublicShop,
+  getReviewStats,
 } from "@/lib/storefront/queries";
 import { fulfillmentSummary } from "@/lib/storefront/fulfillment-summary";
 import { appOrigin } from "@/lib/app-url";
@@ -47,6 +48,10 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
     }),
     getPublicCollections(shop.id),
   ]);
+
+  // One query for the whole grid rather than one per card — 24 round trips to
+  // draw star rows is what makes a catalogue feel slow on a phone.
+  const reviewStats = await getReviewStats(products.map((product) => product.id));
 
   const collectionHref = (collectionSlug?: string) => {
     const qs = new URLSearchParams();
@@ -135,7 +140,12 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
           </div>
         ) : null}
 
-        <ProductGrid campaign={filters.campaign} products={products} slug={slug} />
+        <ProductGrid
+          campaign={filters.campaign}
+          products={products}
+          reviewStats={reviewStats}
+          slug={slug}
+        />
 
         <p className="mt-7 text-center text-[11.5px] text-ink-faint">
           Powered by SnapDuka · Guest checkout · Payment options shown at checkout

@@ -12,7 +12,13 @@ import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { deriveAvailability } from "@/lib/catalog/inventory";
 import { normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
 import { formatPrice } from "@/lib/storefront/price";
-import { getPublicProduct, getPublicShop } from "@/lib/storefront/queries";
+import {
+  getProductReviews,
+  getPublicProduct,
+  getPublicShop,
+  getReviewStats,
+} from "@/lib/storefront/queries";
+import { ProductReviews } from "@/components/storefront/product-reviews";
 import { appOrigin } from "@/lib/app-url";
 import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
 
@@ -42,6 +48,14 @@ export default async function ProductPage({ params, searchParams }: Props) {
   if (!shop) notFound();
   const product = await getPublicProduct(shop.id, productId);
   if (!product) notFound();
+
+  // Both are decoration on an otherwise complete page, so they are fetched
+  // together and neither is allowed to block the product itself.
+  const [reviews, statsByProduct] = await Promise.all([
+    getProductReviews(productId),
+    getReviewStats([productId]),
+  ]);
+  const stats = statsByProduct.get(productId);
 
   const availability = deriveAvailability({
     policy: product.inventory_policy,
@@ -200,6 +214,12 @@ export default async function ProductPage({ params, searchParams }: Props) {
             </div>
           </div>
         </div>
+
+        <ProductReviews
+          reviews={reviews}
+          ratingAvg={stats?.ratingAvg ?? 0}
+          reviewCount={stats?.reviewCount ?? 0}
+        />
       </div>
     </main>
   );
