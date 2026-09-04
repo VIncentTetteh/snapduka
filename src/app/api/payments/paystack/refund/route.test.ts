@@ -4,92 +4,150 @@ const mocks = vi.hoisted(() => ({
   resolveServerActor: vi.fn(),
   createAdminClient: vi.fn(),
   refund: vi.fn(),
+  insert: vi.fn(),
+  updates: [] as { table: string; values: Record<string, unknown> }[],
 }));
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
-vi.mock("@/lib/payments/paystack", () => ({ paystackProvider: () => ({ refund: mocks.refund }) }));
+vi.mock("@/lib/payments/paystack", () => ({
+  paystackProvider: () => ({ refund: mocks.refund }),
+}));
 
 import { POST } from "./route";
 
-function request(body: unknown) {
-  return new Request("http://localhost/api/payments/paystack/refund", { method: "POST", body: JSON.stringify(body) });
+/**
+ * Refunding moves money out, so both of this route's defects mattered.
+ *
+ * The gate was `kind !== "seller" && kind !== "operator"` with no permission
+ * check — and a team member resolves as `kind: "seller"` carrying the owner's
+ * account id, so any role could refund. And Paystack was called before the
+ * local row was written, with that insert's error discarded, so a lost write
+ * left the same amount refundable a second time.
+ */
+
+const OWNER = {
+  kind: "seller" as const,
+  authenticated: true,
+  userId: "user-1",
+  email: "owner@example.com",
+  sellerAccountId: "seller-1",
+  country: "GH" as const,
+  status: "active" as const,
+};
+
+const ORDER = {
+  id: "order-1",
+  seller_account_id: "seller-1",
+  total_minor: 18_000,
+  payment_status: "paid",
+};
+
+function admin(options: { priorRefunds?: { amount_minor: number }[]; insertError?: { code?: string } } = {}) {
+  const { priorRefunds = [], insertError } = options;
+  mocks.updates.length = 0;
+
+  return {
+    from(table: string) {
+      if (table === "orders") {
+        return {
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: ORDER }) }) }) }),
+          update: (values: Record<string, unknown>) => {
+            mocks.updates.push({ table, values });
+            return { eq: () => ({ eq: async () => ({ error: null }) }) };
+          },
+        };
+      }
+      if (table === "payment_attempts") {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                order: () => ({
+                  limit: async () => ({ data: [{ id: "att-1", reference: "ref-1" }] }),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      return {
+        select: () => ({ eq: () => ({ neq: async () => ({ data: priorRefunds }) }) }),
+        insert: (row: Record<string, unknown>) => {
+          mocks.insert(row);
+          return {
+            select: () => ({
+              single: async () =>
+                insertError ? { data: null, error: insertError } : { data: { id: "ref-row-1" }, error: null },
+            }),
+          };
+        },
+        update: (values: Record<string, unknown>) => {
+          mocks.updates.push({ table, values });
+          return { eq: async () => ({ error: null }) };
+        },
+      };
+    },
+  };
 }
 
-const OPERATOR_ACTOR = { kind: "operator" as const, authenticated: true, userId: "op1", email: "op@example.com", role: "operator" as const };
-
-function adminMock({ order, attempt, priorRefundsTotal }: { order: Record<string, unknown> | null; attempt: Record<string, unknown> | null; priorRefundsTotal: number }) {
-  const refundsInsert = vi.fn().mockResolvedValue({});
-  const refundsNeq = vi.fn().mockResolvedValue({ data: [{ amount_minor: priorRefundsTotal }].filter((r) => r.amount_minor > 0) });
-  const refundsEq = vi.fn().mockReturnValue({ neq: refundsNeq });
-  const ordersUpdateEq2 = vi.fn().mockResolvedValue({});
-  const ordersUpdateEq1 = vi.fn().mockReturnValue({ eq: ordersUpdateEq2 });
-  const ordersUpdate = vi.fn().mockReturnValue({ eq: ordersUpdateEq1 });
-  const from = vi.fn((table: string) => {
-    if (table === "orders") {
-      const maybeSingle = vi.fn().mockResolvedValue({ data: order });
-      const eq = vi.fn().mockReturnValue({ maybeSingle });
-      return { select: vi.fn().mockReturnValue({ eq }), update: ordersUpdate };
-    }
-    if (table === "payment_attempts") {
-      const maybeSingle = vi.fn().mockResolvedValue({ data: attempt });
-      const eq2 = vi.fn().mockReturnValue({ maybeSingle });
-      const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
-      return { select: vi.fn().mockReturnValue({ eq: eq1 }) };
-    }
-    if (table === "refunds") {
-      return { select: vi.fn().mockReturnValue({ eq: refundsEq }), insert: refundsInsert };
-    }
-    return {};
+function request(body: unknown) {
+  return new Request("http://localhost/api/payments/paystack/refund", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
-  return { from, refundsInsert, refundsEq, refundsNeq, ordersUpdate, ordersUpdateEq1, ordersUpdateEq2 };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.resolveServerActor.mockResolvedValue(OPERATOR_ACTOR);
-  mocks.refund.mockResolvedValue({ providerId: "ref_1", status: "processing" });
+  mocks.resolveServerActor.mockResolvedValue(OWNER);
+  mocks.createAdminClient.mockReturnValue(admin());
+  mocks.refund.mockResolvedValue({ providerId: "rf_1", status: "pending" });
 });
 
 describe("POST /api/payments/paystack/refund", () => {
-  it("rejects a refund that would exceed the order total once prior refunds are counted", async () => {
-    mocks.createAdminClient.mockReturnValue(
-      adminMock({
-        order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
-        attempt: { id: "attempt-1", reference: "ref-abc" },
-        priorRefundsTotal: 7_000,
-      }),
-    );
+  it("refunds for an owner", async () => {
+    const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
 
-    const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111", amountMinor: 5_000 }));
+    expect(response.status).toBe(202);
+    expect(mocks.refund).toHaveBeenCalledWith({ reference: "ref-1", amountMinor: 18_000 });
+  });
 
-    expect(response.status).toBe(400);
+  // The finding: analyst does not hold orders.manage, yet could refund.
+  it("refuses roles that cannot manage orders", async () => {
+    for (const role of ["analyst", "catalog"] as const) {
+      mocks.createAdminClient.mockReturnValue(admin());
+      mocks.resolveServerActor.mockResolvedValue({ ...OWNER, role });
+
+      const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
+
+      expect(response.status, role).toBe(403);
+    }
     expect(mocks.refund).not.toHaveBeenCalled();
   });
 
-  it("allows a refund that fits within the remaining unrefunded balance", async () => {
-    mocks.createAdminClient.mockReturnValue(
-      adminMock({
-        order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
-        attempt: { id: "attempt-1", reference: "ref-abc" },
-        priorRefundsTotal: 7_000,
-      }),
-    );
+  it("still allows a role that does manage orders", async () => {
+    mocks.resolveServerActor.mockResolvedValue({ ...OWNER, role: "fulfillment" as const });
 
-    const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111", amountMinor: 3_000 }));
+    const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
 
     expect(response.status).toBe(202);
-    expect(mocks.refund).toHaveBeenCalledWith({ reference: "ref-abc", amountMinor: 3_000 });
   });
 
-  it("rejects a refund request when order is already fully refunded", async () => {
-    mocks.createAdminClient.mockReturnValue(
-      adminMock({
-        order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
-        attempt: { id: "attempt-1", reference: "ref-abc" },
-        priorRefundsTotal: 10_000,
-      }),
+  it("claims the amount locally before spending it at the provider", async () => {
+    await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
+
+    // The row must exist, at a status the balance query counts, before the call.
+    expect(mocks.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ amount_minor: 18_000, status: "requested" }),
     );
+    expect(mocks.insert.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.refund.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("refuses a second in-flight refund rather than sending it twice", async () => {
+    mocks.createAdminClient.mockReturnValue(admin({ insertError: { code: "23505" } }));
 
     const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
 
@@ -97,80 +155,31 @@ describe("POST /api/payments/paystack/refund", () => {
     expect(mocks.refund).not.toHaveBeenCalled();
   });
 
-  it("stores Paystack's reported status instead of hardcoding 'processing' when the refund is already processed", async () => {
-    const admin = adminMock({
-      order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
-      attempt: { id: "attempt-1", reference: "ref-abc" },
-      priorRefundsTotal: 0,
-    });
-    mocks.createAdminClient.mockReturnValue(admin);
-    mocks.refund.mockResolvedValue({ providerId: "ref_processed", status: "processed" });
+  it("releases the claim when the provider call fails", async () => {
+    mocks.refund.mockRejectedValue(new Error("paystack down"));
 
-    await POST(request({ orderId: "11111111-1111-4111-8111-111111111111", amountMinor: 4_000 }));
+    const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
 
-    expect(admin.refundsInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ provider_refund_id: "ref_processed", status: "completed" }),
-    );
+    expect(response.status).toBe(502);
+    // `failed` is the one status the balance query excludes, so the amount
+    // becomes refundable again rather than being stranded.
+    expect(mocks.updates).toContainEqual({ table: "refunds", values: { status: "failed" } });
   });
 
-  it("stores a failed status when Paystack reports the refund failed outright", async () => {
-    const admin = adminMock({
-      order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
-      attempt: { id: "attempt-1", reference: "ref-abc" },
-      priorRefundsTotal: 0,
-    });
-    mocks.createAdminClient.mockReturnValue(admin);
-    mocks.refund.mockResolvedValue({ providerId: "ref_failed", status: "failed" });
+  it("will not refund more than the unrefunded balance", async () => {
+    mocks.createAdminClient.mockReturnValue(admin({ priorRefunds: [{ amount_minor: 18_000 }] }));
 
-    await POST(request({ orderId: "11111111-1111-4111-8111-111111111111", amountMinor: 4_000 }));
+    const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
 
-    expect(admin.refundsInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ provider_refund_id: "ref_failed", status: "failed" }),
-    );
+    expect(response.status).toBe(409);
+    expect(mocks.refund).not.toHaveBeenCalled();
   });
 
-  it("falls back to 'processing' for any other reported status", async () => {
-    const admin = adminMock({
-      order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
-      attempt: { id: "attempt-1", reference: "ref-abc" },
-      priorRefundsTotal: 0,
-    });
-    mocks.createAdminClient.mockReturnValue(admin);
-    mocks.refund.mockResolvedValue({ providerId: "ref_pending", status: "pending" });
+  it("refuses a caller who is neither seller nor operator", async () => {
+    mocks.resolveServerActor.mockResolvedValue({ kind: "guest", authenticated: false });
 
-    await POST(request({ orderId: "11111111-1111-4111-8111-111111111111", amountMinor: 4_000 }));
+    const response = await POST(request({ orderId: "11111111-1111-4111-8111-111111111111" }));
 
-    expect(admin.refundsInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ provider_refund_id: "ref_pending", status: "processing" }),
-    );
-  });
-
-  it("excludes failed refunds from the cumulative refund total so a failed attempt doesn't permanently block a retry", async () => {
-    const admin = adminMock({
-      order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
-      attempt: { id: "attempt-1", reference: "ref-abc" },
-      priorRefundsTotal: 0,
-    });
-    mocks.createAdminClient.mockReturnValue(admin);
-
-    await POST(request({ orderId: "11111111-1111-4111-8111-111111111111", amountMinor: 4_000 }));
-
-    expect(admin.refundsEq).toHaveBeenCalledWith("order_id", "order-1");
-    expect(admin.refundsNeq).toHaveBeenCalledWith("status", "failed");
-  });
-
-  it("marks the order as refund-processing immediately, guarded so an already partial/completed order isn't downgraded", async () => {
-    const admin = adminMock({
-      order: { id: "order-1", seller_account_id: "seller-1", total_minor: 10_000, payment_status: "paid" },
-      attempt: { id: "attempt-1", reference: "ref-abc" },
-      priorRefundsTotal: 0,
-    });
-    mocks.createAdminClient.mockReturnValue(admin);
-
-    await POST(request({ orderId: "11111111-1111-4111-8111-111111111111", amountMinor: 4_000 }));
-
-    expect(admin.ordersUpdate).toHaveBeenCalledWith({ refund_status: "processing" });
-    expect(admin.ordersUpdateEq1).toHaveBeenCalledWith("id", "order-1");
-    expect(admin.ordersUpdateEq2).toHaveBeenCalledWith("refund_status", "none");
+    expect(response.status).toBe(401);
   });
 });
