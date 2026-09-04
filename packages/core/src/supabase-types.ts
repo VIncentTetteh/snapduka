@@ -5055,6 +5055,13 @@ export type Database = {
         Returns: undefined
       }
       refresh_discovery_listings: { Args: never; Returns: number }
+      release_abandoned_reservations: {
+        Args: { p_limit?: number }
+        Returns: {
+          outcome: string
+          reservation_id: string
+        }[]
+      }
       release_due_creator_commissions: { Args: never; Returns: number }
       release_due_order_settlements: { Args: never; Returns: number }
       release_payout_claim: {
