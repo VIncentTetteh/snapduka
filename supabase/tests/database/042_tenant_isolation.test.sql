@@ -18,7 +18,7 @@ begin;
 
 set local search_path = extensions, public;
 
-select plan(8);
+select plan(9);
 
 insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
 values ('a9a90000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000000000',
@@ -128,6 +128,33 @@ select lives_ok(
     values ('b9b90000-0000-4000-8000-000000000001', 'c9c90000-0000-4000-8000-000000000001',
             'Right path', 'isotest-c', 'whatsapp', '/iso-shop-a/products/d9d90000-0000-4000-8000-000000000001')$$,
   'a link into the seller''s own shop is still fine'
+);
+
+-- A composite key added *alongside* the single-column key it replaces leaves two
+-- foreign keys over overlapping columns, and PostgREST then cannot resolve an
+-- embed between those tables: PGRST201, a 300 from PostgREST and a 500 from the
+-- page. Adding the 26 keys in 202609050082 without dropping their single-column
+-- counterparts took every storefront and product page down, because a rollback
+-- replay proves the constraints are correct and says nothing about how the API
+-- reads the schema.
+--
+-- Three pairs legitimately have two keys over *different* columns (plan_id and
+-- pending_plan_id, price_id and pending_price_id, the reserve and settle ledger
+-- transactions); the app disambiguates those as `plans!plan_id`. Overlap is the
+-- defect, not multiplicity.
+select is_empty(
+  $$with fk as (
+      select oid, conrelid, confrelid, conkey
+      from pg_constraint
+      where contype = 'f' and connamespace = 'public'::regnamespace
+    )
+    select a.conrelid::regclass::text
+    from fk a join fk b
+      on a.conrelid = b.conrelid
+     and a.confrelid = b.confrelid
+     and a.oid < b.oid
+     and a.conkey && b.conkey$$,
+  'no two foreign keys overlap columns, so every PostgREST embed still resolves'
 );
 
 select * from finish();
