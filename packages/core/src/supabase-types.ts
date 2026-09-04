@@ -495,6 +495,7 @@ export type Database = {
       campaign_links: {
         Row: {
           active: boolean
+          campaign_id: string | null
           channel: string
           created_at: string
           creator_partnership_id: string | null
@@ -507,6 +508,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          campaign_id?: string | null
           channel: string
           created_at?: string
           creator_partnership_id?: string | null
@@ -519,6 +521,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          campaign_id?: string | null
           channel?: string
           created_at?: string
           creator_partnership_id?: string | null
@@ -530,6 +533,13 @@ export type Database = {
           token?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "campaign_links_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaign_links_creator_partnership_id_fkey"
             columns: ["creator_partnership_id"]
@@ -546,6 +556,115 @@ export type Database = {
           },
           {
             foreignKeyName: "campaign_links_shop_id_fkey"
+            columns: ["shop_id"]
+            isOneToOne: false
+            referencedRelation: "shops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_products: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          product_id: string
+          seller_account_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          product_id: string
+          seller_account_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          product_id?: string
+          seller_account_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_products_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_products_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_products_seller_account_id_fkey"
+            columns: ["seller_account_id"]
+            isOneToOne: false
+            referencedRelation: "seller_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaigns: {
+        Row: {
+          budget_minor: number | null
+          created_at: string
+          creative_path: string | null
+          ends_at: string | null
+          id: string
+          name: string
+          notes: string | null
+          objective: string | null
+          seller_account_id: string
+          shop_id: string
+          spend_minor: number
+          starts_at: string | null
+          status: Database["public"]["Enums"]["campaign_status"]
+          updated_at: string
+        }
+        Insert: {
+          budget_minor?: number | null
+          created_at?: string
+          creative_path?: string | null
+          ends_at?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          objective?: string | null
+          seller_account_id: string
+          shop_id: string
+          spend_minor?: number
+          starts_at?: string | null
+          status?: Database["public"]["Enums"]["campaign_status"]
+          updated_at?: string
+        }
+        Update: {
+          budget_minor?: number | null
+          created_at?: string
+          creative_path?: string | null
+          ends_at?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          objective?: string | null
+          seller_account_id?: string
+          shop_id?: string
+          spend_minor?: number
+          starts_at?: string | null
+          status?: Database["public"]["Enums"]["campaign_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaigns_seller_account_id_fkey"
+            columns: ["seller_account_id"]
+            isOneToOne: false
+            referencedRelation: "seller_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaigns_shop_id_fkey"
             columns: ["shop_id"]
             isOneToOne: false
             referencedRelation: "shops"
@@ -4780,6 +4899,15 @@ export type Database = {
           orders: number
         }[]
       }
+      campaign_totals: {
+        Args: never
+        Returns: {
+          campaign_id: string
+          clicks: number
+          orders: number
+          revenue_minor: number
+        }[]
+      }
       capture_order_settlement: {
         Args: {
           p_order_id: string
@@ -5060,6 +5188,7 @@ export type Database = {
     }
     Enums: {
       actor_type: "system" | "user" | "seller" | "admin" | "provider"
+      campaign_status: "draft" | "active" | "paused" | "ended"
       commission_status: "pending" | "payable" | "paid" | "reversed" | "void"
       consent_status: "pending" | "granted" | "withdrawn" | "expired"
       country_code: "GH" | "NG" | "CI"
@@ -5286,6 +5415,7 @@ export const Constants = {
   public: {
     Enums: {
       actor_type: ["system", "user", "seller", "admin", "provider"],
+      campaign_status: ["draft", "active", "paused", "ended"],
       commission_status: ["pending", "payable", "paid", "reversed", "void"],
       consent_status: ["pending", "granted", "withdrawn", "expired"],
       country_code: ["GH", "NG", "CI"],
