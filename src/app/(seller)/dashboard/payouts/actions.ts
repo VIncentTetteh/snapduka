@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import type { CurrencyCode } from "@/lib/countries/types";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { hasPermission } from "@/lib/auth/permissions";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { createPayoutDestination, type DestinationType } from "@/lib/payouts/destinations";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -15,6 +16,27 @@ export type PayoutActionState = {
   message?: string;
   values: Record<string, string>;
 };
+
+/**
+ * Only the account owner may touch where the money goes.
+ *
+ * `resolveServerActor` returns `kind: "seller"` carrying the **owner's**
+ * sellerAccountId for a team member, with `role` set — so `kind` alone says
+ * nothing about who is calling. Both checks are deliberate: `billing.manage` is
+ * owner-only in today's matrix, and the explicit `role` test means this stays
+ * correct even if the matrix is widened later.
+ *
+ * This matters most for the destination: it runs through the service-role
+ * client, so RLS is not behind it. Without this an analyst could point the
+ * shop's withdrawals at their own bank account.
+ */
+function ownerOnly(actor: Awaited<ReturnType<typeof resolveServerActor>>): string | null {
+  if (actor.kind !== "seller") return "Sign in again.";
+  if (actor.role || !hasPermission(actor.role ?? "owner", "billing.manage")) {
+    return "Only the account owner can change payout details.";
+  }
+  return null;
+}
 
 /**
  * Requests a withdrawal from the seller's wallet.
@@ -38,8 +60,11 @@ export async function requestPayoutAction(
   const preserved = { amount: amountValue };
 
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") {
-    return { status: "error", message: "Sign in again to withdraw.", values: preserved };
+  // request_seller_payout derives the seller itself and would refuse a team
+  // member anyway, but it refuses with a database error rather than a sentence.
+  const refusal = ownerOnly(actor);
+  if (refusal || actor.kind !== "seller") {
+    return { status: "error", message: refusal ?? "Sign in again to withdraw.", values: preserved };
   }
 
   const amount = Number.parseFloat(amountValue.trim());
@@ -96,8 +121,9 @@ export async function savePayoutDestinationAction(
   const preserved = { bankCode, bankName, type };
 
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") {
-    return { status: "error", message: "Sign in again.", values: preserved };
+  const refusal = ownerOnly(actor);
+  if (refusal || actor.kind !== "seller") {
+    return { status: "error", message: refusal ?? "Sign in again.", values: preserved };
   }
   if (actor.status === "suspended" || actor.status === "closed") {
     return { status: "error", message: "This account is read-only.", values: preserved };
