@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { generateCampaignToken, isUniqueViolation } from "@/lib/campaigns/tokens";
+import { checkDestination, DESTINATION_REFUSED } from "@/lib/campaigns/destination";
 import { CHANNEL_TOKEN_SUFFIX, SHARE_CHANNELS } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
 
@@ -48,16 +50,29 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
   const supabase = await createClient();
   const { data: shop } = await supabase
     .from("shops")
-    .select("id")
+    .select("id,slug")
     .eq("seller_account_id", actor.sellerAccountId)
     .maybeSingle();
   if (!shop) return;
+
+  // destination_path used to be inserted exactly as posted, so a link could be
+  // minted pointing at any path on the site — including another seller's shop
+  // or product, which is how four dead links ended up in production.
+  const destination = await checkDestination(
+    supabase,
+    actor.sellerAccountId,
+    shop,
+    destinationPath,
+  );
+  if (!destination.ok) {
+    redirect(`/dashboard/share?error=${encodeURIComponent(DESTINATION_REFUSED)}`);
+  }
 
   const { data: existing } = await supabase
     .from("campaign_links")
     .select("channel")
     .eq("seller_account_id", actor.sellerAccountId)
-    .eq("destination_path", destinationPath)
+    .eq("destination_path", destination.path)
     .eq("active", true);
 
   const existingChannels = new Set((existing ?? []).map((link) => link.channel));
@@ -68,7 +83,7 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
     name: `${label} · ${channel}`,
     token: `${base}-${CHANNEL_SUFFIX[channel]}`,
     channel,
-    destination_path: destinationPath,
+    destination_path: destination.path,
     active: true,
     campaign_id: campaignId,
   }));

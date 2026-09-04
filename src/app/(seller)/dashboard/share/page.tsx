@@ -46,7 +46,7 @@ const CHANNEL_LABEL: Record<string, string> = {
 export default async function ShareStudioPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; product?: string; q?: string }>;
+  searchParams: Promise<{ tab?: string; product?: string; q?: string; error?: string }>;
 }) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
@@ -171,6 +171,9 @@ export default async function ShareStudioPage({
 
   return (
     <main className="sd-main mx-auto max-w-[1120px] px-4 pt-6 sm:px-6">
+      {/* Generating links used to fail silently when the destination was not
+          the seller's own; now it says so. */}
+      {params.error ? <p className="alert-error mb-4">{params.error}</p> : null}
       <PageHeader
         eyebrow="Growth"
         title="Share Studio"
