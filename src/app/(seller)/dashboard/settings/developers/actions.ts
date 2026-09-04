@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createApiKey } from "@/lib/api-keys/keys";
+import { issueApiKey } from "@/lib/api-keys/issue";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planLimit, withinPlanLimit } from "@/lib/billing/resolve";
 import { isSafeWebhookUrl } from "@/lib/security/url";
@@ -12,28 +12,17 @@ export type KeyState = { token?: string; error?: string };
 
 export async function generateKey(_: KeyState, formData: FormData): Promise<KeyState> {
   const actor = await resolveServerActor();
-  const pepper = process.env.API_KEY_PEPPER;
-  if (actor.kind !== "seller" || actor.role || !pepper) return { error: "API key generation is not configured." };
-  const scopes = formData.getAll("scope").map(String).filter((scope) => ["products:read","orders:read","customers:read","fulfillment:write"].includes(scope));
-  if (!scopes.length) return { error: "Select at least one scope." };
-  const supabase = await createClient();
-  const [plan, { count: keyCount }] = await Promise.all([
-    getSellerPlan(actor.sellerAccountId),
-    supabase.from("api_keys").select("id", { count: "exact", head: true }).eq("seller_account_id", actor.sellerAccountId).is("revoked_at", null),
-  ]);
-  if (!withinPlanLimit(plan, "apiKeys", keyCount ?? 0)) {
-    const limit = planLimit(plan, "apiKeys");
-    return {
-      error:
-        limit === 0
-          ? `API access is not included in the ${plan.planName} plan. Upgrade in Settings → Plan & billing.`
-          : `Your ${plan.planName} plan includes ${limit} API keys. Revoke one or upgrade to add more.`,
-    };
-  }
-  const key = createApiKey(pepper);
-  const { error } = await supabase.from("api_keys").insert({ id: key.id, seller_account_id: actor.sellerAccountId, name: String(formData.get("name")).trim() || "API key", key_prefix: key.prefix, key_hash: key.hash, scopes });
+  if (actor.kind !== "seller" || actor.role) return { error: "API key generation is not configured." };
+
+  // The issuing itself lives in @/lib/api-keys/issue so the mobile route runs
+  // the same scope allow-list and plan limit.
+  const result = await issueApiKey(actor, {
+    name: String(formData.get("name") ?? ""),
+    scopes: formData.getAll("scope").map(String),
+  });
+
   revalidatePath("/dashboard/settings/developers");
-  return error ? { error: "Could not create key." } : { token: key.token };
+  return result.ok ? { token: result.token } : { error: result.message };
 }
 
 export async function addWebhook(formData: FormData) {
