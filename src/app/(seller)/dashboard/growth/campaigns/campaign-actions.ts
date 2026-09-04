@@ -195,10 +195,37 @@ export async function setCampaignProducts(formData: FormData) {
   const productIds = formData.getAll("productId").map(String).filter(Boolean);
   const supabase = await createClient();
 
+  // The form only ever offers this seller's own products, but the ids arrive in
+  // a POST body, so nothing stops a different one being submitted. Verify both
+  // ends against the catalogue rather than trusting the request: the campaign is
+  // theirs, and every product is theirs.
+  //
+  // campaign_products_product_same_seller would refuse a foreign product anyway,
+  // but as a raw 23503 the seller would only see "could not be saved".
+  const { data: campaign } = await supabase
+    .from("campaigns")
+    .select("id")
+    .eq("id", campaignId)
+    .eq("seller_account_id", actor.sellerAccountId)
+    .maybeSingle();
+  if (!campaign) fail("That campaign could not be found.");
+
+  if (productIds.length > 0) {
+    const { data: owned } = await supabase
+      .from("products")
+      .select("id")
+      .eq("seller_account_id", actor.sellerAccountId)
+      .in("id", productIds);
+    if ((owned?.length ?? 0) !== new Set(productIds).size) {
+      fail("One of those products is no longer in your catalogue.", campaignId);
+    }
+  }
+
   const { error: clearError } = await supabase
     .from("campaign_products")
     .delete()
-    .eq("campaign_id", campaignId);
+    .eq("campaign_id", campaignId)
+    .eq("seller_account_id", actor.sellerAccountId);
   if (clearError) fail("Those products could not be saved.", campaignId);
 
   if (productIds.length > 0) {

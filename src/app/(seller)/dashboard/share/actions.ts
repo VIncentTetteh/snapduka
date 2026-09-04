@@ -41,8 +41,7 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
   const destinationPath = String(formData.get("destinationPath") ?? "/");
   const label = String(formData.get("label") ?? "Storefront").slice(0, 80);
   // Optional: links minted while publishing can land inside a campaign instead
-  // of floating loose. RLS scopes the campaign to this seller, so an id that is
-  // not theirs simply matches nothing and the links stay unattached.
+  // of floating loose.
   const campaignId = String(formData.get("campaignId") ?? "").trim() || null;
   const actor = await resolveServerActor();
   if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
@@ -66,6 +65,26 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
   );
   if (!destination.ok) {
     redirect(`/dashboard/share?error=${encodeURIComponent(DESTINATION_REFUSED)}`);
+  }
+
+  // campaign_id is written straight into campaign_links — no policy on
+  // `campaigns` is ever consulted, because the campaign is never read. (A
+  // comment here used to claim RLS covered this; it did not, and a wrong comment
+  // about a security property is worse than no comment.) The composite FK now
+  // refuses a foreign id, but that surfaces as an insert error the loop below
+  // swallows, so the seller would get no links and no reason.
+  if (campaignId) {
+    const { data: campaign } = await supabase
+      .from("campaigns")
+      .select("id")
+      .eq("id", campaignId)
+      .eq("seller_account_id", actor.sellerAccountId)
+      .maybeSingle();
+    if (!campaign) {
+      redirect(
+        `/dashboard/share?error=${encodeURIComponent("That campaign could not be found.")}`,
+      );
+    }
   }
 
   const { data: existing } = await supabase
