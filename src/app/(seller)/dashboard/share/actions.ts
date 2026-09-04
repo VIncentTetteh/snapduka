@@ -38,6 +38,10 @@ function shortCode(): string {
 export async function generateShareLinksAction(formData: FormData): Promise<void> {
   const destinationPath = String(formData.get("destinationPath") ?? "/");
   const label = String(formData.get("label") ?? "Storefront").slice(0, 80);
+  // Optional: links minted while publishing can land inside a campaign instead
+  // of floating loose. RLS scopes the campaign to this seller, so an id that is
+  // not theirs simply matches nothing and the links stay unattached.
+  const campaignId = String(formData.get("campaignId") ?? "").trim() || null;
   const actor = await resolveServerActor();
   if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
 
@@ -66,6 +70,7 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
     channel,
     destination_path: destinationPath,
     active: true,
+    campaign_id: campaignId,
   }));
 
   // Retry the whole batch on a token collision rather than swallowing the
