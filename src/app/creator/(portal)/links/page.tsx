@@ -1,3 +1,4 @@
+import { shortLinkUrl } from "@snapduka/core";
 import { CopyButton } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, Panel } from "@/components/ui/surface";
@@ -58,7 +59,7 @@ export default async function CreatorLinksPage() {
                   <code className="truncate font-mono text-[12.5px] text-ink-soft">
                     {origin}/l/{link.token}
                   </code>
-                  <CopyButton value={`${origin}/l/${link.token}`} />
+                  <CopyButton value={shortLinkUrl(origin, link.token)} />
                 </div>
                 <p className="mt-2 text-[12px] text-ink-muted">
                   {stat.clicks} {stat.clicks === 1 ? "visit" : "visits"} · {stat.orders}{" "}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { shortLinkUrl } from "@snapduka/core";
 import QRCode from "qrcode";
 
 import { disconnectSocialAccountAction, generateShareLinksAction } from "./actions";
@@ -287,7 +288,7 @@ export default async function ShareStudioPage({
                   caption={caption}
                   links={destinationLinks.map((link) => ({
                     channel: link.channel,
-                    shortUrl: `${origin}/l/${link.token}`,
+                    shortUrl: shortLinkUrl(origin, link.token),
                   }))}
                   shopName={shop.display_name}
                   storeUrl={targetUrl}
@@ -320,7 +321,7 @@ export default async function ShareStudioPage({
                 ) : (
                   destinationLinks.map((link) => {
                     const stats = clicksByCampaign[link.id] ?? { clicks: 0, orders: 0 };
-                    const shortUrl = `${origin}/l/${link.token}`;
+                    const shortUrl = shortLinkUrl(origin, link.token);
                     return (
                       <div
                         key={link.id}

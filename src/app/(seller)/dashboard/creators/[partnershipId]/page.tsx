@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { shortLinkUrl } from "@snapduka/core";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
@@ -165,7 +166,7 @@ export default async function CreatorDetailPage({
                 <code className="truncate font-mono text-[12.5px] text-ink-soft">
                   {origin}/l/{link.token}
                 </code>
-                <CopyButton value={`${origin}/l/${link.token}`} />
+                <CopyButton value={shortLinkUrl(origin, link.token)} />
               </li>
             ))}
           </ul>
