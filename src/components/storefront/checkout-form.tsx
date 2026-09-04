@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useCart } from "@/components/storefront/cart-provider";
+import { checkoutIdempotencyKey } from "@/lib/commerce/idempotency";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { Req } from "@/components/ui/required-mark";
 import {
@@ -69,7 +70,12 @@ export function CheckoutForm({
       products.map((product) => [`${product.id}:${product.variantId ?? "base"}`, product.quantity]),
     ),
   );
-  const idempotencyKey = useMemo(() => `checkout-${crypto.randomUUID()}`, []);
+  /**
+   * A per-mount nonce, so retrying the SAME order stays idempotent. It used to
+   * be the whole key, which meant it survived the buyer changing their mind —
+   * see checkoutIdempotencyKey for what that cost.
+   */
+  const submissionNonce = useMemo(() => crypto.randomUUID(), []);
   useEffect(() => {
     queueMicrotask(() => setHydrated(true));
   }, []);
@@ -176,7 +182,16 @@ export function CheckoutForm({
             body: JSON.stringify({
               shopId,
               fulfillmentMethodId: selectedMethodId,
-              idempotencyKey,
+              idempotencyKey: checkoutIdempotencyKey(submissionNonce, {
+                fulfillmentMethodId: selectedMethodId,
+                paymentMethod: effectivePayment,
+                promotionCode: String(values.get("promotionCode") ?? ""),
+                lines: products.map((product) => ({
+                  productId: product.id,
+                  variantId: product.variantId,
+                  quantity: quantities[`${product.id}:${product.variantId ?? "base"}`],
+                })),
+              }),
               paymentMethod: effectivePayment,
               promotionCode: values.get("promotionCode"),
               campaignToken,
