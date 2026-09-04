@@ -1,19 +1,17 @@
-const SWATCHES = [
-  "linear-gradient(140deg,#E4D5BF,#A8875D)",
-  "linear-gradient(140deg,#D8DDD2,#8B9683)",
-  "linear-gradient(140deg,#E7D9D2,#B08D7D)",
-  "linear-gradient(140deg,#DCD8E0,#8E879B)",
-  "linear-gradient(140deg,#EADFCE,#C7AE8A)",
-  "linear-gradient(140deg,#D5DDE0,#7F949B)",
-] as const;
+import {
+  AVATAR_GRADIENT_ANGLE,
+  AVATAR_GRADIENT_STOPS,
+  gradientForSeed,
+  initialsFor,
+} from "@snapduka/core";
 
-export function gradientForSeed(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
-  }
-  return SWATCHES[Math.abs(hash) % SWATCHES.length];
-}
+// The swatches and the seed hash now live in @snapduka/core so the mobile app
+// renders the identical placeholder for the identical product. This file stays
+// as the web import site — 16 modules import from it — and only supplies the
+// DOM wrapper.
+export { gradientForSeed };
+
+const AVATAR_GRADIENT = `linear-gradient(${AVATAR_GRADIENT_ANGLE}deg,${AVATAR_GRADIENT_STOPS[0]},${AVATAR_GRADIENT_STOPS[1]})`;
 
 /** Warm gradient block used when a product has no photo. */
 export function GradientPlaceholder({
@@ -40,18 +38,13 @@ export function InitialsAvatar({
   name: string;
   className?: string;
 }) {
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
   return (
     <span
       aria-hidden="true"
-      className={`grid shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,#D9C6A8,#A8875D)] font-bold text-white ${className}`}
+      className={`grid shrink-0 place-items-center rounded-full font-bold text-white ${className}`}
+      style={{ background: AVATAR_GRADIENT }}
     >
-      {initials || "?"}
+      {initialsFor(name)}
     </span>
   );
 }

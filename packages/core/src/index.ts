@@ -21,4 +21,5 @@ export * from "./couriers/catalogue";
 export * from "./payouts/balance";
 export * from "./validation";
 export * from "./theme/tokens";
+export * from "./theme/gradients";
 export type { Database, Json } from "./supabase-types";
