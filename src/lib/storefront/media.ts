@@ -1,4 +1,4 @@
-export type MediaBucket = "product-images" | "shop-logos";
+export type MediaBucket = "product-images" | "shop-logos" | "campaign-media";
 
 /**
  * Resolves a stored object path to a browser-loadable URL.

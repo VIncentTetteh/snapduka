@@ -170,6 +170,33 @@ export default async function CampaignDetailPage({
         </div>
       )}
 
+      {/* The flyer, generated */}
+      <h2 className="mb-3 text-[14px] font-bold">Flyer</h2>
+      <Panel className="mb-6 p-4.5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="m-0 text-[13px] leading-[1.5] text-ink-soft">
+            1080×1920, ready for Stories, Reels, Status — or printed for a stall.
+            {links.length > 0
+              ? " The QR is this campaign's tracked link, so a scan is credited to it."
+              : " Generate tracked links to put a scannable code on it."}
+          </p>
+          <a
+            className="inline-flex min-h-9 items-center rounded-[9px] border border-line-strong bg-white px-3 text-[12.5px] font-semibold text-ink no-underline transition-colors hover:border-[#B9AC98]"
+            download={`snapduka-campaign-${campaign.id}.png`}
+            href={`/api/share/story-card?campaign=${campaign.id}`}
+          >
+            Download
+          </a>
+        </div>
+        {/* Server-generated, with this campaign's creative behind it. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          alt={`Flyer for ${campaign.name}`}
+          className="mx-auto w-full max-w-[220px] rounded-2xl border border-line shadow-[0_18px_45px_rgba(33,27,20,0.18)]"
+          src={`/api/share/story-card?campaign=${campaign.id}`}
+        />
+      </Panel>
+
       {/* Creative */}
       <h2 className="mb-3 text-[14px] font-bold">Creative</h2>
       <Panel className="mb-6 overflow-hidden">

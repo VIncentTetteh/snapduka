@@ -25,6 +25,12 @@ const FALLBACK_GRADIENT = "linear-gradient(160deg, #E4D5BF 0%, #C7AE8A 55%, #A88
  * Story-card image (9:16, 1080×1920) for TikTok / Reels / Snapchat / Status.
  * Backed by the product's main photo (or the warm gradient), with the shop
  * logo, price and store link composed on top. Seller-only.
+ *
+ * `?campaign=<id>` makes it a campaign flyer instead: the campaign's own
+ * creative behind it, its name as the headline, and — the part that matters —
+ * a QR of the campaign's **tracked** /l/ link rather than the bare storefront,
+ * so a flyer scanned off a wall or a stall is attributed like any other post.
+ * A campaign with no creative falls back to the same warm gradient.
  */
 export async function GET(request: NextRequest) {
   const actor = await resolveServerActor();
@@ -33,6 +39,7 @@ export async function GET(request: NextRequest) {
   }
 
   const productId = request.nextUrl.searchParams.get("product");
+  const campaignId = request.nextUrl.searchParams.get("campaign");
   const supabase = await createRequestScopedClient();
 
   const { data: shop } = await supabase
@@ -48,6 +55,36 @@ export async function GET(request: NextRequest) {
 
   let product: { name: string; price_minor: number; currency: string } | null = null;
   let backgroundUrl: string | null = null;
+  let campaignName: string | null = null;
+  let campaignToken: string | null = null;
+
+  if (campaignId) {
+    // RLS scopes campaigns to the caller, so an id that is not theirs simply
+    // returns nothing and the card falls back to a plain storefront one.
+    const { data: campaign } = await supabase
+      .from("campaigns")
+      .select("name, creative_path")
+      .eq("id", campaignId)
+      .maybeSingle();
+    if (campaign) {
+      campaignName = campaign.name;
+      backgroundUrl = publicMediaUrl(campaign.creative_path, "campaign-media");
+
+      // Any of the campaign's links will do — they all resolve to the same
+      // destination, and each records the click against its own channel. The
+      // flyer is a channel of its own really, so take the first consistently.
+      const { data: link } = await supabase
+        .from("campaign_links")
+        .select("token")
+        .eq("campaign_id", campaignId)
+        .eq("active", true)
+        .order("channel")
+        .limit(1)
+        .maybeSingle();
+      campaignToken = link?.token ?? null;
+    }
+  }
+
   if (productId) {
     const { data } = await supabase
       .from("products")
@@ -57,13 +94,16 @@ export async function GET(request: NextRequest) {
       .maybeSingle();
     if (data) {
       product = data;
-      backgroundUrl = mainImageUrl(data.product_media);
+      // A campaign's own creative wins: the seller chose it for this campaign.
+      backgroundUrl = backgroundUrl ?? mainImageUrl(data.product_media);
     }
   }
 
   const host = await appHost();
-  const storeLink = `${host}/${shop.slug}`;
-  const title = product?.name ?? shop.display_name;
+  // A tracked link when there is one to use, so a scan off a printed flyer is
+  // attributed instead of arriving as anonymous traffic.
+  const storeLink = campaignToken ? `${host}/l/${campaignToken}` : `${host}/${shop.slug}`;
+  const title = campaignName ?? product?.name ?? shop.display_name;
   const price = product ? cardPrice(product.price_minor, product.currency) : null;
   // Rendered at 2x the display size (132px) for a crisp scan off a phone
   // screen once the 1080-wide card is shrunk down in a chat/story preview.
