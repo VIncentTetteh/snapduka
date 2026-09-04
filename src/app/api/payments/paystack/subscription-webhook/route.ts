@@ -48,7 +48,13 @@ export async function POST(request: Request) {
     }
   }
   if (!subscription) return NextResponse.json({ received: true, applied: false });
-  const eventKey = String(payload.data?.id ?? createHash("sha256").update(raw).digest("hex"));
+  // Namespaced by event type, matching the order webhook. Paystack's
+  // `data.id` is the subscription object and is identical across
+  // subscription.create, subscription.disable and invoice.update — so keying
+  // on it alone meant that once a create had been recorded, the seller's later
+  // cancellation collided with it, returned `applied: false`, and was silently
+  // dropped. They cancelled and kept being billed.
+  const eventKey = `${payload.event}:${String(payload.data?.id ?? createHash("sha256").update(raw).digest("hex"))}`;
   const { error } = await admin.from("subscription_events").insert({
     subscription_id: subscription.id,
     seller_account_id: subscription.seller_account_id,
