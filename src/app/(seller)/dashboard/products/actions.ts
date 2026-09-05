@@ -4,6 +4,7 @@ import { oneOf, PRODUCT_STATUSES } from "@/lib/db/enums";
 import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
@@ -24,6 +25,22 @@ function value(formData: FormData, name: string): string {
   const entry = formData.get(name);
   return typeof entry === "string" ? entry : "";
 }
+
+/**
+ * Refusals on this page were all bare returns, so a team member without
+ * products.manage who tapped "delete photo" got a page reload and nothing else
+ * — no deletion, no message, no reason. Every one of them now says which it
+ * was, on the page the seller was working on.
+ */
+function failProduct(productId: string, message: string): never {
+  const path = productId ? `/dashboard/products/${productId}` : "/dashboard/products";
+  redirect(`${path}?error=${encodeURIComponent(message)}`);
+}
+
+const NOT_ALLOWED = "Your role does not allow changing products.";
+const NOT_ACTIVE = "Your account is not active, so products cannot be changed.";
+const INVALID_VARIANT =
+  "Give the option a name, a whole-number price, and a stock count if you track stock.";
 
 function slugify(name: string): string {
   const base = name
@@ -229,17 +246,15 @@ export async function setProductStatusAction(formData: FormData): Promise<void> 
   const productId = value(formData, "productId");
   const status = oneOf(value(formData, "status"), PRODUCT_STATUSES);
 
-  if (
-    actor.kind !== "seller" ||
-    !hasPermission(actor.role ?? "owner","products.manage") ||
-    !["pending", "active"].includes(actor.status) ||
-    !status
-  ) {
-    return;
+  if (actor.kind !== "seller") failProduct(productId, "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) {
+    failProduct(productId, NOT_ALLOWED);
   }
+  if (!["pending", "active"].includes(actor.status)) failProduct(productId, NOT_ACTIVE);
+  if (!status) failProduct(productId, "That product status is not valid.");
 
   const supabase = await createClient();
-  await supabase
+  const { error } = await supabase
     .from("products")
     .update({
       status,
@@ -247,6 +262,7 @@ export async function setProductStatusAction(formData: FormData): Promise<void> 
     })
     .eq("id", productId)
     .eq("seller_account_id", actor.sellerAccountId);
+  if (error) failProduct(productId, "That product could not be updated.");
 
   revalidatePath("/dashboard/products");
   revalidatePath("/onboarding");
@@ -325,10 +341,13 @@ export async function uploadProductImageAction(
 /** Moves the chosen image to position 0 — the main image customers see first. */
 export async function setMainImageAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage")) return;
   const productId = value(formData, "productId");
   const mediaId = value(formData, "mediaId");
-  if (!productId || !mediaId) return;
+  if (actor.kind !== "seller") failProduct(productId, "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) {
+    failProduct(productId, NOT_ALLOWED);
+  }
+  if (!productId || !mediaId) failProduct(productId, "That photo could not be identified.");
 
   const supabase = await createClient();
   const { data: media } = await supabase
@@ -337,7 +356,9 @@ export async function setMainImageAction(formData: FormData): Promise<void> {
     .eq("product_id", productId)
     .eq("seller_account_id", actor.sellerAccountId)
     .order("position");
-  if (!media?.some((item) => item.id === mediaId)) return;
+  if (!media?.some((item) => item.id === mediaId)) {
+    failProduct(productId, "That photo is no longer on this product.");
+  }
 
   const reordered = [
     mediaId,
@@ -366,10 +387,13 @@ export async function setMainImageAction(formData: FormData): Promise<void> {
 
 export async function deleteProductImageAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage")) return;
   const productId = value(formData, "productId");
   const mediaId = value(formData, "mediaId");
-  if (!productId || !mediaId) return;
+  if (actor.kind !== "seller") failProduct(productId, "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) {
+    failProduct(productId, NOT_ALLOWED);
+  }
+  if (!productId || !mediaId) failProduct(productId, "That photo could not be identified.");
 
   const supabase = await createClient();
   const { data: media } = await supabase
@@ -379,10 +403,25 @@ export async function deleteProductImageAction(formData: FormData): Promise<void
     .eq("product_id", productId)
     .eq("seller_account_id", actor.sellerAccountId)
     .maybeSingle();
-  if (!media) return;
+  if (!media) failProduct(productId, "That photo is no longer on this product.");
 
-  await supabase.from("product_media").delete().eq("id", media.id);
-  await supabase.storage.from("product-images").remove([media.object_path]);
+  const { error: deleteError } = await supabase
+    .from("product_media")
+    .delete()
+    .eq("id", media.id);
+  if (deleteError) failProduct(productId, "That photo could not be deleted.");
+
+  // The row is gone either way; a leftover object is a storage tidy-up, not a
+  // reason to tell the seller the deletion failed.
+  const { error: storageError } = await supabase.storage
+    .from("product-images")
+    .remove([media.object_path]);
+  if (storageError) {
+    console.error("[deleteProductImageAction] row deleted but object remains", {
+      objectPath: media.object_path,
+      error: storageError,
+    });
+  }
 
   revalidatePath("/dashboard/products");
   revalidatePath(`/dashboard/products/${productId}`);
@@ -392,16 +431,28 @@ export async function bulkProductStatusAction(formData: FormData): Promise<void>
   const actor = await resolveServerActor();
   const ids = formData.getAll("productIds").map(String).slice(0, 100);
   const status = oneOf(value(formData, "status"), PRODUCT_STATUSES);
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner","products.manage") || !ids.length || !status) return;
+  if (actor.kind !== "seller") failProduct("", "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) failProduct("", NOT_ALLOWED);
+  if (!ids.length) failProduct("", "Select at least one product first.");
+  if (!status) failProduct("", "That product status is not valid.");
+
   const supabase = await createClient();
-  await supabase.from("products").update({ status, published_at: status === "active" ? new Date().toISOString() : null }).eq("seller_account_id", actor.sellerAccountId).in("id", ids);
+  const { error } = await supabase
+    .from("products")
+    .update({ status, published_at: status === "active" ? new Date().toISOString() : null })
+    .eq("seller_account_id", actor.sellerAccountId)
+    .in("id", ids);
+  if (error) failProduct("", "Those products could not be updated.");
+
   revalidatePath("/dashboard/products");
 }
 
 export async function updateProductAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
   const productId = value(formData, "productId");
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !productId) return;
+  if (actor.kind !== "seller") failProduct(productId, "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) failProduct(productId, NOT_ALLOWED);
+  if (!productId) failProduct("", "That product could not be identified.");
   const parsed = parseProductInput({
     currency: value(formData, "currency"),
     description: value(formData, "description"),
@@ -414,15 +465,25 @@ export async function updateProductAction(formData: FormData): Promise<void> {
     status: value(formData, "status"),
     stockQuantity: value(formData, "stockQuantity"),
   });
-  if (!parsed.success) return;
+  // parseProductInput already produces field-level messages; this form has no
+  // place to show them, so the first one is surfaced rather than dropped.
+  if (!parsed.success) {
+    const first = Object.values(parsed.fieldErrors ?? {})[0]?.[0];
+    failProduct(productId, first ?? "Check the product details and try again.");
+  }
+
   const supabase = await createClient();
   const { data: shop } = await supabase
     .from("shops")
     .select("id, currency")
     .eq("seller_account_id", actor.sellerAccountId)
     .single();
-  if (!shop || shop.currency !== parsed.data.currency) return;
-  await supabase.from("products").update({
+  if (!shop) failProduct(productId, "Create your shop before editing products.");
+  if (shop.currency !== parsed.data.currency) {
+    failProduct(productId, `Products in this shop are priced in ${shop.currency}.`);
+  }
+
+  const { error } = await supabase.from("products").update({
     currency: parsed.data.currency,
     description: parsed.data.description,
     inventory_policy: parsed.data.inventoryPolicy,
@@ -435,8 +496,11 @@ export async function updateProductAction(formData: FormData): Promise<void> {
     status: parsed.data.status,
     stock_quantity: parsed.data.stockQuantity,
   }).eq("id", productId).eq("seller_account_id", actor.sellerAccountId);
+  if (error) failProduct(productId, "Those changes could not be saved.");
+
   revalidatePath(`/dashboard/products/${productId}`);
   revalidatePath("/dashboard/products");
+  redirect(`/dashboard/products/${productId}?saved=1`);
 }
 
 function variantInput(formData: FormData) {
@@ -454,11 +518,23 @@ export async function addVariantAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
   const productId = value(formData, "productId");
   const input = variantInput(formData);
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !productId || !input) return;
+  if (actor.kind !== "seller") failProduct(productId, "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) failProduct(productId, NOT_ALLOWED);
+  if (!productId) failProduct("", "That product could not be identified.");
+  // variantInput returns null for a missing name, a non-numeric price, or a
+  // tracked variant with no stock figure — all things the seller can see and
+  // fix, and none of which used to be mentioned.
+  if (!input) failProduct(productId, INVALID_VARIANT);
+
   const supabase = await createClient();
   const { data: product } = await supabase.from("products").select("id").eq("id", productId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
-  if (!product) return;
-  await supabase.from("product_variants").insert({ ...input, product_id: productId, seller_account_id: actor.sellerAccountId });
+  if (!product) failProduct(productId, "That product could not be found.");
+
+  const { error } = await supabase
+    .from("product_variants")
+    .insert({ ...input, product_id: productId, seller_account_id: actor.sellerAccountId });
+  if (error) failProduct(productId, "That option could not be added.");
+
   revalidatePath(`/dashboard/products/${productId}`);
 }
 
@@ -467,48 +543,79 @@ export async function updateVariantAction(formData: FormData): Promise<void> {
   const productId = value(formData, "productId");
   const variantId = value(formData, "variantId");
   const input = variantInput(formData);
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !productId || !variantId || !input) return;
+  if (actor.kind !== "seller") failProduct(productId, "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) failProduct(productId, NOT_ALLOWED);
+  if (!productId || !variantId) failProduct(productId, "That option could not be identified.");
+  if (!input) failProduct(productId, INVALID_VARIANT);
+
   const supabase = await createClient();
-  await supabase.from("product_variants").update(input).eq("id", variantId).eq("product_id", productId).eq("seller_account_id", actor.sellerAccountId);
+  const { error } = await supabase
+    .from("product_variants")
+    .update(input)
+    .eq("id", variantId)
+    .eq("product_id", productId)
+    .eq("seller_account_id", actor.sellerAccountId);
+  if (error) failProduct(productId, "That option could not be saved.");
+
   revalidatePath(`/dashboard/products/${productId}`);
 }
 
 export async function archiveVariantAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
   const productId = value(formData, "productId");
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage")) return;
+  if (actor.kind !== "seller") failProduct(productId, "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) failProduct(productId, NOT_ALLOWED);
+
   const supabase = await createClient();
-  await supabase.from("product_variants").update({ active: false }).eq("id", value(formData, "variantId")).eq("product_id", productId).eq("seller_account_id", actor.sellerAccountId);
+  const { error } = await supabase
+    .from("product_variants")
+    .update({ active: false })
+    .eq("id", value(formData, "variantId"))
+    .eq("product_id", productId)
+    .eq("seller_account_id", actor.sellerAccountId);
+  if (error) failProduct(productId, "That option could not be removed.");
+
   revalidatePath(`/dashboard/products/${productId}`);
 }
 
 export async function setProductVideoAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
   const productId = value(formData, "productId");
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "products.manage") || !["pending", "active"].includes(actor.status) || !productId) return;
+  if (actor.kind !== "seller") failProduct(productId, "Sign in as a seller to change products.");
+  if (!hasPermission(actor.role ?? "owner", "products.manage")) failProduct(productId, NOT_ALLOWED);
+  if (!["pending", "active"].includes(actor.status)) failProduct(productId, NOT_ACTIVE);
+  if (!productId) failProduct("", "That product could not be identified.");
 
   const videoUrl = value(formData, "videoUrl").trim();
   const supabase = await createClient();
 
+  // An empty field means "remove the video", which is a real outcome rather
+  // than a refusal.
   if (!videoUrl) {
-    await supabase
+    const { error: clearError } = await supabase
       .from("products")
       .update({ video_url: null, video_provider: null, video_id: null, video_thumbnail_url: null })
       .eq("id", productId)
       .eq("seller_account_id", actor.sellerAccountId);
+    if (clearError) failProduct(productId, "That video could not be removed.");
     revalidatePath(`/dashboard/products/${productId}`);
     revalidatePath("/dashboard/products");
     return;
   }
 
-  if (!isSafeHttpUrl(videoUrl)) return;
+  if (!isSafeHttpUrl(videoUrl)) {
+    failProduct(
+      productId,
+      "That video link cannot be used. Paste a public https link from YouTube, TikTok, Instagram or Vimeo.",
+    );
+  }
 
   const parsed = parseVideoUrl(videoUrl);
   const thumbnailUrl =
     parsed.thumbnailUrl ??
     (parsed.videoId ? await fetchOembedThumbnail(parsed.provider, videoUrl) : null);
 
-  await supabase
+  const { error: videoError } = await supabase
     .from("products")
     .update({
       video_url: videoUrl,
@@ -518,6 +625,7 @@ export async function setProductVideoAction(formData: FormData): Promise<void> {
     })
     .eq("id", productId)
     .eq("seller_account_id", actor.sellerAccountId);
+  if (videoError) failProduct(productId, "That video could not be saved.");
 
   revalidatePath(`/dashboard/products/${productId}`);
   revalidatePath("/dashboard/products");

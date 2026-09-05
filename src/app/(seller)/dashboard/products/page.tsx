@@ -8,6 +8,7 @@ import { ProductStatusToggle } from "@/components/seller/product-status-toggle";
 import { EmptyState } from "@/components/ui/empty-state";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { mainImageUrl } from "@/lib/storefront/media";
+import { ActionBanner } from "@/components/ui/action-banner";
 import { Pager, parsePage } from "@/components/ui/pager";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
@@ -28,12 +29,13 @@ const PAGE_SIZE = 60;
 export default async function ProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; error?: string }>;
 }) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") redirect("/login?next=/dashboard/products");
 
-  const page = parsePage((await searchParams).page);
+  const query = await searchParams;
+  const page = parsePage(query.page);
   const from = (page - 1) * PAGE_SIZE;
 
   const supabase = await createClient();
@@ -57,6 +59,8 @@ export default async function ProductsPage({
 
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
+      <ActionBanner error={query.error} />
+
       <PageHeader
         title="Products"
         sub="Keep your catalogue organised, in stock and ready to share."

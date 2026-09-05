@@ -1,3 +1,4 @@
+import { ActionBanner } from "@/components/ui/action-banner";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -14,7 +15,14 @@ import { createClient } from "@/lib/supabase/server";
 /** This page reports all time. */
 const EPOCH = "1970-01-01T00:00:00Z";
 
-export default async function EditProductPage({ params }: { params: Promise<{ productId: string }> }) {
+export default async function EditProductPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ productId: string }>;
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
+  const banner = await searchParams;
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") redirect("/login?next=/dashboard/products");
   const { productId } = await params;
@@ -45,6 +53,8 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-24">
+      <ActionBanner error={banner.error} saved={banner.saved ? "Saved." : undefined} />
+
       <header>
         <div className="mb-3 flex flex-wrap gap-2">
           <Link className="btn-secondary w-max" href="/dashboard/products">← Products</Link>

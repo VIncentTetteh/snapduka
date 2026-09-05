@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  redirect: vi.fn((url: string) => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
+  }),
   resolveServerActor: vi.fn(),
   createClient: vi.fn(),
   revalidatePath: vi.fn(),
@@ -19,6 +22,10 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: mocks.createClient,
 }));
 
+// redirect() throws in Next, which is how a server action stops. Reproducing it
+// lets these tests assert the refusal was *spoken* — the whole point of the
+// change — as well as that nothing was written.
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/cache", () => ({
   revalidatePath: mocks.revalidatePath,
 }));
@@ -36,6 +43,19 @@ vi.mock("@/lib/billing/resolve", () => ({
 }));
 
 import { createProductAction, setProductVideoAction, updateProductAction } from "./actions";
+
+/** The message a refusal redirected with, or null if it did not refuse. */
+async function refusalFrom(run: () => Promise<unknown>): Promise<string | null> {
+  mocks.redirect.mockClear();
+  try {
+    await run();
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith("NEXT_REDIRECT:")) throw error;
+  }
+  const call = mocks.redirect.mock.calls.at(-1);
+  if (!call) return null;
+  return new URLSearchParams(String(call[0]).split("?")[1] ?? "").get("error");
+}
 
 function formData(values: Record<string, string>) {
   const data = new FormData();
@@ -67,32 +87,43 @@ describe("setProductVideoAction", () => {
     const from = vi.fn().mockReturnValue({ update });
     mocks.createClient.mockResolvedValue({ from });
 
-    await setProductVideoAction(
-      formData({ productId: "p1", videoUrl: "javascript:alert(document.cookie)" }),
+    const message = await refusalFrom(() =>
+      setProductVideoAction(
+        formData({ productId: "p1", videoUrl: "javascript:alert(document.cookie)" }),
+      ),
     );
 
     expect(mocks.isSafeHttpUrl).toHaveBeenCalledWith("javascript:alert(document.cookie)");
     expect(mocks.parseVideoUrl).not.toHaveBeenCalled();
     expect(from).not.toHaveBeenCalled();
+    // Refusing is not enough on its own: a rejected link that says nothing is
+    // indistinguishable from a broken form.
+    expect(message).toMatch(/video link cannot be used/i);
   });
 
-  it("does nothing for a non-seller actor", async () => {
+  it("refuses a non-seller actor, out loud", async () => {
     mocks.resolveServerActor.mockResolvedValue({ kind: "anonymous", authenticated: false });
 
-    await setProductVideoAction(formData({ productId: "p1", videoUrl: "https://youtu.be/abc" }));
+    const message = await refusalFrom(() =>
+      setProductVideoAction(formData({ productId: "p1", videoUrl: "https://youtu.be/abc" })),
+    );
 
     expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(message).toBeTruthy();
   });
 
-  it("does nothing for a suspended seller account", async () => {
+  it("refuses a suspended seller account, out loud", async () => {
     mocks.resolveServerActor.mockResolvedValue({
       ...SELLER_ACTOR,
       status: "suspended",
     });
 
-    await setProductVideoAction(formData({ productId: "p1", videoUrl: "https://youtu.be/abc" }));
+    const message = await refusalFrom(() =>
+      setProductVideoAction(formData({ productId: "p1", videoUrl: "https://youtu.be/abc" })),
+    );
 
     expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(message).toMatch(/not active/i);
   });
 
   it("saves a parsed YouTube URL with its deterministic thumbnail", async () => {
@@ -174,12 +205,15 @@ describe("setProductVideoAction", () => {
     });
   });
 
-  it("does nothing without a productId", async () => {
+  it("refuses without a productId, out loud", async () => {
     mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
 
-    await setProductVideoAction(formData({ videoUrl: "https://youtu.be/abc" }));
+    const message = await refusalFrom(() =>
+      setProductVideoAction(formData({ videoUrl: "https://youtu.be/abc" })),
+    );
 
     expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(message).toBeTruthy();
   });
 });
 
@@ -202,22 +236,26 @@ describe("updateProductAction", () => {
     });
     mocks.createClient.mockResolvedValue({ from });
 
-    await updateProductAction(
-      formData({
-        productId: "p1",
-        name: "Test Product",
-        description: "",
-        price: "1000",
-        currency: "NGN",
-        inventoryPolicy: "continue_selling",
-        stockQuantity: "",
-        sku: "",
-        status: "draft",
-      }),
+    const message = await refusalFrom(() =>
+      updateProductAction(
+        formData({
+          productId: "p1",
+          name: "Test Product",
+          description: "",
+          price: "1000",
+          currency: "NGN",
+          inventoryPolicy: "continue_selling",
+          stockQuantity: "",
+          sku: "",
+          status: "draft",
+        }),
+      ),
     );
 
     expect(shopsEq).toHaveBeenCalledWith("seller_account_id", SELLER_ACTOR.sellerAccountId);
     expect(update).not.toHaveBeenCalled();
+    // And it names the currency, which is the only way the seller can fix it.
+    expect(message).toMatch(/GHS/);
   });
 });
 
