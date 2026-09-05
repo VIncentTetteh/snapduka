@@ -1,3 +1,4 @@
+import { ActionBanner } from "@/components/ui/action-banner";
 import { LogoUploader } from "@/components/seller/logo-uploader";
 import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -9,7 +10,12 @@ import { createClient } from "@/lib/supabase/server";
 
 import { addCustomDomain, saveBranding, saveStorefrontContact, verifyCustomDomain } from "./actions";
 
-export default async function BrandingPage() {
+export default async function BrandingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
+  const banner = await searchParams;
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
@@ -28,6 +34,8 @@ export default async function BrandingPage() {
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-16">
+      <ActionBanner error={banner.error} saved={banner.saved ? "Saved." : undefined} />
+
       <header>
         <p className="page-eyebrow m-0">Growth</p>
         <h1 className="page-title mt-1">Brand and domain</h1>

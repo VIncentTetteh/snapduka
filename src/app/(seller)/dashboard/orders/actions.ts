@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveServerActor, type Actor, type SellerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { isSellerTransition } from "@/lib/commerce/transitions";
 import {
@@ -33,12 +33,18 @@ const FAILURE_MESSAGE: Record<TransitionFailure, string> = {
   offline_unconfirmed: "Tick “Payment received” before completing a cash order.",
 };
 
-function canManageOrders(actor: Awaited<ReturnType<typeof resolveServerActor>>) {
-  return (
-    actor.kind === "seller" &&
-    hasPermission(actor.role ?? "owner", "orders.manage") &&
-    ["pending", "active"].includes(actor.status)
-  );
+/** An assertion so callers narrow to a seller without a dead `return`. */
+function assertCanManage(
+  actor: Actor,
+  fail: (message: string) => never,
+): asserts actor is SellerActor {
+  if (actor.kind !== "seller") fail("Sign in as a seller to update orders.");
+  if (!hasPermission(actor.role ?? "owner", "orders.manage")) {
+    fail("Your role does not allow updating orders.");
+  }
+  if (!["pending", "active"].includes(actor.status)) {
+    fail("Your account is not active, so orders cannot be updated.");
+  }
 }
 
 export async function updateOrderAction(formData: FormData) {
@@ -49,9 +55,7 @@ export async function updateOrderAction(formData: FormData) {
   };
 
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") fail("Sign in as a seller to update orders.");
-  if (!canManageOrders(actor)) fail("Your role does not allow updating orders.");
-  if (actor.kind !== "seller") return;
+  assertCanManage(actor, fail);
 
   const next = String(formData.get("status") ?? "");
   const expectedVersion = Number(formData.get("version"));
@@ -78,9 +82,7 @@ export async function bulkOrderStatusAction(formData: FormData) {
     redirect(`/dashboard/orders?error=${encodeURIComponent(message)}`);
 
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller") fail("Sign in as a seller to update orders.");
-  if (!canManageOrders(actor)) fail("Your role does not allow updating orders.");
-  if (actor.kind !== "seller") return;
+  assertCanManage(actor, fail);
 
   const orderIds = formData.getAll("orderIds").map(String);
   const next = String(formData.get("status") ?? "");
