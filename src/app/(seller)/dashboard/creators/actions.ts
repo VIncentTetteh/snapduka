@@ -17,18 +17,26 @@ function back(kind: "error" | "message", text: string, path = BASE): never {
   redirect(`${path}?${kind}=${encodeURIComponent(text)}`);
 }
 
-/** Owner or a team member with campaign rights; never a creator or operator. */
+/**
+ * Owner or a team member with campaign rights; never a creator or operator.
+ *
+ * This returned null and every caller then did a bare `if (!actor) return`, so
+ * a team member without campaigns.manage could press "invite creator" or "mark
+ * paid" and get a page reload and nothing else. The file already had `back()`
+ * for exactly this; the guard now uses it, which removes five silent branches
+ * at once.
+ */
 async function sellerContext() {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) {
-    return null;
+  if (actor.kind !== "seller") back("error", "Sign in as a seller to manage creators.");
+  if (!hasPermission(actor.role ?? "owner", "campaigns.manage")) {
+    back("error", "Your role does not allow managing creators.");
   }
   return actor;
 }
 
 export async function inviteCreator(formData: FormData): Promise<void> {
   const actor = await sellerContext();
-  if (!actor) return;
 
   // Adapter only: the rules, the token hashing and the delivery rollback live
   // in @/lib/creators/invite, which the mobile route calls too.
@@ -47,7 +55,6 @@ export async function inviteCreator(formData: FormData): Promise<void> {
 
 export async function revokeCreatorInvitation(formData: FormData): Promise<void> {
   const actor = await sellerContext();
-  if (!actor) return;
   const supabase = await createClient();
   await supabase
     .from("creator_invitations")
@@ -60,7 +67,6 @@ export async function revokeCreatorInvitation(formData: FormData): Promise<void>
 
 export async function updatePartnership(formData: FormData): Promise<void> {
   const actor = await sellerContext();
-  if (!actor) return;
 
   const partnershipId = String(formData.get("partnershipId"));
   const intent = String(formData.get("intent"));
@@ -99,7 +105,6 @@ export async function updatePartnership(formData: FormData): Promise<void> {
 /** Creates the creator's own tracked link into this shop. */
 export async function createCreatorLink(formData: FormData): Promise<void> {
   const actor = await sellerContext();
-  if (!actor) return;
   const plan = await getSellerPlan(actor.sellerAccountId);
   if (!planAllows(plan, "creatorProgram")) back("error", upgradeMessage("the creator program"));
 
@@ -144,8 +149,8 @@ export async function createCreatorLink(formData: FormData): Promise<void> {
  * commission is not payable, so a partial payment cannot be logged as a full one.
  */
 export async function markCommissionsPaid(formData: FormData): Promise<void> {
-  const actor = await sellerContext();
-  if (!actor) return;
+  // Called for the guard, not the value: it refuses by redirecting.
+  await sellerContext();
 
   const partnershipId = String(formData.get("partnershipId"));
   const creatorId = String(formData.get("creatorId"));

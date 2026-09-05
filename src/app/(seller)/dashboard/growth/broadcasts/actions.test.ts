@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  redirect: vi.fn((url: string) => {
+    throw new Error(`NEXT_REDIRECT:${url}`);
+  }),
   resolveServerActor: vi.fn(),
   createClient: vi.fn(),
   revalidatePath: vi.fn(),
@@ -10,6 +13,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
+// redirect() throws in Next; reproducing it lets a refusal be asserted as
+// spoken rather than merely absent.
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/billing/resolve", () => ({ getSellerPlan: mocks.getSellerPlan, withinPlanLimit: mocks.withinPlanLimit }));
 
@@ -48,8 +54,13 @@ describe("createBroadcast", () => {
     });
     mocks.createClient.mockResolvedValue({ from });
 
-    await createBroadcast(formData({ channel: "email", body: "Hello", segmentId: "not-mine-segment" }));
+    await expect(
+      createBroadcast(formData({ channel: "email", body: "Hello", segmentId: "not-mine-segment" })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
 
     expect(insert).not.toHaveBeenCalled();
+    expect(decodeURIComponent(String(mocks.redirect.mock.calls.at(-1)?.[0]))).toMatch(
+      /customer group/i,
+    );
   });
 });

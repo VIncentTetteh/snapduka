@@ -10,18 +10,32 @@ import { checkDestination, DESTINATION_REFUSED } from "@/lib/campaigns/destinati
 import { CHANNEL_TOKEN_SUFFIX, SHARE_CHANNELS } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
 
+const SHARE_PATH = "/dashboard/share";
+
+function fail(message: string): never {
+  redirect(`${SHARE_PATH}?error=${encodeURIComponent(message)}`);
+}
+
+const NOT_ALLOWED = "Your role does not allow managing sharing.";
+
 export async function disconnectSocialAccountAction(formData: FormData): Promise<void> {
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
+  if (actor.kind !== "seller") fail("Sign in as a seller to disconnect an account.");
+  if (!hasPermission(actor.role ?? "owner", "campaigns.manage")) fail(NOT_ALLOWED);
+
   const provider = String(formData.get("provider") ?? "");
-  if (!provider) return;
+  if (!provider) fail("That account could not be identified.");
+
   const supabase = await createClient();
-  await supabase
+  const { error } = await supabase
     .from("social_accounts")
     .delete()
     .eq("seller_account_id", actor.sellerAccountId)
     .eq("provider", provider);
-  revalidatePath("/dashboard/share");
+  if (error) fail("That account could not be disconnected.");
+
+  revalidatePath(SHARE_PATH);
+  redirect(`${SHARE_PATH}?saved=disconnected`);
 }
 
 // From @snapduka/core so the app and the web mint the same token for the same
@@ -44,7 +58,8 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
   // of floating loose.
   const campaignId = String(formData.get("campaignId") ?? "").trim() || null;
   const actor = await resolveServerActor();
-  if (actor.kind !== "seller" || !hasPermission(actor.role ?? "owner", "campaigns.manage")) return;
+  if (actor.kind !== "seller") fail("Sign in as a seller to create share links.");
+  if (!hasPermission(actor.role ?? "owner", "campaigns.manage")) fail(NOT_ALLOWED);
 
   const supabase = await createClient();
   const { data: shop } = await supabase
@@ -52,7 +67,7 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
     .select("id,slug")
     .eq("seller_account_id", actor.sellerAccountId)
     .maybeSingle();
-  if (!shop) return;
+  if (!shop) fail("Create your shop before making share links.");
 
   // destination_path used to be inserted exactly as posted, so a link could be
   // minted pointing at any path on the site — including another seller's shop
@@ -63,9 +78,7 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
     shop,
     destinationPath,
   );
-  if (!destination.ok) {
-    redirect(`/dashboard/share?error=${encodeURIComponent(DESTINATION_REFUSED)}`);
-  }
+  if (!destination.ok) fail(DESTINATION_REFUSED);
 
   // campaign_id is written straight into campaign_links — no policy on
   // `campaigns` is ever consulted, because the campaign is never read. (A
@@ -80,11 +93,7 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
       .eq("id", campaignId)
       .eq("seller_account_id", actor.sellerAccountId)
       .maybeSingle();
-    if (!campaign) {
-      redirect(
-        `/dashboard/share?error=${encodeURIComponent("That campaign could not be found.")}`,
-      );
-    }
+    if (!campaign) fail("That campaign could not be found.");
   }
 
   const { data: existing } = await supabase
@@ -107,16 +116,30 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
     campaign_id: campaignId,
   }));
 
-  // Retry the whole batch on a token collision rather than swallowing the
-  // error, which used to look to the seller like links that never appeared.
+  // Retry the whole batch on a token collision. Both exits from this loop used
+  // to be silent — including the one taken when the insert failed for a reason
+  // that is not a collision — so the seller was left with no links and nothing
+  // saying why, which is the state the comment above claimed to have fixed.
+  let inserted = rows.length === 0;
+  let lastError: unknown = null;
   for (let attempt = 0; rows.length > 0 && attempt < 5; attempt++) {
     const prefix = attempt === 0 ? base : shortCode();
     const { error } = await supabase
       .from("campaign_links")
       .insert(rows.map((row) => ({ ...row, token: `${prefix}-${row.token.split("-").pop()}` })));
-    if (!error) break;
+    if (!error) {
+      inserted = true;
+      break;
+    }
+    lastError = error;
     if (!isUniqueViolation(error)) break;
   }
 
-  revalidatePath("/dashboard/share");
+  if (!inserted) {
+    console.error("[generateShareLinksAction] could not mint links", { error: lastError });
+    fail("Those share links could not be created. Please try again.");
+  }
+
+  revalidatePath(SHARE_PATH);
+  redirect(`${SHARE_PATH}?saved=links`);
 }

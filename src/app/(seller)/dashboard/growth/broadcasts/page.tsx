@@ -1,3 +1,4 @@
+import { ActionBanner } from "@/components/ui/action-banner";
 import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
@@ -6,7 +7,12 @@ import { SubmitButton } from "@/components/ui/submit-button";
 
 import { cancelBroadcast, createBroadcast, scheduleBroadcast } from "./actions";
 
-export default async function BroadcastsPage() {
+export default async function BroadcastsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
+  const banner = await searchParams;
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
@@ -24,6 +30,8 @@ export default async function BroadcastsPage() {
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-16">
+      <ActionBanner error={banner.error} saved={banner.saved ? "Saved." : undefined} />
+
       <header>
         <p className="page-eyebrow m-0">Growth</p>
         <h1 className="page-title mt-1">Broadcasts</h1>

@@ -8,8 +8,10 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function updateCreatorProfile(formData: FormData): Promise<void> {
   const creator = await resolveCreatorContext();
-  // Gated on the creator profile so a shop owner promoting another shop qualifies.
-  if (!creator) return;
+  // Gated on the creator profile so a shop owner promoting another shop
+  // qualifies. Returning silently left the form looking broken; sign-in is the
+  // actual next step.
+  if (!creator) redirect(`/login?next=/creator/settings`);
 
   const displayName = String(formData.get("displayName") ?? "").trim();
   const contactPhone = String(formData.get("contactPhone") ?? "").replace(/[\s()-]/g, "");

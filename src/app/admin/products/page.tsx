@@ -1,3 +1,4 @@
+import { ActionBanner } from "@/components/ui/action-banner";
 import { createCategoryAction, setCategoryActiveAction } from "@/app/admin/products/actions";
 import { ProductListWithBulkActions, type AdminProductRow } from "@/components/admin/product-bulk-bar";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -44,9 +45,15 @@ async function resolveMatchingSellerIds(admin: ReturnType<typeof createAdminClie
 export default async function AdminProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; moderation?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    moderation?: string;
+    error?: string;
+    saved?: string;
+  }>;
 }) {
-  const { q, status, moderation } = await searchParams;
+  const { q, status, moderation, error: actionError, saved } = await searchParams;
   const term = q?.trim() ?? "";
   const admin = createAdminClient();
 
@@ -147,6 +154,8 @@ export default async function AdminProductsPage({
 
   return (
     <main className="sd-main mx-auto max-w-[1080px] px-4 pt-6 sm:px-6">
+      <ActionBanner error={actionError} saved={saved} />
+
       <PageHeader
         title="Products"
         sub="Every listing across the platform — search, moderate, and categorize."

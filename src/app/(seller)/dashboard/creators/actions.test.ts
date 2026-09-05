@@ -88,24 +88,31 @@ beforeEach(() => {
 });
 
 describe("inviteCreator", () => {
-  it("does nothing for a non-seller", async () => {
+  it("refuses a non-seller, out loud", async () => {
     mocks.resolveServerActor.mockResolvedValue({ kind: "creator", creatorId: "c1" });
     const client = supabaseForInvite();
     mocks.createClient.mockResolvedValue(client);
 
-    await inviteCreator(formData({ contact: "c@example.com", ratePercent: "10" }));
+    await expect(
+      inviteCreator(formData({ contact: "c@example.com", ratePercent: "10" })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
 
     expect(client.from).not.toHaveBeenCalled();
+    expect(String(mocks.redirect.mock.calls.at(-1)?.[0])).toContain("error=");
   });
 
-  it("rejects a team role without campaigns.manage", async () => {
+  it("rejects a team role without campaigns.manage, and says why", async () => {
     mocks.resolveServerActor.mockResolvedValue({ ...OWNER, role: "fulfillment" });
     const client = supabaseForInvite();
     mocks.createClient.mockResolvedValue(client);
 
-    await inviteCreator(formData({ contact: "c@example.com", ratePercent: "10" }));
+    await expect(
+      inviteCreator(formData({ contact: "c@example.com", ratePercent: "10" })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
 
     expect(client.from).not.toHaveBeenCalled();
+    // The seller has to learn it is their role, not a broken button.
+    expect(decodeURIComponent(String(mocks.redirect.mock.calls.at(-1)?.[0]))).toMatch(/role/i);
   });
 
   // Most existing gates return silently; this one must say why.
