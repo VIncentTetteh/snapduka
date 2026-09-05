@@ -10,7 +10,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { appOrigin } from "@/lib/app-url";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { calculateCreatorBalance, formatRate } from "@/lib/creators/commission";
+import { formatRate } from "@/lib/creators/commission";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
@@ -58,14 +58,23 @@ export default async function CreatorDetailPage({
     payout_details: Record<string, unknown>;
   } | null;
 
-  const [{ data: commissions }, { data: links }, { data: payments }, { data: adjustments }] =
+  const [{ data: commissions }, { data: balanceRows }, { data: links }, { data: payments }] =
     await Promise.all([
+      // The 200 most recent, for the two lists on this page.
       supabase
         .from("creator_commissions")
         .select("id,status,amount_minor,basis_minor,rate_bps,currency,order_reference,order_placed_at,payable_at,reversal_reason")
         .eq("seller_account_id", actor.sellerAccountId)
         .eq("creator_id", partnership.creator_id)
-        .order("order_placed_at", { ascending: false }),
+        .order("order_placed_at", { ascending: false })
+        .limit(200),
+      // The balance, over the whole ledger. This is the figure the seller is
+      // about to pay against, and it was computed from an unbounded select that
+      // PostgREST caps at db.max_rows — so a productive creator would have been
+      // paid less than they had earned. creator_commission_balances is
+      // SECURITY INVOKER, so a seller calling it sees only commissions on their
+      // own shop: exactly "what I owe this creator".
+      supabase.rpc("creator_commission_balances", { p_creator_id: partnership.creator_id }),
       supabase
         .from("campaign_links")
         .select("id,token,name,active")
@@ -76,22 +85,31 @@ export default async function CreatorDetailPage({
         .eq("seller_account_id", actor.sellerAccountId)
         .eq("creator_id", partnership.creator_id)
         .order("marked_at", { ascending: false }),
-      supabase
-        .from("creator_commission_adjustments")
-        .select("id,delta_minor,reason,created_at")
-        .eq("seller_account_id", actor.sellerAccountId)
-        .eq("creator_id", partnership.creator_id),
     ]);
 
   const currency = (partnership.currency ?? "GHS") as CurrencyCode;
-  const balance = calculateCreatorBalance({
-    commissions: (commissions ?? []).map((row) => ({
-      status: row.status as "pending" | "payable" | "paid" | "reversed" | "void",
-      amountMinor: row.amount_minor,
-    })),
-    adjustments: (adjustments ?? []).map((row) => ({ deltaMinor: row.delta_minor })),
-  });
-  const payable = (commissions ?? []).filter((row) => row.status === "payable");
+  type BalanceRow = {
+    currency: string;
+    pending_minor: number;
+    payable_minor: number;
+    paid_minor: number;
+    reversed_minor: number;
+    owed_now_minor: number;
+    carry_over_minor: number;
+  };
+  // The partnership's own currency only. A creator partnered with shops in two
+  // countries has a row per currency, and adding them would mix cedis into
+  // naira.
+  const row = ((balanceRows ?? []) as BalanceRow[]).find((entry) => entry.currency === currency);
+  const balance = {
+    pendingMinor: Number(row?.pending_minor ?? 0),
+    payableMinor: Number(row?.payable_minor ?? 0),
+    paidMinor: Number(row?.paid_minor ?? 0),
+    reversedMinor: Number(row?.reversed_minor ?? 0),
+    owedNowMinor: Number(row?.owed_now_minor ?? 0),
+    carryOverMinor: Number(row?.carry_over_minor ?? 0),
+  };
+  const payable = (commissions ?? []).filter((commission) => commission.status === "payable");
 
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
