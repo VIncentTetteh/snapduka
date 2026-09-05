@@ -52,12 +52,15 @@ const EVENT_LABEL: Record<string, string> = {
 
 export default async function OrderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ orderId: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const { orderId } = await params;
+  const { error: actionError } = await searchParams;
   const supabase = await createClient();
   const { data: order } = await supabase
     .from("orders")
@@ -109,6 +112,18 @@ export default async function OrderPage({
 
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
+      {/* A refused transition used to change nothing and say nothing, which
+          reads as a broken button — most often after the order moved on in
+          another tab. */}
+      {actionError ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-danger-line bg-danger-tint px-4 py-3 text-[13px] font-semibold text-danger"
+        >
+          {actionError}
+        </div>
+      ) : null}
+
       {/* Header */}
       <div className="mb-4">
         <Link

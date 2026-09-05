@@ -48,7 +48,7 @@ const PRODUCT_MATCH_LIMIT = 100;
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; filter?: string; range?: string }>;
+  searchParams: Promise<{ q?: string; filter?: string; range?: string; error?: string }>;
 }) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
@@ -116,6 +116,16 @@ export default async function OrdersPage({
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
       <PageHeader title="Orders" sub="Every order, payment and fulfilment state in one place." />
+
+      {/* A bulk update that refused some orders used to report nothing at all. */}
+      {filters.error ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-danger-line bg-danger-tint px-4 py-3 text-[13px] font-semibold text-danger"
+        >
+          {filters.error}
+        </div>
+      ) : null}
 
       <div className="mb-4">
         <FilterPills

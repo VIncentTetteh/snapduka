@@ -7,7 +7,12 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { addAutomation, addWebhook } from "./actions";
 import { KeyForm } from "./key-form";
 
-export default async function DevelopersPage() {
+export default async function DevelopersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
+  const params = await searchParams;
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
@@ -35,6 +40,26 @@ export default async function DevelopersPage() {
 
   return (
     <main className="mx-auto grid w-full max-w-4xl gap-5 px-3 py-5 pb-16">
+      {/* A refused webhook URL — the SSRF guard doing its job — used to look
+          exactly like a broken feature. */}
+      {params.error ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-danger-line bg-danger-tint px-4 py-3 text-[13px] font-semibold text-danger"
+        >
+          {params.error}
+        </div>
+      ) : null}
+
+      {params.saved ? (
+        <div
+          role="status"
+          className="rounded-xl border border-line bg-raised px-4 py-3 text-[13px] font-semibold text-ink"
+        >
+          {params.saved === "webhook" ? "Webhook added." : "Automation added."}
+        </div>
+      ) : null}
+
       <header>
         <p className="page-eyebrow m-0">Seller settings</p>
         <h1 className="page-title mt-1">Developer tools</h1>

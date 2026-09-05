@@ -4,7 +4,12 @@ import { SubmitButton } from "@/components/ui/submit-button";
 
 import { saveDiscovery } from "./actions";
 
-export default async function DiscoverySettings() {
+export default async function DiscoverySettings({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
+  const params = await searchParams;
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
@@ -23,6 +28,24 @@ export default async function DiscoverySettings() {
           Discovery is optional. Buyers still check out directly with your shop and carts never mix sellers.
         </p>
       </header>
+
+      {params.error ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-danger-line bg-danger-tint px-4 py-3 text-[13px] font-semibold text-danger"
+        >
+          {params.error}
+        </div>
+      ) : null}
+
+      {params.saved ? (
+        <div
+          role="status"
+          className="rounded-xl border border-line bg-raised px-4 py-3 text-[13px] font-semibold text-ink"
+        >
+          Discovery settings saved.
+        </div>
+      ) : null}
 
       <form action={saveDiscovery} className="card grid gap-3">
         <label className="flex items-center gap-3 text-sm font-semibold" style={{ color: "var(--ink)" }}>
