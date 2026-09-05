@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { paginate } from "@/lib/supabase/paginate";
 
 function periodEnd(start: Date, interval: string): string {
   const end = new Date(start);
@@ -51,50 +52,31 @@ export async function POST(request: Request) {
   // rows between pages and skip them. An id cursor is unaffected by rows
   // leaving the filter, and a row that fails and stays due does not block the
   // cursor from advancing past it.
-  const due: {
-    id: string;
-    pending_change_type: string | null;
-    pending_plan_id: string | null;
-    pending_plan_version: number | null;
-    pending_price_id: string | null;
-    provider_authorization_code: string | null;
-    provider_customer_code: string | null;
-    current_period_end: string | null;
-  }[] = [];
-  const PAGE_SIZE = 200;
-  // A bound on one cron run, not on the backlog: the next run resumes from the
-  // start and the remainder is still due. It exists so a runaway backlog cannot
-  // turn one invocation into an unbounded sequence of card charges.
-  const MAX_ROWS_PER_RUN = 5000;
-  let cursor: string | null = null;
+  const { rows: due, error: readError } = await paginate(
+    (cursor, size) => {
+      let page = admin
+        .from("seller_subscriptions")
+        .select(
+          "id,pending_change_type,pending_plan_id,pending_plan_version,pending_price_id,provider_authorization_code,provider_customer_code,current_period_end",
+        )
+        // Scheduled changes only. An 'upgrade' is pending payment, not pending a
+        // date — sweeping it up here would charge the seller for a plan they
+        // never finished buying once their period happened to end.
+        .in("pending_change_type", ["downgrade", "cancel"])
+        .lte("current_period_end", now.toISOString())
+        .order("id", { ascending: true })
+        .limit(size);
+      if (cursor) page = page.gt("id", cursor);
+      return page;
+    },
+    (row) => row.id,
+  );
 
-  for (;;) {
-    let page = admin
-      .from("seller_subscriptions")
-      .select(
-        "id,pending_change_type,pending_plan_id,pending_plan_version,pending_price_id,provider_authorization_code,provider_customer_code,current_period_end",
-      )
-      // Scheduled changes only. An 'upgrade' is pending payment, not pending a
-      // date — sweeping it up here would charge the seller for a plan they never
-      // finished buying once their period happened to end.
-      .in("pending_change_type", ["downgrade", "cancel"])
-      .lte("current_period_end", now.toISOString())
-      .order("id", { ascending: true })
-      .limit(PAGE_SIZE);
-    if (cursor) page = page.gt("id", cursor);
-
-    const { data: rows, error } = await page;
-    if (error) {
-      // Loudly, and without processing a partial batch as if it were the whole
-      // queue: a swallowed error here is indistinguishable from "nothing due".
-      console.error("[apply-plan-changes] failed to read due subscriptions", { error, cursor });
-      return NextResponse.json({ error: "Could not read due subscriptions." }, { status: 500 });
-    }
-    if (!rows || rows.length === 0) break;
-
-    due.push(...rows);
-    cursor = rows[rows.length - 1].id;
-    if (rows.length < PAGE_SIZE || due.length >= MAX_ROWS_PER_RUN) break;
+  if (readError) {
+    // Loudly, and without processing a partial batch as if it were the whole
+    // queue: a swallowed error here is indistinguishable from "nothing due".
+    console.error("[apply-plan-changes] failed to read due subscriptions", { error: readError });
+    return NextResponse.json({ error: "Could not read due subscriptions." }, { status: 500 });
   }
 
   let applied = 0;

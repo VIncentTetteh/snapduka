@@ -5,6 +5,7 @@ import { sendPush } from "@/lib/notifications/push";
 import { sendWhatsApp } from "@/lib/notifications/whatsapp";
 import { appOrigin } from "@/lib/app-url";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { paginate } from "@/lib/supabase/paginate";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 
 type SegmentRules = { minimumOrders?: number; minimumSpendMinor?: number; orderedWithinDays?: number };
@@ -40,14 +41,40 @@ export async function POST(request: Request) {
     const cap = preference?.marketing_frequency_cap ?? 4;
     const monthStart = new Date();
     monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
-    const { data: customers } = await admin
-      .from("customers")
-      .select("id,email,phone,orders(total_minor,status,created_at),customer_consents(purpose,status)")
-      .eq("seller_account_id", broadcast.seller_account_id)
-      .limit(1000);
+    // `.limit(1000)` sat exactly on db.max_rows, so a seller with 1,200
+    // customers had 200 of them silently dropped — never contacted, no delivery
+    // row written, and the broadcast still reported as sent. Whether a customer
+    // hears from the shop cannot depend on where they fall in an unordered read.
+    const { rows: customers, error: customersError } = await paginate(
+      (cursor, size) => {
+        let page = admin
+          .from("customers")
+          .select("id,email,phone,orders(total_minor,status,created_at),customer_consents(purpose,status)")
+          .eq("seller_account_id", broadcast.seller_account_id)
+          .order("id", { ascending: true })
+          .limit(size);
+        if (cursor) page = page.gt("id", cursor);
+        return page;
+      },
+      (row) => row.id,
+    );
+    if (customersError) {
+      // Do not send to a partial audience and mark the broadcast done: put it
+      // back so the next run sends to everyone.
+      console.error("[marketing] failed to read the audience", {
+        broadcastId: broadcast.id,
+        error: customersError,
+      });
+      await admin
+        .from("marketing_broadcasts")
+        .update({ state: "scheduled" })
+        .eq("id", broadcast.id)
+        .eq("state", "sending");
+      continue;
+    }
     const rules = ((broadcast.customer_segments as unknown as { rules?: SegmentRules } | null)?.rules ?? {}) as SegmentRules;
 
-    for (const customer of customers ?? []) {
+    for (const customer of customers) {
       const consented = customer.customer_consents.some((consent) => consent.purpose === "marketing" && consent.status === "granted");
       let reason: string | null = consented ? null : "marketing_consent_not_granted";
       if (!reason && broadcast.segment_id && !matchesSegment(customer.orders as CustomerOrder[], rules)) reason = "outside_segment";
