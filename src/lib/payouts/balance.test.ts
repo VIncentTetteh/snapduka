@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  earningsForCurrency,
   minimumPayoutMinor,
   payoutFeeMinor,
   summariseEarnings,
   toMinorUnits,
   validatePayoutRequest,
   type EarningsOrder,
+  type EarningsRow,
 } from "./balance";
 
 const order = (over: Partial<EarningsOrder>): EarningsOrder => ({
@@ -128,5 +130,90 @@ describe("money helpers", () => {
   it("returns null for invalid input", () => {
     expect(toMinorUnits("abc", "GHS")).toBeNull();
     expect(toMinorUnits("-5", "GHS")).toBeNull();
+  });
+});
+
+/**
+ * `summariseEarnings` needed every order in memory, and PostgREST caps a
+ * response at db.max_rows = 1000 — so past a thousand orders the all-time
+ * earnings figure on the money page was simply too small, with no error to say
+ * so. `earningsForCurrency` reads `seller_earnings_summary()` instead.
+ */
+describe("earningsForCurrency", () => {
+  const rows: EarningsRow[] = [
+    {
+      currency: "GHS",
+      settled_online_minor: 12_000,
+      collected_offline_minor: 3_000,
+      awaiting_payment_minor: 500,
+      refunded_minor: 250,
+      total_paid_minor: 15_000,
+    },
+    {
+      currency: "NGN",
+      settled_online_minor: 900,
+      collected_offline_minor: 0,
+      awaiting_payment_minor: 0,
+      refunded_minor: 0,
+      total_paid_minor: 900,
+    },
+  ];
+
+  it("reads the row for the seller's own currency", () => {
+    expect(earningsForCurrency(rows, "GHS")).toEqual({
+      settledOnlineMinor: 12_000,
+      collectedOfflineMinor: 3_000,
+      awaitingPaymentMinor: 500,
+      refundedMinor: 250,
+      totalPaidMinor: 15_000,
+    });
+  });
+
+  // The reason the aggregate has a currency dimension at all: summariseEarnings
+  // has none, so a second currency was added straight into the total.
+  it("does not add another currency's money to the total", () => {
+    expect(earningsForCurrency(rows, "GHS").totalPaidMinor).toBe(15_000);
+    expect(earningsForCurrency(rows, "NGN").totalPaidMinor).toBe(900);
+  });
+
+  it("treats a currency with no orders as zero, not as missing", () => {
+    expect(earningsForCurrency(rows, "XOF")).toEqual({
+      settledOnlineMinor: 0,
+      collectedOfflineMinor: 0,
+      awaitingPaymentMinor: 0,
+      refundedMinor: 0,
+      totalPaidMinor: 0,
+    });
+  });
+
+  it("survives the RPC returning nothing at all", () => {
+    expect(earningsForCurrency(null, "GHS").totalPaidMinor).toBe(0);
+    expect(earningsForCurrency(undefined, "GHS").totalPaidMinor).toBe(0);
+    expect(earningsForCurrency([], "GHS").totalPaidMinor).toBe(0);
+  });
+
+  // The port must not change what the page says. Summarise a set of orders the
+  // old way, shape the same figures as the aggregate produces, and require the
+  // two to agree.
+  it("agrees with summariseEarnings on the same orders", () => {
+    const legacy = summariseEarnings([
+      order({ totalMinor: 5_000 }),
+      order({ totalMinor: 7_000 }),
+      order({ totalMinor: 3_000, paymentMethod: "cash_on_delivery" }),
+      order({ totalMinor: 500, paymentMethod: "cash_on_delivery", paymentStatus: "offline_due" }),
+      order({ totalMinor: 250, paymentStatus: "refunded" }),
+    ]);
+
+    // Exactly what seller_earnings_summary() computes over those rows.
+    const aggregate: EarningsRow = {
+      currency: "GHS",
+      settled_online_minor: 12_000,
+      collected_offline_minor: 3_000,
+      awaiting_payment_minor: 500,
+      refunded_minor: 250,
+      total_paid_minor: 15_000,
+    };
+
+    expect(earningsForCurrency([aggregate], "GHS")).toEqual(legacy);
   });
 });

@@ -4,7 +4,7 @@ import { PayoutRequestForm } from "@/components/seller/payout-request-form";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { formatMoney } from "@/lib/i18n";
-import { summariseEarnings } from "@/lib/payouts/balance";
+import { earningsForCurrency, type EarningsRow } from "@/lib/payouts/balance";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
 
@@ -33,17 +33,18 @@ export default async function PayoutsPage() {
       ? "XOF"
       : "GHS") as CurrencyCode;
 
-  const [{ data: wallet }, { data: orders }, { data: payouts }, { data: destination }, { data: config }] =
+  const [{ data: wallet }, { data: earningsRows }, { data: payouts }, { data: destination }, { data: config }] =
     await Promise.all([
       supabase.rpc("seller_wallet_balance", {
         p_seller_account_id: actor.sellerAccountId,
         p_currency: currency,
       }),
-      supabase
-        .from("orders")
-        .select("total_minor,currency,payment_method,payment_status")
-        .eq("seller_account_id", actor.sellerAccountId)
-        .in("payment_status", ["paid", "pending", "offline_due", "refunded"]),
+      // Aggregated in SQL, not here. This used to select every order the seller
+      // had ever taken and sum them in JavaScript, which PostgREST caps at
+      // db.max_rows = 1000 — so the all-time earnings figure on the money page
+      // would have quietly stopped counting at the thousandth order, with no
+      // error and nothing on screen to suggest the number was short.
+      supabase.rpc("seller_earnings_summary"),
       supabase
         .from("payout_requests")
         .select("id,reference,amount_minor,fee_minor,currency,status,review_reason,failure_reason,created_at")
@@ -75,13 +76,9 @@ export default async function PayoutsPage() {
   // so showing them a wallet balance of zero would be actively misleading.
   const onLedger = config?.settlement_mode === "ledger";
 
-  const earnings = summariseEarnings(
-    (orders ?? []).map((order) => ({
-      totalMinor: order.total_minor,
-      paymentMethod: order.payment_method,
-      paymentStatus: order.payment_status,
-    })),
-  );
+  // Per currency, so a second currency cannot contaminate this figure the way
+  // summariseEarnings — which has no currency dimension — allowed.
+  const earnings = earningsForCurrency(earningsRows as EarningsRow[] | null, currency);
 
   const payoutDestination = (destination ?? [])[0] as
     | {

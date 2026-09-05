@@ -7,12 +7,14 @@
  * This module remains the web-side import path.
  */
 export {
+  earningsForCurrency,
   minimumPayoutMinor,
   payoutFeeMinor,
   summariseEarnings,
   toMinorUnits,
   validatePayoutRequest,
   type EarningsOrder,
+  type EarningsRow,
   type EarningsSummary,
   type PayoutRecord,
   type PayoutValidation,

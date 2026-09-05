@@ -50,6 +50,53 @@ export type EarningsSummary = {
   totalPaidMinor: number;
 };
 
+/** One row of `seller_earnings_summary()`. */
+export type EarningsRow = {
+  currency: string;
+  settled_online_minor: number;
+  collected_offline_minor: number;
+  awaiting_payment_minor: number;
+  refunded_minor: number;
+  total_paid_minor: number;
+};
+
+const EMPTY_EARNINGS: EarningsSummary = {
+  settledOnlineMinor: 0,
+  collectedOfflineMinor: 0,
+  awaitingPaymentMinor: 0,
+  refundedMinor: 0,
+  totalPaidMinor: 0,
+};
+
+/**
+ * The same summary as `summariseEarnings`, read off the SQL aggregate instead
+ * of computed from every order row.
+ *
+ * `summariseEarnings` needed the whole order history in memory, and PostgREST
+ * caps a response at `db.max_rows = 1000` — so past a thousand orders it
+ * returned a number that was simply too small, with no error to say so. Both
+ * clients now call `seller_earnings_summary()` and pick their own currency:
+ * unlike the JavaScript, the aggregate has a currency dimension, so orders in a
+ * second currency can no longer be added to this total.
+ *
+ * A seller with no orders in this currency has no row, which is zero rather
+ * than missing data.
+ */
+export function earningsForCurrency(
+  rows: EarningsRow[] | null | undefined,
+  currency: string,
+): EarningsSummary {
+  const row = (rows ?? []).find((candidate) => candidate.currency === currency);
+  if (!row) return { ...EMPTY_EARNINGS };
+  return {
+    settledOnlineMinor: row.settled_online_minor,
+    collectedOfflineMinor: row.collected_offline_minor,
+    awaitingPaymentMinor: row.awaiting_payment_minor,
+    refundedMinor: row.refunded_minor,
+    totalPaidMinor: row.total_paid_minor,
+  };
+}
+
 export function summariseEarnings(orders: EarningsOrder[]): EarningsSummary {
   const summary: EarningsSummary = {
     settledOnlineMinor: 0,

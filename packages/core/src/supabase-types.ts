@@ -4966,6 +4966,18 @@ export type Database = {
         }
         Returns: Json
       }
+      creator_commission_balances: {
+        Args: { p_creator_id: string }
+        Returns: {
+          carry_over_minor: number
+          currency: Database["public"]["Enums"]["currency_code"]
+          owed_now_minor: number
+          paid_minor: number
+          payable_minor: number
+          pending_minor: number
+          reversed_minor: number
+        }[]
+      }
       current_creator_id: { Args: never; Returns: string }
       current_seller_account_id: { Args: never; Returns: string }
       current_seller_status: {
@@ -5126,6 +5138,17 @@ export type Database = {
           p_slug: string
         }
         Returns: string
+      }
+      seller_earnings_summary: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          awaiting_payment_minor: number
+          collected_offline_minor: number
+          currency: Database["public"]["Enums"]["currency_code"]
+          refunded_minor: number
+          settled_online_minor: number
+          total_paid_minor: number
+        }[]
       }
       seller_analytics_summary: {
         Args: { p_from: string; p_to: string }

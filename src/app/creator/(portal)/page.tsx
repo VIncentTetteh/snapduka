@@ -4,16 +4,23 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Panel } from "@/components/ui/surface";
 import { PageHeader } from "@/components/ui/surface";
 import { resolveCreatorContext } from "@/lib/auth/actor";
-import {
-  calculateCreatorBalancesByCurrency,
-  formatRate,
-  type CreatorBalance,
-} from "@/lib/creators/commission";
+import { formatRate, type CreatorBalance } from "@/lib/creators/commission";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
 
 export const dynamic = "force-dynamic";
+
+/** One row of `creator_commission_balances()`. */
+type CreatorBalanceRow = {
+  currency: string;
+  pending_minor: number;
+  payable_minor: number;
+  paid_minor: number;
+  reversed_minor: number;
+  owed_now_minor: number;
+  carry_over_minor: number;
+};
 
 const TONE: Record<string, "success" | "warn" | "neutral" | "danger"> = {
   pending: "warn",
@@ -29,17 +36,20 @@ export default async function CreatorEarningsPage() {
   if (!creator) return null;
   const supabase = await createClient();
 
-  const [{ data: commissions }, { data: adjustments }, { data: payments }] = await Promise.all([
+  const [{ data: commissions }, { data: balanceRows }, { data: payments }] = await Promise.all([
+    // The 50 most recent, for the activity list below. This is a page of the
+    // ledger and must not be mistaken for the whole of it.
     supabase
       .from("creator_commissions")
       .select("id,status,amount_minor,basis_minor,rate_bps,currency,order_reference,order_placed_at,payable_at,shop_display_name,reversal_reason")
       .eq("creator_id", creator.creatorId)
       .order("order_placed_at", { ascending: false })
       .limit(50),
-    supabase
-      .from("creator_commission_adjustments")
-      .select("delta_minor,currency")
-      .eq("creator_id", creator.creatorId),
+    // The balance, over every commission and adjustment there is. It was
+    // previously computed from the same 50 rows as the list above, so a creator
+    // with 51 commissions was shown less than they were owed — and the more
+    // they sold, the further out it got.
+    supabase.rpc("creator_commission_balances", { p_creator_id: creator.creatorId }),
     supabase
       .from("creator_commission_payments")
       .select("id,reference,amount_minor,currency,method,marked_at,confirmed_at,disputed_at")
@@ -50,19 +60,22 @@ export default async function CreatorEarningsPage() {
 
   // Split by currency. A creator can partner with shops in different countries,
   // and summing that ledger into one figure added cedis to naira and labelled
-  // the result with whichever row sorted first.
-  const balances = calculateCreatorBalancesByCurrency({
-    commissions: (commissions ?? []).map((row) => ({
-      status: row.status as "pending" | "payable" | "paid" | "reversed" | "void",
-      amountMinor: row.amount_minor,
-      currency: row.currency as CurrencyCode,
-    })),
-    adjustments: (adjustments ?? []).map((row) => ({
-      deltaMinor: row.delta_minor,
-      currency: row.currency as CurrencyCode,
-    })),
-  });
-  const earned = Object.entries(balances) as [CurrencyCode, CreatorBalance][];
+  // the result with whichever row sorted first. The RPC groups by currency for
+  // the same reason.
+  const earned = ((balanceRows ?? []) as CreatorBalanceRow[]).map(
+    (row) =>
+      [
+        row.currency as CurrencyCode,
+        {
+          pendingMinor: row.pending_minor,
+          payableMinor: row.payable_minor,
+          paidMinor: row.paid_minor,
+          reversedMinor: row.reversed_minor,
+          owedNowMinor: row.owed_now_minor,
+          carryOverMinor: row.carry_over_minor,
+        },
+      ] as [CurrencyCode, CreatorBalance],
+  );
 
   return (
     <main className="sd-main">

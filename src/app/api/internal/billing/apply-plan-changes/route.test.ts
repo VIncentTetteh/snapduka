@@ -41,6 +41,34 @@ function makeUpdateChain(respond: () => Promise<UpdateResult>): UpdateChain {
   return chain;
 }
 
+type SelectResult = { data: unknown; error: unknown };
+
+/**
+ * Chainable and thenable, so a query can end at any link. The due-rows query
+ * ends after `.limit()`; `.eq().maybeSingle()` lookups keep their own shape.
+ */
+interface SelectChain {
+  lte: () => SelectChain;
+  gt: () => SelectChain;
+  order: () => SelectChain;
+  limit: () => SelectChain;
+  then: <TResult1 = SelectResult, TResult2 = never>(
+    onfulfilled?: ((value: SelectResult) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ) => Promise<TResult1 | TResult2>;
+}
+
+function makeSelectChain(respond: () => Promise<SelectResult>): SelectChain {
+  const chain: SelectChain = {
+    lte: () => chain,
+    gt: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    then: (onfulfilled, onrejected) => respond().then(onfulfilled, onrejected),
+  };
+  return chain;
+}
+
 /** A minimal chainable Supabase query-builder mock, table-keyed. */
 function adminMock(
   tables: Record<
@@ -60,11 +88,16 @@ function adminMock(
       const t = tables[table] ?? {};
       return {
         select: () => ({
-          // The cron now filters `.in("pending_change_type", [...])` so a
-          // pending UPGRADE — which waits on payment, not on a date — is never
-          // swept up and charged as if it were a scheduled downgrade.
-          in: () => ({ lte: () => Promise.resolve({ data: t.select }) }),
-          not: () => ({ lte: () => Promise.resolve({ data: t.select }) }),
+          // The cron filters `.in("pending_change_type", [...])` so a pending
+          // UPGRADE — which waits on payment, not on a date — is never swept up
+          // and charged as if it were a scheduled downgrade.
+          //
+          // The due-rows query is chainable and thenable to the end because it
+          // now pages: `.in().lte().order().limit()`, plus `.gt()` for the
+          // keyset cursor on later pages. Every fixture here is smaller than one
+          // page, so the route reads a short page and stops after one round.
+          in: () => makeSelectChain(() => Promise.resolve({ data: t.select, error: null })),
+          not: () => makeSelectChain(() => Promise.resolve({ data: t.select, error: null })),
           eq: () => ({ maybeSingle: () => Promise.resolve({ data: t.select }) }),
         }),
         update: (payload: unknown) => {
@@ -376,6 +409,102 @@ describe("POST /api/internal/billing/apply-plan-changes", () => {
       expect.anything(),
     );
     consoleErrorSpy.mockRestore();
+  });
+
+  /**
+   * The due-rows query had no order and no limit. PostgREST caps a response at
+   * db.max_rows = 1000 regardless of what the client asks for, so a backlog
+   * above the cap meant an arbitrary thousand rows were handled and the rest
+   * were skipped — on the loop that charges stored cards. A seller in the tail
+   * kept their old plan and went unbilled for as long as the backlog lasted.
+   *
+   * 250 due rows against a 200-row page: a single unpaged read handles 200,
+   * a paging one handles all 250.
+   */
+  it("pages through more due rows than fit in one response", async () => {
+    mocks.isInternalJobRequest.mockReturnValue(true);
+    const updateSpy = vi.fn();
+
+    const all = Array.from({ length: 250 }, (_, i) => ({
+      // Zero-padded so lexical id order matches the order the route pages in.
+      id: `sub-${String(i).padStart(3, "0")}`,
+      pending_change_type: "cancel",
+      pending_plan_id: null,
+      pending_plan_version: null,
+      pending_price_id: null,
+      provider_authorization_code: null,
+      provider_customer_code: null,
+      current_period_end: "2026-01-01T00:00:00.000Z",
+    }));
+
+    const pageSizes: number[] = [];
+    const pagedSelect = () => {
+      let cursor: string | null = null;
+      const chain = {
+        lte: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        gt: (_column: string, value: string) => {
+          cursor = value;
+          return chain;
+        },
+        then: (onfulfilled: (value: { data: unknown; error: unknown }) => unknown) => {
+          const after = cursor;
+          const remaining = after ? all.filter((row) => row.id > after) : all;
+          const page = remaining.slice(0, 200);
+          pageSizes.push(page.length);
+          return Promise.resolve(onfulfilled({ data: page, error: null }));
+        },
+      };
+      return chain;
+    };
+
+    mocks.createAdminClient.mockReturnValue({
+      from: () => ({
+        select: () => ({ in: pagedSelect, not: pagedSelect }),
+        update: (payload: unknown) => {
+          updateSpy(payload);
+          return makeUpdateChain(() => Promise.resolve({ data: null, error: null }));
+        },
+      }),
+    });
+
+    const response = await POST(request());
+    const body = await response.json();
+
+    expect(pageSizes).toEqual([200, 50]);
+    expect(body.applied).toBe(250);
+    expect(updateSpy).toHaveBeenCalledTimes(250);
+  });
+
+  it("surfaces a read failure instead of treating a broken query as an empty queue", async () => {
+    mocks.isInternalJobRequest.mockReturnValue(true);
+    const updateSpy = vi.fn();
+    const failing = () => {
+      const chain = {
+        lte: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        gt: () => chain,
+        then: (onfulfilled: (value: { data: unknown; error: unknown }) => unknown) =>
+          Promise.resolve(onfulfilled({ data: null, error: { message: "boom" } })),
+      };
+      return chain;
+    };
+    mocks.createAdminClient.mockReturnValue({
+      from: () => ({
+        select: () => ({ in: failing, not: failing }),
+        update: (payload: unknown) => {
+          updateSpy(payload);
+          return makeUpdateChain(() => Promise.resolve({ data: null, error: null }));
+        },
+      }),
+    });
+
+    const response = await POST(request());
+    expect(response.status).toBe(500);
+    // Nothing was charged or written off the back of a failed read.
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 
   it("re-invoking after a row was already applied is a no-op", async () => {
