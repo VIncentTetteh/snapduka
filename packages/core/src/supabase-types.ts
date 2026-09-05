@@ -2793,7 +2793,7 @@ export type Database = {
           created_at: string
           event_types: string[]
           id: string
-          secret_encrypted: string
+          secret_id: string | null
           seller_account_id: string
           url: string
         }
@@ -2802,7 +2802,7 @@ export type Database = {
           created_at?: string
           event_types: string[]
           id?: string
-          secret_encrypted: string
+          secret_id: string | null
           seller_account_id: string
           url: string
         }
@@ -2811,7 +2811,7 @@ export type Database = {
           created_at?: string
           event_types?: string[]
           id?: string
-          secret_encrypted?: string
+          secret_id?: string | null
           seller_account_id?: string
           url?: string
         }
@@ -5013,6 +5013,10 @@ export type Database = {
           reversed_minor: number
         }[]
       }
+      create_outbound_webhook: {
+        Args: { p_event_types: string[]; p_secret: string; p_url: string }
+        Returns: string
+      }
       current_creator_id: { Args: never; Returns: string }
       current_seller_account_id: { Args: never; Returns: string }
       current_seller_status: {
@@ -5267,6 +5271,10 @@ export type Database = {
           p_seller_account_id: string
         }
         Returns: boolean
+      }
+      webhook_signing_secret: {
+        Args: { p_webhook_id: string }
+        Returns: string
       }
       write_audit_event: {
         Args: {

@@ -63,12 +63,14 @@ export async function addWebhook(formData: FormData) {
   const eventTypes = formData.getAll("event").map(String).filter(Boolean);
   if (eventTypes.length === 0) fail("Choose at least one event to send.");
 
+  // Through create_outbound_webhook rather than a direct insert: the secret
+  // goes into Vault and never touches a column. Direct INSERT is revoked, so a
+  // webhook cannot be created without a secret and end up unsignable.
   const supabase = await createClient();
-  const { error } = await supabase.from("outbound_webhooks").insert({
-    seller_account_id: actor.sellerAccountId,
-    url,
-    secret_encrypted: secret,
-    event_types: eventTypes,
+  const { error } = await supabase.rpc("create_outbound_webhook", {
+    p_url: url,
+    p_event_types: eventTypes,
+    p_secret: secret,
   });
   if (error) fail("That webhook could not be saved.");
 
