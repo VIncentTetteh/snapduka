@@ -1,3 +1,4 @@
+import { ActionBanner } from "@/components/ui/action-banner";
 import { setCreatorStatusAction } from "@/app/admin/actions";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -31,7 +32,7 @@ const STATUS: Record<string, { label: string; tone: BadgeTone }> = {
 export default async function AdminCreatorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; error?: string; saved?: string }>;
 }) {
   const params = await searchParams;
   const admin = createAdminClient();
@@ -82,6 +83,8 @@ export default async function AdminCreatorsPage({
 
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
+      <ActionBanner error={params.error} saved={params.saved} />
+
       <PageHeader
         title="Creators"
         sub="Third parties earning commission from seller shops. Suspend only for abuse."

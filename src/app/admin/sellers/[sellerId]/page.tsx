@@ -1,3 +1,4 @@
+import { ActionBanner } from "@/components/ui/action-banner";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -22,10 +23,13 @@ const RISK_ACTIONS = [
 
 export default async function AdminSellerPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ sellerId: string }>;
+  searchParams: Promise<{ error?: string; saved?: string }>;
 }) {
   const { sellerId } = await params;
+  const params_ = await searchParams;
   const admin = createAdminClient();
   const [
     { data: seller },
@@ -76,6 +80,8 @@ export default async function AdminSellerPage({
 
   return (
     <main className="sd-main mx-auto max-w-[1080px] px-4 pt-6 sm:px-6">
+      <ActionBanner error={params_.error} saved={params_.saved} />
+
       <Link
         href="/admin/sellers"
         className="mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink-muted no-underline hover:text-ink"

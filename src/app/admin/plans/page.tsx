@@ -1,3 +1,4 @@
+import { ActionBanner } from "@/components/ui/action-banner";
 import {
   syncPlatformFeeAction,
   updatePlanPriceAction,
@@ -13,7 +14,12 @@ import type { CurrencyCode } from "@/lib/countries/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminPlansPage() {
+export default async function AdminPlansPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string }>;
+}) {
+  const params = await searchParams;
   const admin = createAdminClient();
   const [{ data: plans }, { data: prices }, { data: subscriptions }, { data: countries }, { data: subaccounts }] = await Promise.all([
     admin.from("plans").select("id,code,name,version,active").eq("active", true).order("code"),
@@ -55,6 +61,8 @@ export default async function AdminPlansPage() {
 
   return (
     <main className="sd-main mx-auto max-w-[1080px] px-4 pt-6 sm:px-6">
+      <ActionBanner error={params.error} saved={params.saved} />
+
       <PageHeader
         title="Plans & fees"
         sub="Per-market pricing. Every change requires a reason and is recorded in the audit log."

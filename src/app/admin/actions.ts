@@ -7,23 +7,99 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { canTransitionCase, type CaseState } from "@/lib/support/transitions";
 import { CASE_STATES, COUNTRIES, oneOf } from "@/lib/db/enums";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { paginate } from "@/lib/supabase/paginate";
 import { writeAuditEvent } from "@/lib/audit/write";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { feeBpsToPercent, validateFeePercent } from "@/lib/payments/platform-fee";
 
+/**
+ * Moving a support case, and with it a dispute on somebody's order.
+ *
+ * This was the only privileged action in the file with no audit event, and its
+ * three writes all discarded their errors — so a case could be marked resolved
+ * on screen while `orders.dispute_status` still said otherwise, with no record
+ * that an operator had touched it at all. It also refused in silence on four
+ * different conditions, including the one an operator meets in normal use:
+ * resolving a case without typing a resolution.
+ */
+function refuseCase(caseId: string, message: string): never {
+  const path = caseId ? `/admin/cases/${caseId}` : "/admin/cases";
+  redirect(`${path}?error=${encodeURIComponent(message)}`);
+}
+
 export async function resolveCaseAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator") return;
-  const caseId = String(formData.get("caseId"));
+  if (actor.kind !== "operator") redirect("/login?next=/admin/cases");
+
+  const caseId = String(formData.get("caseId") ?? "");
   const next = oneOf(String(formData.get("status")), CASE_STATES);
   const resolution = String(formData.get("resolution") ?? "").trim();
+
   const admin = createAdminClient();
-  const { data: current } = await admin.from("support_cases").select("status,order_id").eq("id",caseId).maybeSingle();
-  if (!next || !current || !canTransitionCase(current.status as CaseState, next) || (next === "resolved" && !resolution)) return;
-  await admin.from("support_cases").update({ status: next, resolution: resolution || null }).eq("id",caseId);
-  await admin.from("orders").update({ dispute_status: next }).eq("id",current.order_id);
-  await admin.from("case_messages").insert({ case_id: caseId, actor_type: "admin", actor_id: actor.userId, body: resolution || `Case moved to ${next}`, operator_only: false });
-  revalidatePath(`/admin/cases/${caseId}`); revalidatePath("/admin/cases");
+  const { data: current } = await admin
+    .from("support_cases")
+    .select("status,order_id")
+    .eq("id", caseId)
+    .maybeSingle();
+
+  if (!current) refuseCase(caseId, "That case could not be found.");
+  if (!next) refuseCase(caseId, "Choose a status to move the case to.");
+  if (!canTransitionCase(current.status as CaseState, next)) {
+    refuseCase(caseId, `A case cannot go from ${current.status} to ${next}.`);
+  }
+  if (next === "resolved" && !resolution) {
+    refuseCase(caseId, "Write what the resolution was before resolving the case.");
+  }
+
+  const { error: caseError } = await admin
+    .from("support_cases")
+    .update({ status: next, resolution: resolution || null })
+    .eq("id", caseId);
+  if (caseError) refuseCase(caseId, "That case could not be updated.");
+
+  // The order's dispute status is what the buyer and seller actually see. It
+  // silently not moving with the case is the divergence worth catching.
+  if (current.order_id) {
+    const { error: orderError } = await admin
+      .from("orders")
+      .update({ dispute_status: next })
+      .eq("id", current.order_id);
+    if (orderError) {
+      refuseCase(
+        caseId,
+        "The case moved but the order's dispute status did not. Check the order before continuing.",
+      );
+    }
+  }
+
+  const { error: messageError } = await admin.from("case_messages").insert({
+    case_id: caseId,
+    actor_type: "admin",
+    actor_id: actor.userId,
+    body: resolution || `Case moved to ${next}`,
+    operator_only: false,
+  });
+  if (messageError) {
+    console.error("[resolveCaseAction] case moved but the note was not recorded", {
+      caseId,
+      error: messageError,
+    });
+  }
+
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: `case_${next}`,
+    entityType: "support_case",
+    entityId: caseId,
+    before: { status: current.status },
+    after: { status: next, resolution: resolution || null },
+    metadata: { orderId: current.order_id },
+  });
+
+  revalidatePath(`/admin/cases/${caseId}`);
+  revalidatePath("/admin/cases");
+  redirect(`/admin/cases/${caseId}?saved=1`);
 }
 
 /**
@@ -109,13 +185,23 @@ export async function reviewPayoutAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
+/** Back to the seller the operator was working on, with a stated reason. */
+function refuseSellerAction(sellerId: string, message: string): never {
+  const path = sellerId ? `/admin/sellers/${sellerId}` : "/admin/sellers";
+  redirect(`${path}?error=${encodeURIComponent(message)}`);
+}
+
 export async function approveVerificationAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator") return;
-  const sellerId = String(formData.get("sellerId"));
+  if (actor.kind !== "operator") redirect("/login?next=/admin/sellers");
+  const sellerId = String(formData.get("sellerId") ?? "");
   const decision = oneOf(String(formData.get("decision")), ["verified", "rejected"] as const);
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!sellerId || !reason || !decision) return;
+  // Verification gates payouts, so an operator believing they had approved a
+  // seller who is still unverified is a real failure, not a cosmetic one.
+  if (!sellerId) refuseSellerAction(sellerId, "That seller could not be identified.");
+  if (!decision) refuseSellerAction(sellerId, "Choose whether to verify or reject.");
+  if (!reason) refuseSellerAction(sellerId, "Record why before deciding.");
 
   const admin = createAdminClient();
   const { data: seller } = await admin
@@ -123,12 +209,12 @@ export async function approveVerificationAction(formData: FormData) {
     .select("id")
     .eq("id", sellerId)
     .maybeSingle();
-  if (!seller) return;
+  if (!seller) refuseSellerAction(sellerId, "That seller account no longer exists.");
 
   const now = new Date().toISOString();
   // The verified state requires provider + provider_reference + checked_at
   // (seller_verifications_verified_fields_check).
-  await admin.from("seller_verifications").upsert(
+  const { error: verificationError } = await admin.from("seller_verifications").upsert(
     {
       seller_account_id: sellerId,
       state: decision,
@@ -140,6 +226,9 @@ export async function approveVerificationAction(formData: FormData) {
     },
     { onConflict: "seller_account_id" },
   );
+  if (verificationError) {
+    refuseSellerAction(sellerId, "That verification decision could not be saved.");
+  }
 
   await writeAuditEvent(admin, {
     actorType: "admin",
@@ -162,11 +251,15 @@ export async function approveVerificationAction(formData: FormData) {
  */
 export async function setDiscoveryRemovalAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator") return;
-  const sellerId = String(formData.get("sellerId"));
+  if (actor.kind !== "operator") redirect("/login?next=/admin/sellers");
+  const sellerId = String(formData.get("sellerId") ?? "");
   const decision = String(formData.get("decision"));
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!sellerId || !reason || !["remove", "restore"].includes(decision)) return;
+  if (!sellerId) refuseSellerAction(sellerId, "That seller could not be identified.");
+  if (!["remove", "restore"].includes(decision)) {
+    refuseSellerAction(sellerId, "Choose whether to remove or restore the listing.");
+  }
+  if (!reason) refuseSellerAction(sellerId, "Record why before changing the listing.");
 
   const admin = createAdminClient();
   const { data: preference } = await admin
@@ -174,12 +267,19 @@ export async function setDiscoveryRemovalAction(formData: FormData) {
     .select("shop_id,operator_removed_at")
     .eq("seller_account_id", sellerId)
     .maybeSingle();
-  if (!preference) return;
+  // A seller who never opted in has no row, so there is nothing to remove —
+  // which is worth saying, because it looks the same as a failed removal.
+  if (!preference) {
+    refuseSellerAction(sellerId, "This seller is not listed in discovery.");
+  }
 
-  await admin
+  const { error: removalError } = await admin
     .from("discovery_preferences")
     .update({ operator_removed_at: decision === "remove" ? new Date().toISOString() : null })
     .eq("seller_account_id", sellerId);
+  if (removalError) {
+    refuseSellerAction(sellerId, "That discovery change could not be saved.");
+  }
   await admin.rpc("refresh_discovery_listing", { p_shop_id: preference.shop_id });
 
   await writeAuditEvent(admin, {
@@ -199,32 +299,43 @@ export async function setDiscoveryRemovalAction(formData: FormData) {
 
 export async function addCaseMessageAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator") return;
-  const caseId = String(formData.get("caseId"));
+  if (actor.kind !== "operator") redirect("/login?next=/admin/cases");
+  const caseId = String(formData.get("caseId") ?? "");
   const body = String(formData.get("body") ?? "").trim();
   const operatorOnly = formData.get("operatorOnly") === "on";
-  if (!body) return;
+  if (!body) refuseCase(caseId, "Write a message before sending it.");
 
   const admin = createAdminClient();
-  await admin.from("case_messages").insert({
+  // A discarded error here loses a reply the operator believes they sent, and
+  // on a case that is visible to the buyer.
+  const { error } = await admin.from("case_messages").insert({
     case_id: caseId,
     actor_type: "admin",
     actor_id: actor.userId,
     body,
     operator_only: operatorOnly,
   });
+  if (error) refuseCase(caseId, "That message could not be sent.");
 
   revalidatePath(`/admin/cases/${caseId}`);
 }
 
+/** Back to the plans and fees screen with a stated reason. */
+function refusePlans(message: string): never {
+  redirect(`/admin/plans?error=${encodeURIComponent(message)}`);
+}
+
 export async function updatePlanPriceAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator") return;
+  if (actor.kind !== "operator") redirect("/login?next=/admin/plans");
   const priceId = String(formData.get("priceId"));
   const amountValue = String(formData.get("amountMinor") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
   const amountMinor = Number.parseInt(amountValue, 10);
-  if (!reason || !Number.isInteger(amountMinor) || amountMinor < 0) return;
+  if (!Number.isInteger(amountMinor) || amountMinor < 0) {
+    refusePlans("Enter the new price as a whole number of minor units.");
+  }
+  if (!reason) refusePlans("Record why this price is changing.");
 
   const admin = createAdminClient();
   const { data: price } = await admin
@@ -232,9 +343,18 @@ export async function updatePlanPriceAction(formData: FormData) {
     .select("id,plan_id,country,interval,amount_minor,currency")
     .eq("id", priceId)
     .maybeSingle();
-  if (!price || price.amount_minor === amountMinor) return;
+  if (!price) refusePlans("That price could not be found.");
+  // A no-op is worth saying out loud: otherwise the operator cannot tell it
+  // apart from a change that failed to save.
+  if (price.amount_minor === amountMinor) {
+    refusePlans("That price is already set to this amount.");
+  }
 
-  await admin.from("plan_prices").update({ amount_minor: amountMinor }).eq("id", priceId);
+  const { error: priceError } = await admin
+    .from("plan_prices")
+    .update({ amount_minor: amountMinor })
+    .eq("id", priceId);
+  if (priceError) refusePlans("That price could not be updated.");
 
   await writeAuditEvent(admin, {
     actorType: "admin",
@@ -248,6 +368,7 @@ export async function updatePlanPriceAction(formData: FormData) {
   });
 
   revalidatePath("/admin/plans");
+  redirect(`/admin/plans?saved=${encodeURIComponent("Price updated.")}`);
 }
 
 /**
@@ -265,13 +386,17 @@ export async function updatePlanPriceAction(formData: FormData) {
  */
 export async function updatePlatformFeeAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator") return;
+  if (actor.kind !== "operator") redirect("/login?next=/admin/plans");
   const country = oneOf(String(formData.get("country") ?? "").trim(), COUNTRIES);
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!reason || !country) return;
+  if (!country) refusePlans("Choose which market this fee applies to.");
+  if (!reason) refusePlans("Record why the platform fee is changing.");
 
+  // validateFeePercent already writes a precise message — "the lowest allowed
+  // fee is…", "enter a percentage, for example 7" — and it was being thrown
+  // away, leaving the operator with a form that simply did nothing.
   const validated = validateFeePercent(String(formData.get("feePercent") ?? ""));
-  if (!validated.ok) return;
+  if (!validated.ok) refusePlans(validated.error);
 
   const admin = createAdminClient();
   const { data: config } = await admin
@@ -279,13 +404,18 @@ export async function updatePlatformFeeAction(formData: FormData) {
     .select("country,platform_fee_bps")
     .eq("country", country)
     .maybeSingle();
-  if (!config || config.platform_fee_bps === validated.bps) return;
+  if (!config) refusePlans("That market is not configured.");
+  if (config.platform_fee_bps === validated.bps) {
+    refusePlans("The fee for that market is already set to this rate.");
+  }
 
+  // This is SnapDuka's share of every online sale in the market. An operator
+  // believing they had changed it when they had not is the failure to avoid.
   const { error } = await admin
     .from("country_configs")
     .update({ platform_fee_bps: validated.bps, updated_at: new Date().toISOString() })
     .eq("country", country);
-  if (error) return;
+  if (error) refusePlans("That fee could not be updated.");
 
   await writeAuditEvent(admin, {
     actorType: "admin",
@@ -310,9 +440,12 @@ export async function updatePlatformFeeAction(formData: FormData) {
  */
 export async function syncPlatformFeeAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator" || formData.get("confirm") !== "yes") return;
+  if (actor.kind !== "operator") redirect("/login?next=/admin/plans");
+  if (formData.get("confirm") !== "yes") {
+    refusePlans("Confirm the sync before running it.");
+  }
   const country = oneOf(String(formData.get("country") ?? "").trim(), COUNTRIES);
-  if (!country) return;
+  if (!country) refusePlans("Choose which market to sync.");
 
   const admin = createAdminClient();
   const { data: config } = await admin
@@ -320,25 +453,39 @@ export async function syncPlatformFeeAction(formData: FormData) {
     .select("platform_fee_bps")
     .eq("country", country)
     .maybeSingle();
-  if (!config) return;
+  if (!config) refusePlans("That market is not configured.");
 
-  const { data: sellers } = await admin
-    .from("seller_accounts")
-    .select("id")
-    .eq("country", country);
-  const sellerIds = (sellers ?? []).map((seller) => seller.id);
-  if (!sellerIds.length) return;
-
-  const { data: subaccounts } = await admin
-    .from("payment_subaccounts")
-    .select("id,provider_subaccount_code,percentage_charge_bps,seller_account_id")
-    .eq("provider", "paystack")
-    .in("seller_account_id", sellerIds)
-    .not("provider_subaccount_code", "is", null);
+  // Previously this read every seller in the market, mapped them to ids, and
+  // passed the lot to `.in(...)` — two unbounded reads feeding a filter whose
+  // URL grows with the seller count. Both were capped at db.max_rows, so in a
+  // market with more than a thousand sellers the sync would quietly cover only
+  // some of them and still report success. Filtering on the embedded seller
+  // and paging by id removes both problems.
+  const { rows: subaccounts, error: readError } = await paginate(
+    (cursor, size) => {
+      let page = admin
+        .from("payment_subaccounts")
+        .select(
+          "id,provider_subaccount_code,percentage_charge_bps,seller_account_id,seller_accounts!inner(country)",
+        )
+        .eq("provider", "paystack")
+        .eq("seller_accounts.country", country)
+        .not("provider_subaccount_code", "is", null)
+        .order("id", { ascending: true })
+        .limit(size);
+      if (cursor) page = page.gt("id", cursor);
+      return page;
+    },
+    (row) => row.id,
+  );
+  if (readError) refusePlans("The subaccounts for that market could not be read.");
+  if (subaccounts.length === 0) {
+    refusePlans("No Paystack subaccounts in that market need syncing.");
+  }
 
   let synced = 0;
   const failures: string[] = [];
-  for (const subaccount of subaccounts ?? []) {
+  for (const subaccount of subaccounts) {
     if (subaccount.percentage_charge_bps === config.platform_fee_bps) continue;
     try {
       const applied = await paystackProvider().updateSubaccount(
@@ -375,25 +522,113 @@ export async function syncPlatformFeeAction(formData: FormData) {
   });
 
   revalidatePath("/admin/plans");
+
+  // A partial sync is the normal outcome when Paystack rejects some updates,
+  // and it used to look identical to a clean run.
+  redirect(
+    failures.length > 0
+      ? `/admin/plans?error=${encodeURIComponent(
+          `Synced ${synced} subaccount${synced === 1 ? "" : "s"}; ${failures.length} could not be updated at Paystack.`,
+        )}`
+      : `/admin/plans?saved=${encodeURIComponent(`Synced ${synced} subaccount${synced === 1 ? "" : "s"}.`)}`,
+  );
 }
 
+const RISK_ACTIONS = [
+  "warning",
+  "require_verification",
+  "restrict_payments",
+  "suspend",
+  "remove",
+] as const;
+
+/**
+ * Enforcement against a seller — up to suspending or closing their account.
+ *
+ * Every refusal here was silent, and every write discarded its error. The
+ * dangerous shape was the combination: `risk_actions` records that enforcement
+ * happened, and the status change is what actually enforces it. If the second
+ * write failed, the log said the seller was suspended and the seller carried on
+ * trading, with nothing to reconcile the two.
+ */
 export async function applyRiskAction(formData: FormData) {
   const actor = await resolveServerActor();
-  if (actor.kind !== "operator" || formData.get("confirm") !== "yes") return;
-  const sellerId = String(formData.get("sellerId"));
+  if (actor.kind !== "operator") redirect("/login?next=/admin/sellers");
+
+  const sellerId = String(formData.get("sellerId") ?? "");
   const caseId = String(formData.get("caseId") ?? "") || null;
   const action = String(formData.get("riskAction"));
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!reason || !["warning","require_verification","restrict_payments","suspend","remove"].includes(action)) return;
+
+  if (formData.get("confirm") !== "yes") {
+    refuseSellerAction(sellerId, "Confirm before applying an enforcement action.");
+  }
+  if (!(RISK_ACTIONS as readonly string[]).includes(action)) {
+    refuseSellerAction(sellerId, "Choose which enforcement action to apply.");
+  }
+  if (!reason) refuseSellerAction(sellerId, "Record why before applying it.");
+
   const admin = createAdminClient();
-  const { data: seller } = await admin.from("seller_accounts").select("id").eq("id", sellerId).maybeSingle();
-  if (!seller) return;
-  await admin.from("risk_actions").insert({ seller_account_id: sellerId, case_id: caseId, operator_user_id: actor.userId, action, reason });
-  if (action === "restrict_payments") await admin.from("payment_subaccounts").update({ status: "restricted" }).eq("seller_account_id",sellerId);
-  if (action === "suspend") await admin.from("seller_accounts").update({ status: "suspended", is_active: false }).eq("id",sellerId);
-  if (action === "remove") await admin.from("seller_accounts").update({ status: "closed", is_active: false }).eq("id",sellerId);
-  await writeAuditEvent(admin, { actorType:"admin",actorId:actor.userId,action:`risk_${action}`,entityType:"seller_account",entityId:sellerId,before:null,after:{ action, reason },metadata:{ caseId } });
+  const { data: seller } = await admin
+    .from("seller_accounts")
+    .select("id")
+    .eq("id", sellerId)
+    .maybeSingle();
+  if (!seller) refuseSellerAction(sellerId, "That seller account no longer exists.");
+
+  const { error: recordError } = await admin.from("risk_actions").insert({
+    seller_account_id: sellerId,
+    case_id: caseId,
+    operator_user_id: actor.userId,
+    action,
+    reason,
+  });
+  if (recordError) {
+    refuseSellerAction(sellerId, "That enforcement action could not be recorded.");
+  }
+
+  // The record above says it happened; these are what make it so. A failure
+  // here has to be loud, because the two would otherwise disagree.
+  let enforcementError: unknown = null;
+  if (action === "restrict_payments") {
+    ({ error: enforcementError } = await admin
+      .from("payment_subaccounts")
+      .update({ status: "restricted" })
+      .eq("seller_account_id", sellerId));
+  } else if (action === "suspend") {
+    ({ error: enforcementError } = await admin
+      .from("seller_accounts")
+      .update({ status: "suspended", is_active: false })
+      .eq("id", sellerId));
+  } else if (action === "remove") {
+    ({ error: enforcementError } = await admin
+      .from("seller_accounts")
+      .update({ status: "closed", is_active: false })
+      .eq("id", sellerId));
+  }
+
+  await writeAuditEvent(admin, {
+    actorType: "admin",
+    actorId: actor.userId,
+    action: `risk_${action}`,
+    entityType: "seller_account",
+    entityId: sellerId,
+    before: null,
+    after: { action, reason, enforced: !enforcementError },
+    metadata: { caseId },
+  });
+
   revalidatePath(`/admin/sellers/${sellerId}`);
+
+  if (enforcementError) {
+    console.error("[applyRiskAction] recorded but not enforced", { sellerId, action, enforcementError });
+    refuseSellerAction(
+      sellerId,
+      "The action was recorded but could not be applied to the account. The seller is still trading — try again.",
+    );
+  }
+
+  redirect(`/admin/sellers/${sellerId}?saved=${encodeURIComponent(`Applied: ${action.replace(/_/g, " ")}.`)}`);
 }
 
 /**
@@ -412,7 +647,12 @@ export async function setCreatorStatusAction(formData: FormData) {
   const creatorId = String(formData.get("creatorId"));
   const status = oneOf(String(formData.get("status")), ["active", "suspended"] as const);
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!reason || !status) return;
+  // Explicitly typed `never` so TypeScript treats it as never-returning and
+  // narrows the lookups below it.
+  const refuse: (message: string) => never = (message) =>
+    redirect(`/admin/creators?error=${encodeURIComponent(message)}`);
+  if (!status) refuse("Choose whether to suspend or reinstate.");
+  if (!reason) refuse("Record why before changing a creator's status.");
 
   const admin = createAdminClient();
   const { data: creator } = await admin
@@ -420,9 +660,15 @@ export async function setCreatorStatusAction(formData: FormData) {
     .select("id,status,handle")
     .eq("id", creatorId)
     .maybeSingle();
-  if (!creator || creator.status === status) return;
+  if (!creator) refuse("That creator could not be found.");
+  // Worth saying rather than doing nothing: suspending an already-suspended
+  // creator looks the same as a failed suspension.
+  if (creator.status === status) {
+    refuse(`@${creator.handle} is already ${status}.`);
+  }
 
-  await admin.from("creators").update({ status }).eq("id", creatorId);
+  const { error } = await admin.from("creators").update({ status }).eq("id", creatorId);
+  if (error) refuse("That status change could not be saved.");
 
   await writeAuditEvent(admin, {
     actorType: "admin",
@@ -436,4 +682,9 @@ export async function setCreatorStatusAction(formData: FormData) {
   });
 
   revalidatePath("/admin/creators");
+  redirect(
+    `/admin/creators?saved=${encodeURIComponent(
+      `@${creator.handle} ${status === "suspended" ? "suspended" : "reinstated"}.`,
+    )}`,
+  );
 }
