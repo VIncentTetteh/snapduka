@@ -4,6 +4,7 @@ import { oneOf, PRODUCT_STATUSES } from "@/lib/db/enums";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { toCsv } from "@/lib/exports/csv";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { paginate } from "@/lib/supabase/paginate";
 
 export async function GET(request: Request) {
   const actor = await resolveServerActor();
@@ -12,26 +13,40 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const admin = createAdminClient();
 
-  let query = admin
-    .from("products")
-    .select(
-      "id,name,sku,currency,price_minor,status,moderation_status,stock_quantity,reserved_quantity,seller_account_id,created_at",
-    )
-    .order("created_at", { ascending: false })
-    .limit(5000);
-
   const status = oneOf(url.searchParams.get("status"), PRODUCT_STATUSES);
-  if (status) query = query.eq("status", status);
   const moderation = url.searchParams.get("moderation");
-  if (moderation) query = query.eq("moderation_status", moderation);
   const q = url.searchParams.get("q")?.trim();
-  if (q) {
-    const safeQuery = q.slice(0, 100).replace(/[%,()]/g, "");
-    query = query.or(`name.ilike.%${safeQuery}%,sku.ilike.%${safeQuery}%`);
-  }
 
-  const { data, error } = await query;
+  // `.limit(5000)` was capped at 1000 by db.max_rows, so this file stopped a
+  // fifth of the way in and looked complete — on a platform-wide catalogue
+  // export an operator would reasonably treat as the full picture.
+  //
+  // Paged by id and sorted newest-first afterwards: a created_at cursor would
+  // need a composite key to be safe, since timestamps are not unique.
+  const { rows: data, error, truncated } = await paginate(
+    (cursor, size) => {
+      let page = admin
+        .from("products")
+        .select(
+          "id,name,sku,currency,price_minor,status,moderation_status,stock_quantity,reserved_quantity,seller_account_id,created_at",
+        )
+        .order("id", { ascending: true })
+        .limit(size);
+      if (status) page = page.eq("status", status);
+      if (moderation) page = page.eq("moderation_status", moderation);
+      if (q) {
+        const safeQuery = q.slice(0, 100).replace(/[%,()]/g, "");
+        page = page.or(`name.ilike.%${safeQuery}%,sku.ilike.%${safeQuery}%`);
+      }
+      if (cursor) page = page.gt("id", cursor);
+      return page;
+    },
+    (row) => row.id,
+    { pageSize: 500, maxRows: 50_000 },
+  );
   if (error) return NextResponse.json({ error: "Export failed." }, { status: 500 });
+
+  data.sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
 
   const headers = [
     "id",
@@ -52,6 +67,8 @@ export async function GET(request: Request) {
     headers: {
       "content-type": "text/csv; charset=utf-8",
       "content-disposition": `attachment; filename="snapduka-products.csv"`,
+      // Only past 50,000 products. Stated rather than hidden.
+      ...(truncated ? { "x-snapduka-truncated": "true" } : {}),
     },
   });
 }

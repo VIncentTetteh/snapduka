@@ -36,21 +36,26 @@ export default async function AdminSellersPage({
     query = query.or(`contact_name.ilike.%${safeQuery}%,contact_email.ilike.%${safeQuery}%`);
   }
 
-  const [{ data: sellers }, { data: paidOrders }, { data: riskActions }] = await Promise.all([
+  // Aggregated in SQL. These two queries were platform-wide and unbounded —
+  // every paid order and every risk action, summed here — so they were the
+  // first in the app to cross db.max_rows and the hardest place to notice it:
+  // there is no per-seller figure to check platform GMV against, so it would
+  // simply have stopped growing.
+  const [{ data: sellers }, { data: orderTotals }, { data: flagged }] = await Promise.all([
     query,
-    admin.from("orders").select("seller_account_id,total_minor,currency").eq("payment_status", "paid"),
-    admin.from("risk_actions").select("seller_account_id"),
+    admin.rpc("admin_seller_order_totals"),
+    admin.rpc("admin_flagged_sellers"),
   ]);
 
-  const gmvBySeller = (paidOrders ?? []).reduce<Record<string, { total: number; currency: string }>>(
-    (acc, order) => {
-      const entry = (acc[order.seller_account_id] ??= { total: 0, currency: order.currency });
-      entry.total += order.total_minor;
+  const gmvBySeller = (orderTotals ?? []).reduce<Record<string, { total: number; currency: string }>>(
+    (acc, row) => {
+      const entry = (acc[row.seller_account_id] ??= { total: 0, currency: row.currency });
+      entry.total += Number(row.gmv_minor);
       return acc;
     },
     {},
   );
-  const riskFlagged = new Set((riskActions ?? []).map((action) => action.seller_account_id));
+  const riskFlagged = new Set((flagged ?? []).map((row) => row.seller_account_id));
 
   return (
     <main className="sd-main mx-auto max-w-[1080px] px-4 pt-6 sm:px-6">

@@ -5,6 +5,9 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAnalyticsSummary } from "@/lib/analytics/summary";
 
+/** The dashboards report all time. */
+const EPOCH = "1970-01-01T00:00:00Z";
+
 export default async function InsightsPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
@@ -13,9 +16,15 @@ export default async function InsightsPage() {
   // They used to be derived in JavaScript from every order row for the seller —
   // an unbounded select, so past db.max_rows the denominators quietly stopped
   // growing and every rate on this page drifted.
-  const [summary, { data: lines }] = await Promise.all([
+  //
+  // Top products had exactly the same bug, directly beneath that comment: it
+  // pulled every order line the seller had ever sold and tallied them here, so
+  // the ranking was computed from whatever thousand rows came back. Now ordered
+  // and limited in SQL, so the answer is exact and the response is bounded by
+  // the ten rows actually displayed.
+  const [summary, { data: topProducts }] = await Promise.all([
     fetchAnalyticsSummary(),
-    supabase.from("order_lines").select("product_name,quantity,line_total_minor,orders!inner(seller_account_id)").eq("orders.seller_account_id", actor.sellerAccountId),
+    supabase.rpc("seller_top_products", { p_from: EPOCH, p_to: new Date().toISOString(), p_limit: 10 }),
   ]);
   const rate = (part: number, whole: number) => (whole > 0 ? part / whole : 0);
   const metrics = {
@@ -27,8 +36,6 @@ export default async function InsightsPage() {
     averageOrderMinor: Math.round(rate(summary.paidTotalMinor, summary.paidOrders)),
     repeatBuyerRate: rate(summary.repeatBuyers, summary.distinctBuyers),
   };
-  const top = new Map<string, number>();
-  for (const line of lines ?? []) top.set(line.product_name, (top.get(line.product_name) ?? 0) + line.quantity);
 
   return (
     <main className="mx-auto grid w-full max-w-4xl gap-5 px-3 py-5 pb-16">
@@ -48,10 +55,10 @@ export default async function InsightsPage() {
       <section className="card">
         <h2 className="m-0 mb-3 text-lg font-extrabold" style={{ color: "var(--ink)" }}>Top products</h2>
         <div className="grid gap-2">
-          {[...top.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => (
-            <div className="flex items-center justify-between text-sm" key={name}>
-              <span style={{ color: "var(--ink)" }}>{name}</span>
-              <span className="badge badge-green">{count} sold</span>
+          {(topProducts ?? []).map((product) => (
+            <div className="flex items-center justify-between text-sm" key={product.product_id}>
+              <span style={{ color: "var(--ink)" }}>{product.product_name}</span>
+              <span className="badge badge-green">{Number(product.units_sold)} sold</span>
             </div>
           ))}
         </div>

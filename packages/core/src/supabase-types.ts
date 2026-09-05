@@ -4848,6 +4848,41 @@ export type Database = {
         }
         Returns: boolean
       }
+      admin_creator_totals: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          creator_id: string
+          currency: Database["public"]["Enums"]["currency_code"]
+          earned_minor: number
+          paid_minor: number
+          partnerships: number
+        }[]
+      }
+      admin_flagged_sellers: {
+        Args: Record<PropertyKey, never>
+        Returns: { actions: number; seller_account_id: string }[]
+      }
+      admin_plan_subscription_counts: {
+        Args: Record<PropertyKey, never>
+        Returns: { plan_id: string; subscriptions: number }[]
+      }
+      admin_seller_order_totals: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          currency: Database["public"]["Enums"]["currency_code"]
+          gmv_minor: number
+          paid_orders: number
+          seller_account_id: string
+        }[]
+      }
+      admin_subaccount_fee_drift: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          country: Database["public"]["Enums"]["country_code"]
+          stale: number
+          total: number
+        }[]
+      }
       apply_paystack_refund_event: {
         Args: {
           p_event_key: string
@@ -5163,6 +5198,17 @@ export type Database = {
           visits: number
         }[]
       }
+      seller_creator_commission_totals: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          creator_id: string
+          currency: Database["public"]["Enums"]["currency_code"]
+          paid_minor: number
+          payable_minor: number
+          pending_minor: number
+          reversed_minor: number
+        }[]
+      }
       seller_payout_destination: {
         Args: { p_seller_account_id: string }
         Returns: {
@@ -5180,6 +5226,26 @@ export type Database = {
           product_id: string
           product_name: string
           profit_minor: number
+          revenue_minor: number
+          units_sold: number
+        }[]
+      }
+      seller_product_profit_for: {
+        Args: { p_from: string; p_product_id: string; p_to: string }
+        Returns: {
+          cost_minor: number
+          product_id: string
+          product_name: string
+          profit_minor: number
+          revenue_minor: number
+          units_sold: number
+        }[]
+      }
+      seller_top_products: {
+        Args: { p_from: string; p_limit?: number; p_to: string }
+        Returns: {
+          product_id: string
+          product_name: string
           revenue_minor: number
           units_sold: number
         }[]

@@ -9,6 +9,7 @@ import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
+import { fetchAnalyticsSummary } from "@/lib/analytics/summary";
 import type { CurrencyCode } from "@/lib/countries/types";
 
 function isoDaysAgo(days: number): string {
@@ -24,10 +25,14 @@ export default async function DashboardPage() {
   const [
     { data: shop },
     { data: recentOrders },
-    { data: paidOrders },
+    // Revenue, paid-order count, visits and repeat buyers for the window, all
+    // from one aggregate. This used to pull every paid order of the last 30 days
+    // and sum them in JavaScript, which PostgREST caps at db.max_rows = 1000 —
+    // so a seller taking more than a thousand paid orders a month was shown
+    // revenue and a conversion rate that had quietly stopped growing.
+    summary,
     { count: unfulfilledCount },
     { count: customerCount },
-    { count: visitCount },
     { data: lowStock },
     { count: productCount },
   ] = await Promise.all([
@@ -42,12 +47,7 @@ export default async function DashboardPage() {
       .eq("seller_account_id", actor.sellerAccountId)
       .order("created_at", { ascending: false })
       .limit(5),
-    supabase
-      .from("orders")
-      .select("total_minor,currency,customer_id")
-      .eq("seller_account_id", actor.sellerAccountId)
-      .eq("payment_status", "paid")
-      .gte("created_at", since30d),
+    fetchAnalyticsSummary(since30d),
     supabase
       .from("orders")
       .select("id", { count: "exact", head: true })
@@ -57,12 +57,6 @@ export default async function DashboardPage() {
       .from("customers")
       .select("id", { count: "exact", head: true })
       .eq("seller_account_id", actor.sellerAccountId),
-    supabase
-      .from("analytics_events")
-      .select("id", { count: "exact", head: true })
-      .eq("seller_account_id", actor.sellerAccountId)
-      .eq("event_type", "visit")
-      .gte("created_at", since30d),
     supabase
       .from("products")
       .select("id,name,stock_quantity,reserved_quantity")
@@ -79,18 +73,11 @@ export default async function DashboardPage() {
   ]);
 
   const currency = (shop?.currency ?? "GHS") as CurrencyCode;
-  const revenue30d = paidOrders?.reduce((sum, order) => sum + order.total_minor, 0) ?? 0;
-  const paidCount = paidOrders?.length ?? 0;
-  const visits = visitCount ?? 0;
+  const revenue30d = summary.paidTotalMinor;
+  const paidCount = summary.paidOrders;
+  const visits = summary.visits;
   const conversion = visits > 0 ? ((paidCount / visits) * 100).toFixed(1) : null;
-  const repeatBuyers = paidOrders
-    ? Object.values(
-        paidOrders.reduce<Record<string, number>>((acc, order) => {
-          if (order.customer_id) acc[order.customer_id] = (acc[order.customer_id] ?? 0) + 1;
-          return acc;
-        }, {}),
-      ).filter((count) => count > 1).length
-    : 0;
+  const repeatBuyers = summary.repeatBuyers;
   const lowStockItems = (lowStock ?? []).filter(
     (product) => (product.stock_quantity ?? 0) - (product.reserved_quantity ?? 0) <= 4,
   );

@@ -6,11 +6,13 @@ import { ProductMediaManager } from "@/components/seller/product-media-manager";
 import { Req } from "@/components/ui/required-mark";
 import { FormActionButton, SubmitButton } from "@/components/ui/submit-button";
 import { MetricTile } from "@/components/ui/metric-tile";
-import { productProfitSummaries } from "@/lib/analytics/advanced";
 import { resolveServerActor } from "@/lib/auth/actor";
 import type { CurrencyCode } from "@/lib/countries/types";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
+
+/** This page reports all time. */
+const EPOCH = "1970-01-01T00:00:00Z";
 
 export default async function EditProductPage({ params }: { params: Promise<{ productId: string }> }) {
   const actor = await resolveServerActor();
@@ -20,21 +22,26 @@ export default async function EditProductPage({ params }: { params: Promise<{ pr
   const { data: product } = await supabase.from("products").select("id,name,description,currency,price_minor,cost_minor,compare_at_price_minor,sku,status,inventory_policy,stock_quantity,reserved_quantity,video_url,product_media(id,object_path,position),product_variants(id,name,sku,price_minor,inventory_policy,stock_quantity,reserved_quantity,active)").eq("id", productId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
   if (!product) notFound();
 
-  const { data: orderLines } = await supabase
-    .from("order_lines")
-    .select("product_id,product_name,quantity,line_total_minor,unit_cost_minor,orders!inner(seller_account_id,payment_status)")
-    .eq("product_id", productId)
-    .eq("orders.seller_account_id", actor.sellerAccountId)
-    .eq("orders.payment_status", "paid");
-  const [profit] = productProfitSummaries(
-    (orderLines ?? []).map((line) => ({
-      productId: line.product_id,
-      productName: line.product_name,
-      quantity: line.quantity,
-      lineTotalMinor: line.line_total_minor,
-      unitCostMinor: line.unit_cost_minor,
-    })),
-  );
+  // Aggregated in SQL. This pulled every paid line for the product to produce a
+  // single row, so a best-seller past db.max_rows had its units, revenue and
+  // margin computed from a truncated set — the products that sell most being
+  // exactly the ones to get this wrong on.
+  const { data: profitRows } = await supabase.rpc("seller_product_profit_for", {
+    p_product_id: productId,
+    p_from: EPOCH,
+    p_to: new Date().toISOString(),
+  });
+  const profitRow = profitRows?.[0];
+  const profit = profitRow
+    ? {
+        unitsSold: Number(profitRow.units_sold),
+        revenueMinor: Number(profitRow.revenue_minor),
+        // Null rather than zero when a cost was never entered: unknown profit
+        // is not the same as no profit.
+        costMinor: profitRow.cost_minor == null ? null : Number(profitRow.cost_minor),
+        profitMinor: profitRow.profit_minor == null ? null : Number(profitRow.profit_minor),
+      }
+    : undefined;
 
   return (
     <main className="mx-auto grid w-full max-w-3xl gap-5 px-3 py-5 pb-24">

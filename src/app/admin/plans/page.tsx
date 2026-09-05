@@ -22,28 +22,26 @@ export default async function AdminPlansPage() {
       .select("id,plan_id,country,currency,interval,amount_minor,active")
       .eq("active", true)
       .order("country"),
-    admin.from("seller_subscriptions").select("plan_id"),
+    // Counted in SQL: this pulled one row per subscription on the platform to
+    // produce a count per plan.
+    admin.rpc("admin_plan_subscription_counts"),
     admin.from("country_configs").select("country,currency,platform_fee_bps").order("country"),
-    admin
-      .from("payment_subaccounts")
-      .select("percentage_charge_bps,seller_account_id,seller_accounts!inner(country)")
-      .eq("provider", "paystack")
-      .eq("status", "active"),
+    // Likewise: every active Paystack subaccount was fetched to count how many
+    // carry a stale fee. Whether an operator sees "nobody is on the new fee
+    // yet" cannot depend on how many subaccounts exist.
+    admin.rpc("admin_subaccount_fee_drift"),
   ]);
 
   // A fee change only reaches sellers who onboard afterwards — Paystack holds
-  // percentage_charge on the subaccount. Counting the drift here is what makes
-  // "you changed the number but nobody is on it yet" visible.
+  // percentage_charge on the subaccount. Counting the drift is what makes "you
+  // changed the number but nobody is on it yet" visible; admin_subaccount_fee_drift
+  // does the join and the comparison in SQL.
   const driftByCountry = (countries ?? []).reduce<Record<string, { total: number; stale: number }>>(
     (acc, config) => {
-      const mine = (subaccounts ?? []).filter((row) => {
-        const seller = row.seller_accounts as unknown as { country?: string } | { country?: string }[];
-        const country = Array.isArray(seller) ? seller[0]?.country : seller?.country;
-        return country === config.country;
-      });
+      const row = (subaccounts ?? []).find((entry) => entry.country === config.country);
       acc[config.country] = {
-        total: mine.length,
-        stale: mine.filter((row) => row.percentage_charge_bps !== config.platform_fee_bps).length,
+        total: Number(row?.total ?? 0),
+        stale: Number(row?.stale ?? 0),
       };
       return acc;
     },
@@ -51,7 +49,7 @@ export default async function AdminPlansPage() {
   );
 
   const sellersByPlan = (subscriptions ?? []).reduce<Record<string, number>>((acc, sub) => {
-    acc[sub.plan_id] = (acc[sub.plan_id] ?? 0) + 1;
+    acc[sub.plan_id] = (acc[sub.plan_id] ?? 0) + Number(sub.subscriptions);
     return acc;
   }, {});
 

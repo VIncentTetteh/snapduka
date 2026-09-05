@@ -8,6 +8,7 @@ import { ProductStatusToggle } from "@/components/seller/product-status-toggle";
 import { EmptyState } from "@/components/ui/empty-state";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { mainImageUrl } from "@/lib/storefront/media";
+import { Pager, parsePage } from "@/components/ui/pager";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { formatMoney } from "@/lib/i18n";
@@ -16,19 +17,41 @@ import type { CurrencyCode } from "@/lib/countries/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProductsPage() {
+/**
+ * The catalogue is paged. It used to select every product with no bound, so
+ * PostgREST capped the response at db.max_rows = 1000 — and with the Scale plan
+ * allowing 5,000 products, a seller could have four thousand of them simply
+ * missing from their own catalogue with nothing on screen to say so.
+ */
+const PAGE_SIZE = 60;
+
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") redirect("/login?next=/dashboard/products");
 
+  const page = parsePage((await searchParams).page);
+  const from = (page - 1) * PAGE_SIZE;
+
   const supabase = await createClient();
-  const [{ data: shop }, { data: products, error }] = await Promise.all([
+  // One row more than is displayed, purely to know whether a next page exists —
+  // cheaper than a second exact count on every render.
+  const [{ data: shop }, { data: rows, error }] = await Promise.all([
     supabase.from("shops").select("currency").eq("seller_account_id", actor.sellerAccountId).single(),
     supabase
       .from("products")
       .select("id,name,currency,price_minor,compare_at_price_minor,status,inventory_policy,stock_quantity,reserved_quantity,product_media(object_path,position)")
       .eq("seller_account_id", actor.sellerAccountId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + PAGE_SIZE),
   ]);
+
+  const hasNext = (rows?.length ?? 0) > PAGE_SIZE;
+  const products = rows?.slice(0, PAGE_SIZE);
 
   if (!shop) redirect("/onboarding");
 
@@ -62,7 +85,11 @@ export default async function ProductsPage() {
           <div className="flex items-center justify-between gap-3 border-b border-line-soft bg-raised/60 px-4.5 py-3">
             <div>
               <h2 className="text-[13.5px] font-bold text-ink">All products</h2>
-              <p className="mt-0.5 text-[11.5px] text-ink-muted">{products.length} {products.length === 1 ? "item" : "items"} in your catalogue</p>
+              <p className="mt-0.5 text-[11.5px] text-ink-muted">
+                {page > 1 || hasNext
+                  ? `Showing ${from + 1}–${from + products.length}`
+                  : `${products.length} ${products.length === 1 ? "item" : "items"} in your catalogue`}
+              </p>
             </div>
             <span className="text-[11.5px] font-semibold text-ink-muted">Select a product to edit</span>
           </div>
@@ -162,6 +189,8 @@ export default async function ProductsPage() {
           })}
         </Panel>
       ) : null}
+
+      <Pager basePath="/dashboard/products" hasNext={hasNext} page={page} />
     </main>
   );
 }

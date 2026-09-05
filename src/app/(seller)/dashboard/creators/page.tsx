@@ -8,7 +8,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planAllows, planLimit } from "@/lib/billing/resolve";
-import { calculateCreatorBalance, formatRate } from "@/lib/creators/commission";
+import { formatRate } from "@/lib/creators/commission";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
@@ -50,17 +50,27 @@ export default async function CreatorsPage({
       .is("accepted_at", null)
       .is("revoked_at", null)
       .gt("expires_at", new Date().toISOString()),
-    supabase
-      .from("creator_commissions")
-      .select("creator_id,status,amount_minor,currency")
-      .eq("seller_account_id", actor.sellerAccountId),
+    // Totalled in SQL. This pulled the seller's entire commission ledger to
+    // build a per-creator balance and an "owed now" figure, so past
+    // db.max_rows both understated what the seller owes — and understating a
+    // debt to a creator is the direction that causes an argument.
+    supabase.rpc("seller_creator_commission_totals"),
   ]);
 
-  const ledgerByCreator = new Map<string, { status: string; amountMinor: number; currency: string }[]>();
-  for (const row of commissions ?? []) {
-    const list = ledgerByCreator.get(row.creator_id) ?? [];
-    list.push({ status: row.status, amountMinor: row.amount_minor, currency: row.currency });
-    ledgerByCreator.set(row.creator_id, list);
+  type CommissionTotals = {
+    creator_id: string;
+    currency: string;
+    pending_minor: number;
+    payable_minor: number;
+    paid_minor: number;
+    reversed_minor: number;
+  };
+
+  const totalsByCreator = new Map<string, CommissionTotals[]>();
+  for (const row of (commissions ?? []) as CommissionTotals[]) {
+    const list = totalsByCreator.get(row.creator_id) ?? [];
+    list.push(row);
+    totalsByCreator.set(row.creator_id, list);
   }
 
   const limit = planLimit(plan, "creatorPartnerships");
@@ -69,10 +79,13 @@ export default async function CreatorsPage({
   const usedSeats =
     (partnerships ?? []).filter((partnership) => ["invited", "active", "paused"].includes(partnership.status)).length +
     pendingInvites;
-  const owedNow = (commissions ?? [])
-    .filter((commission) => commission.status === "payable")
-    .reduce((total, commission) => total + commission.amount_minor, 0);
-  const programmeCurrency = ((partnerships ?? [])[0]?.currency ?? (commissions ?? [])[0]?.currency ?? "GHS") as CurrencyCode;
+  const owedNow = ((commissions ?? []) as CommissionTotals[]).reduce(
+    (total, row) => total + Number(row.payable_minor),
+    0,
+  );
+  const programmeCurrency = ((partnerships ?? [])[0]?.currency ??
+    ((commissions ?? []) as CommissionTotals[])[0]?.currency ??
+    "GHS") as CurrencyCode;
 
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
@@ -168,14 +181,18 @@ export default async function CreatorsPage({
                   </div>
                   {(partnerships ?? []).map((partnership) => {
                     const creator = partnership.creators as unknown as { display_name: string; handle: string } | null;
-                    const ledger = ledgerByCreator.get(partnership.creator_id) ?? [];
-                    const balance = calculateCreatorBalance({
-                      commissions: ledger.map((row) => ({
-                        status: row.status as "pending" | "payable" | "paid" | "reversed" | "void",
-                        amountMinor: row.amountMinor,
-                      })),
-                    });
                     const currency = (partnership.currency ?? "GHS") as CurrencyCode;
+                    // One row per currency, and only the partnership's own is
+                    // shown — adding another currency's minor units into this
+                    // figure is the mistake calculateCreatorBalancesByCurrency
+                    // exists to prevent.
+                    const totals = (totalsByCreator.get(partnership.creator_id) ?? []).find(
+                      (row) => row.currency === currency,
+                    );
+                    // No adjustments in this roll-up, so what is owed is simply
+                    // what is payable — matching calculateCreatorBalance, which
+                    // floors at zero.
+                    const owedMinor = Math.max(0, Number(totals?.payable_minor ?? 0));
                     return (
                       <Link
                         key={partnership.id}
@@ -193,7 +210,7 @@ export default async function CreatorsPage({
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
                           <span className="text-right">
-                            <span className="block text-[13px] font-bold text-ink">{formatMoney(balance.owedNowMinor, currency)}</span>
+                            <span className="block text-[13px] font-bold text-ink">{formatMoney(owedMinor, currency)}</span>
                             <span className="block text-[10.5px] text-ink-muted">ready to pay</span>
                           </span>
                           <Badge tone={STATUS_TONE[partnership.status] ?? "neutral"}>{partnership.status}</Badge>

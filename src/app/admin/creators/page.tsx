@@ -36,15 +36,17 @@ export default async function AdminCreatorsPage({
   const params = await searchParams;
   const admin = createAdminClient();
 
-  const [{ data: creators }, { data: partnerships }, { data: commissions }, { data: payments }] =
+  const [{ data: creators }, { data: creatorTotals }, { data: payments }] =
     await Promise.all([
       admin
         .from("creators")
         .select("id,handle,display_name,country,status,contact_phone,created_at")
         .order("created_at", { ascending: false })
         .limit(200),
-      admin.from("creator_partnerships").select("creator_id,status,rate_bps"),
-      admin.from("creator_commissions").select("creator_id,status,amount_minor,currency"),
+      // Aggregated in SQL. Both were platform-wide and unbounded: every
+      // partnership and every commission ever accrued, tallied here, so past
+      // db.max_rows a creator's earnings would silently stop rising.
+      admin.rpc("admin_creator_totals"),
       admin
         .from("creator_commission_payments")
         .select("id,creator_id,amount_minor,currency,marked_at,disputed_at,dispute_note")
@@ -60,12 +62,14 @@ export default async function AdminCreatorsPage({
     byCreator.get(id) ??
     byCreator.set(id, { partnerships: 0, earnedMinor: 0, paidMinor: 0, disputes: 0, currency: "GHS" }).get(id)!;
 
-  for (const row of partnerships ?? []) bump(row.creator_id).partnerships += 1;
-  for (const row of commissions ?? []) {
+  for (const row of creatorTotals ?? []) {
     const entry = bump(row.creator_id);
-    entry.currency = row.currency as CurrencyCode;
-    if (row.status !== "reversed" && row.status !== "void") entry.earnedMinor += row.amount_minor;
-    if (row.status === "paid") entry.paidMinor += row.amount_minor;
+    entry.partnerships = Number(row.partnerships);
+    // A creator with no commissions yet has no currency; keep the default
+    // rather than writing null into a formatted money field.
+    if (row.currency) entry.currency = row.currency as CurrencyCode;
+    entry.earnedMinor += Number(row.earned_minor);
+    entry.paidMinor += Number(row.paid_minor);
   }
   for (const row of payments ?? []) bump(row.creator_id).disputes += 1;
 

@@ -1,31 +1,38 @@
-import { productProfitSummaries } from "@/lib/analytics/advanced";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
 
+/** This page reports all time. */
+const EPOCH = "1970-01-01T00:00:00Z";
+
 export default async function ProfitPage() {
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [{ data: shop }, { data: orderLines }] = await Promise.all([
+  // Aggregated by seller_product_profit, which has existed since 202608070069
+  // and which only the mobile app ever used. The web page pulled every paid
+  // order line the seller had ever sold and grouped them in JavaScript, so past
+  // db.max_rows every revenue, cost and margin figure here was computed from a
+  // truncated set. The RPC orders by revenue, so what survives the response cap
+  // is the products that matter rather than an arbitrary thousand.
+  const [{ data: shop }, { data: rows }] = await Promise.all([
     supabase.from("shops").select("currency").eq("seller_account_id", actor.sellerAccountId).single(),
-    supabase
-      .from("order_lines")
-      .select("product_id,product_name,quantity,line_total_minor,unit_cost_minor,orders!inner(seller_account_id,payment_status)")
-      .eq("orders.seller_account_id", actor.sellerAccountId)
-      .eq("orders.payment_status", "paid"),
+    supabase.rpc("seller_product_profit", { p_from: EPOCH, p_to: new Date().toISOString() }),
   ]);
   const currency = (shop?.currency ?? "GHS") as CurrencyCode;
-  const summaries = productProfitSummaries(
-    (orderLines ?? []).map((line) => ({
-      productId: line.product_id,
-      productName: line.product_name,
-      quantity: line.quantity,
-      lineTotalMinor: line.line_total_minor,
-      unitCostMinor: line.unit_cost_minor,
-    })),
-  ).sort((a, b) => (b.profitMinor ?? -Infinity) - (a.profitMinor ?? -Infinity));
+  const summaries = (rows ?? [])
+    .map((row) => ({
+      productId: row.product_id,
+      productName: row.product_name,
+      unitsSold: Number(row.units_sold),
+      revenueMinor: Number(row.revenue_minor),
+      // Null, not zero: a product whose cost was never entered has unknown
+      // profit, and reporting zero margin would be a confident wrong answer.
+      costMinor: row.cost_minor == null ? null : Number(row.cost_minor),
+      profitMinor: row.profit_minor == null ? null : Number(row.profit_minor),
+    }))
+    .sort((a, b) => (b.profitMinor ?? -Infinity) - (a.profitMinor ?? -Infinity));
 
   return (
     <main className="mx-auto grid w-full max-w-4xl gap-5 px-3 py-5 pb-16">
