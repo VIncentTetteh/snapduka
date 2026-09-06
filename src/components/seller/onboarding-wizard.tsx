@@ -2,6 +2,7 @@
 
 import { useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
+import { shortLinkUrl } from "@snapduka/core";
 
 import {
   bootstrapSellerAction,
@@ -46,6 +47,11 @@ export type OnboardingWizardModel = {
   policyAccepted: boolean;
   verificationState: VerificationState;
   productCount: number;
+  /**
+   * The storefront's "other"-channel token, minted when the shop is published.
+   * Null before publishing, and for a shop published before this existed.
+   */
+  shareToken: string | null;
   onboarding: OnboardingState;
 };
 
@@ -489,8 +495,13 @@ export function OnboardingWizard({ model }: { model: OnboardingWizardModel }) {
 
   const isLast = step === 8;
   const storeUrl = `${origin}/${slug}`;
+  // The first thing a seller ever shares, and it went out untracked: the plain
+  // storefront URL, so the traffic from the announcement that brings the most
+  // visitors of any single post was never attributed to anything. Falls back to
+  // the plain URL for shops published before publishing minted links.
+  const shareUrl = model.shareToken ? shortLinkUrl(origin, model.shareToken) : storeUrl;
   const whatsappShare = `https://wa.me/?text=${encodeURIComponent(
-    `My store is live! Shop ${shopName || "my products"} at ${storeUrl}`,
+    `My store is live! Shop ${shopName || "my products"} at ${shareUrl}`,
   )}`;
 
   const steps = STEP_LABELS.map((label, i) => {

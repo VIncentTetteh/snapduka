@@ -20,7 +20,13 @@ describe("share channels", () => {
   it("matches the suffixes the web Share Studio already mints", () => {
     // Web has been creating links with these since before mobile existed;
     // changing one here would orphan every link already in circulation.
-    expect(CHANNEL_TOKEN_SUFFIX).toEqual({ tiktok: "t", instagram: "i", snapchat: "s", whatsapp: "w" });
+    expect(CHANNEL_TOKEN_SUFFIX).toEqual({
+      tiktok: "t",
+      instagram: "i",
+      snapchat: "s",
+      whatsapp: "w",
+      other: "o",
+    });
   });
 
   it("claims prefill only for the platform that actually supports it", () => {
@@ -30,6 +36,15 @@ describe("share channels", () => {
     expect(CHANNEL_SUPPORTS_PREFILL.instagram).toBe(false);
     expect(CHANNEL_SUPPORTS_PREFILL.tiktok).toBe(false);
     expect(CHANNEL_SUPPORTS_PREFILL.snapchat).toBe(false);
+  });
+
+  it("carries a link for the surfaces that share somewhere unnamed", () => {
+    // Every surface that cannot know its destination in advance — the native
+    // share sheet, the X/Facebook/Telegram intents, the caption panel, the QR —
+    // asks for the "other" link. It was not a channel, so those lookups fell
+    // through to the untracked storefront URL on pages that promised tracking.
+    expect(SHARE_CHANNELS).toContain("other");
+    expect(CHANNEL_SUPPORTS_PREFILL.other).toBe(false);
   });
 });
 

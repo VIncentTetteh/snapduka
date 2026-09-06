@@ -3,10 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { CHANNEL_TOKEN_SUFFIX, SHARE_CHANNELS } from "@snapduka/core";
 import { resolveCreatorContext } from "@/lib/auth/actor";
 import { checkDestination, DESTINATION_REFUSED } from "@/lib/campaigns/destination";
-import { generateCampaignToken, isUniqueViolation } from "@/lib/campaigns/tokens";
+import { mintChannelLinks } from "@/lib/campaigns/mint";
 import { createClient } from "@/lib/supabase/server";
 
 const PATH = "/creator/links";
@@ -79,51 +78,24 @@ export async function createCreatorLinks(formData: FormData): Promise<void> {
   if (!destination.ok) fail(DESTINATION_REFUSED);
 
   // One link per channel, sharing a base token, so the creator can tell which
-  // platform an order came from. Existing channels are skipped rather than
-  // duplicated — pressing the button twice for the same product is a no-op.
-  const { data: existing } = await supabase
-    .from("campaign_links")
-    .select("channel")
-    .eq("creator_partnership_id", partnershipId)
-    .eq("destination_path", destination.path)
-    .eq("active", true);
+  // platform an order came from. The same helper the seller's Share Studio uses,
+  // so a creator's links are indistinguishable from a seller's everywhere
+  // downstream: /l/<token>, campaign_link_totals, attribution, accrual. Existing
+  // channels are skipped, so pressing the button twice is a no-op.
+  const minted = await mintChannelLinks(supabase, {
+    sellerAccountId: partnership.seller_account_id,
+    shopId: shop.id,
+    destinationPath: destination.path,
+    label: label || shop.display_name,
+    creatorPartnershipId: partnershipId,
+  });
 
-  const already = new Set((existing ?? []).map((row) => row.channel));
-  const wanted = SHARE_CHANNELS.filter((channel) => !already.has(channel));
-  if (wanted.length === 0) {
-    redirect(`${PATH}?saved=exists&for=${encodeURIComponent(destination.path)}`);
-  }
-
-  const name = label || shop.display_name;
-  let inserted = false;
-  let lastError: unknown = null;
-
-  for (let attempt = 0; attempt < 5 && !inserted; attempt += 1) {
-    const base = generateCampaignToken(6);
-    const { error } = await supabase.from("campaign_links").insert(
-      wanted.map((channel) => ({
-        seller_account_id: partnership.seller_account_id,
-        shop_id: shop.id,
-        creator_partnership_id: partnershipId,
-        name: `${name} · ${channel}`,
-        token: `${base}-${CHANNEL_TOKEN_SUFFIX[channel]}`,
-        channel,
-        destination_path: destination.path,
-        active: true,
-      })),
-    );
-    if (!error) {
-      inserted = true;
-      break;
-    }
-    lastError = error;
-    // Only a token collision is worth retrying; anything else will not change.
-    if (!isUniqueViolation(error)) break;
-  }
-
-  if (!inserted) {
-    console.error("[creator-links] could not mint links", { partnershipId, error: lastError });
+  if (!minted.ok) {
+    console.error("[creator-links] could not mint links", { partnershipId, error: minted.error });
     fail("Those links could not be created. Please try again.");
+  }
+  if (minted.created === 0) {
+    redirect(`${PATH}?saved=exists&for=${encodeURIComponent(destination.path)}`);
   }
 
   revalidatePath(PATH);

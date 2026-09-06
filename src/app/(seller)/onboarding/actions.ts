@@ -10,6 +10,7 @@ import {
   parseSettlementInput,
   parseShopIdentity,
 } from "@/lib/auth/onboarding";
+import { mintChannelLinks } from "@/lib/campaigns/mint";
 import { parseFulfillmentMethod } from "@/lib/fulfillment/schema";
 import {
   createPaymentSubaccount,
@@ -367,13 +368,37 @@ export async function publishShopAction(
   // completing onboarding are 'pending'. Use the admin client with explicit
   // ownership filter — actor.sellerAccountId comes from the server session.
   const admin = createAdminClient();
-  const { error } = await admin
+  const { data: published, error } = await admin
     .from("shops")
     .update({ status: "published", published_at: new Date().toISOString() })
-    .eq("seller_account_id", actor.sellerAccountId);
+    .eq("seller_account_id", actor.sellerAccountId)
+    .select("id, slug, display_name")
+    .maybeSingle();
 
   if (error) {
     return errorState({}, "We could not publish your shop. Please try again.");
+  }
+
+  // Publishing is the moment the shop first needs a link to share, and until now
+  // nothing minted one: the "my store is live" button on the very next screen
+  // posted the plain storefront URL, and so did every other surface until the
+  // seller happened to find Share Studio and press generate. The first share a
+  // seller ever sends is the one most worth attributing.
+  //
+  // Same admin client as the update above and for the same reason: a seller
+  // completing onboarding is still `pending`, so their own client cannot write
+  // these rows. Deliberately not fatal — a shop that is live without links is a
+  // far better outcome than refusing to publish it.
+  if (published) {
+    const minted = await mintChannelLinks(admin, {
+      sellerAccountId: actor.sellerAccountId,
+      shopId: published.id,
+      destinationPath: `/${published.slug}`,
+      label: published.display_name || "Storefront",
+    });
+    if (!minted.ok) {
+      console.error("[publishShopAction] could not mint share links", { error: minted.error });
+    }
   }
 
   redirect("/dashboard");

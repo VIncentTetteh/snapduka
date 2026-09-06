@@ -31,6 +31,7 @@ function bootstrapModel(): OnboardingWizardModel {
     policyAccepted: false,
     verificationState: "not_started",
     productCount: 0,
+    shareToken: null,
     onboarding: evaluateOnboarding(
       {
         seller: null,

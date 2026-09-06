@@ -45,6 +45,7 @@ async function sellerModel(actor: SellerActor): Promise<OnboardingWizardModel> {
     productResult,
     fulfillmentResult,
     productCountResult,
+    shareLinkResult,
   ] = await Promise.all([
     supabase
       .from("seller_accounts")
@@ -102,6 +103,18 @@ async function sellerModel(actor: SellerActor): Promise<OnboardingWizardModel> {
       .select("id", { count: "exact", head: true })
       .eq("seller_account_id", actor.sellerAccountId)
       .neq("status", "archived"),
+    // The tracked link for the "my store is live" share on the last step.
+    // Minted by publishShopAction, so it is absent until the shop is published —
+    // which is also the only state in which that button is shown.
+    supabase
+      .from("campaign_links")
+      .select("token")
+      .eq("seller_account_id", actor.sellerAccountId)
+      .eq("channel", "other")
+      .eq("active", true)
+      .is("creator_partnership_id", null)
+      .limit(1)
+      .maybeSingle(),
   ]);
   const loadError =
     sellerResult.error ??
@@ -177,6 +190,7 @@ async function sellerModel(actor: SellerActor): Promise<OnboardingWizardModel> {
     policyAccepted: facts.policyAccepted,
     verificationState,
     productCount: productCountResult.count ?? 0,
+    shareToken: shareLinkResult.data?.token ?? null,
     onboarding: evaluateOnboarding(facts, {
       firstProduct: { available: true, complete: Boolean(productResult.data) },
       fulfillment: {
@@ -250,6 +264,8 @@ export default async function OnboardingPage() {
           policyAccepted: false,
           verificationState: "not_started",
           productCount: 0,
+          // Bootstrap: no shop yet, so nothing to share and nothing to track.
+          shareToken: null,
           onboarding: evaluateOnboarding(facts, {
             firstProduct: { available: false, complete: false },
             fulfillment: { available: false, complete: false },

@@ -5,9 +5,8 @@ import { redirect } from "next/navigation";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
-import { generateCampaignToken, isUniqueViolation } from "@/lib/campaigns/tokens";
 import { checkDestination, DESTINATION_REFUSED } from "@/lib/campaigns/destination";
-import { CHANNEL_TOKEN_SUFFIX, SHARE_CHANNELS } from "@snapduka/core";
+import { mintChannelLinks } from "@/lib/campaigns/mint";
 import { createClient } from "@/lib/supabase/server";
 
 const SHARE_PATH = "/dashboard/share";
@@ -36,18 +35,6 @@ export async function disconnectSocialAccountAction(formData: FormData): Promise
 
   revalidatePath(SHARE_PATH);
   redirect(`${SHARE_PATH}?saved=disconnected`);
-}
-
-// From @snapduka/core so the app and the web mint the same token for the same
-// channel. Two clients disagreeing here would create competing links for one
-// destination and split its attribution between them.
-const CHANNELS = SHARE_CHANNELS;
-const CHANNEL_SUFFIX = CHANNEL_TOKEN_SUFFIX;
-
-// Was Math.random().toString(36).slice(2, 6): a ~1.7M keyspace on a globally
-// unique column, enumerable by anyone who wanted another seller's links.
-function shortCode(): string {
-  return generateCampaignToken(6);
 }
 
 /** Creates the per-channel tracked short links for a destination if missing. */
@@ -96,47 +83,20 @@ export async function generateShareLinksAction(formData: FormData): Promise<void
     if (!campaign) fail("That campaign could not be found.");
   }
 
-  const { data: existing } = await supabase
-    .from("campaign_links")
-    .select("channel")
-    .eq("seller_account_id", actor.sellerAccountId)
-    .eq("destination_path", destination.path)
-    .eq("active", true);
+  // Skipping existing channels, retrying only on a token collision, and the
+  // token shape itself all live in mintChannelLinks now — publishing a shop
+  // needs exactly the same thing, and three copies of it would eventually
+  // disagree about a token, which splits a destination's attribution in two.
+  const minted = await mintChannelLinks(supabase, {
+    sellerAccountId: actor.sellerAccountId,
+    shopId: shop.id,
+    destinationPath: destination.path,
+    label,
+    campaignId,
+  });
 
-  const existingChannels = new Set((existing ?? []).map((link) => link.channel));
-  const base = shortCode();
-  const rows = CHANNELS.filter((channel) => !existingChannels.has(channel)).map((channel) => ({
-    seller_account_id: actor.sellerAccountId,
-    shop_id: shop.id,
-    name: `${label} · ${channel}`,
-    token: `${base}-${CHANNEL_SUFFIX[channel]}`,
-    channel,
-    destination_path: destination.path,
-    active: true,
-    campaign_id: campaignId,
-  }));
-
-  // Retry the whole batch on a token collision. Both exits from this loop used
-  // to be silent — including the one taken when the insert failed for a reason
-  // that is not a collision — so the seller was left with no links and nothing
-  // saying why, which is the state the comment above claimed to have fixed.
-  let inserted = rows.length === 0;
-  let lastError: unknown = null;
-  for (let attempt = 0; rows.length > 0 && attempt < 5; attempt++) {
-    const prefix = attempt === 0 ? base : shortCode();
-    const { error } = await supabase
-      .from("campaign_links")
-      .insert(rows.map((row) => ({ ...row, token: `${prefix}-${row.token.split("-").pop()}` })));
-    if (!error) {
-      inserted = true;
-      break;
-    }
-    lastError = error;
-    if (!isUniqueViolation(error)) break;
-  }
-
-  if (!inserted) {
-    console.error("[generateShareLinksAction] could not mint links", { error: lastError });
+  if (!minted.ok) {
+    console.error("[generateShareLinksAction] could not mint links", { error: minted.error });
     fail("Those share links could not be created. Please try again.");
   }
 

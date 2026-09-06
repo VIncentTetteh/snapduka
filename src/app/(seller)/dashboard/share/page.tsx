@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { shortLinkUrl } from "@snapduka/core";
+import { CHANNEL_LABEL, shareCaption, shortLinkUrl, type ShareChannel } from "@snapduka/core";
 import QRCode from "qrcode";
 
 import { disconnectSocialAccountAction, generateShareLinksAction } from "./actions";
@@ -19,7 +19,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { appOrigin } from "@/lib/app-url";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { formatMoney } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/server";
 import type { CurrencyCode } from "@/lib/countries/types";
 import { fetchAnalyticsSummary } from "@/lib/analytics/summary";
@@ -34,14 +33,6 @@ const TABS = [
 ] as const;
 
 const PRODUCT_PICKER_LIMIT = 24;
-
-const CHANNEL_LABEL: Record<string, string> = {
-  tiktok: "TikTok",
-  instagram: "Instagram",
-  snapchat: "Snapchat",
-  whatsapp: "WhatsApp",
-  other: "Other",
-};
 
 export default async function ShareStudioPage({
   searchParams,
@@ -146,11 +137,37 @@ export default async function ShareStudioPage({
   );
 
   const destinationLinks = (links ?? []).filter((link) => link.destination_path === destinationPath);
-  const caption = selectedProduct
-    ? `${selectedProduct.name} — ${formatMoney(selectedProduct.price_minor, selectedProduct.currency as CurrencyCode)}. Order in two taps, pay securely with Paystack. 🛍️${selectedProduct.video_url ? `\nWatch: ${selectedProduct.video_url}` : ""}`
-    : `Shop ${shop.display_name} — secure Paystack checkout, no account needed. 🛍️`;
 
-  const qrDataUrl = await QRCode.toDataURL(targetUrl, { width: 480, margin: 2 });
+  // From core, so the seller reads the same words here, in the mobile app and in
+  // the creator portal. The copy that used to live here had drifted to promise
+  // "secure Paystack checkout" — but online payment needs an active subaccount
+  // and most live shops have none, so it named a payment method those buyers
+  // would never be offered.
+  const caption = shareCaption({
+    shopName: shop.display_name,
+    product: selectedProduct
+      ? {
+          name: selectedProduct.name,
+          priceMinor: selectedProduct.price_minor,
+          currency: selectedProduct.currency as CurrencyCode,
+          videoUrl: selectedProduct.video_url,
+        }
+      : undefined,
+  });
+
+  // Everything this page offers for posting — the caption panel, the Posts
+  // textarea, the QR, the WhatsApp Status link, the native share sheet — used to
+  // carry `targetUrl`, the plain storefront address. The page's own copy calls
+  // these tracked links, and they were not: nothing that went out through those
+  // surfaces was ever attributed. They all share one destination, so they all
+  // get its "other" link, and fall back to the plain URL only until the seller
+  // has minted any.
+  const shareUrl =
+    destinationLinks.find((link) => link.channel === "other")?.token != null
+      ? shortLinkUrl(origin, destinationLinks.find((link) => link.channel === "other")!.token)
+      : targetUrl;
+
+  const qrDataUrl = await QRCode.toDataURL(shareUrl, { width: 480, margin: 2 });
 
   const totalClicks = (attributions ?? []).reduce((sum, row) => sum + row.clicks, 0);
   const visits = summary.visits;
@@ -332,7 +349,7 @@ export default async function ShareStudioPage({
                       >
                         <span className="min-w-0">
                           <span className="block text-[13px] font-bold text-ink">
-                            {CHANNEL_LABEL[link.channel] ?? link.channel}
+                            {CHANNEL_LABEL[link.channel as ShareChannel] ?? link.channel}
                           </span>
                           <span className="block truncate font-mono text-[12px] text-ink-muted">
                             {originHost}/l/{link.token}
@@ -360,12 +377,12 @@ export default async function ShareStudioPage({
               <Panel className="overflow-hidden bg-ink p-4.5 text-white">
                 <div className="mb-2.5 flex items-center justify-between gap-3">
                   <h2 className="text-[14px] font-bold">Caption</h2>
-                  <CopyButton value={`${caption}\n${targetUrl}`} label="Copy caption" />
+                  <CopyButton value={`${caption}\n${shareUrl}`} label="Copy caption" />
                 </div>
                 <p className="rounded-xl border border-line bg-raised px-4 py-3.5 text-[13.5px] leading-[1.6] text-ink-2">
                   {caption}
                   <br />
-                  <span className="font-mono text-[12.5px] text-accent">{targetUrl}</span>
+                  <span className="font-mono text-[12.5px] text-accent">{shareUrl}</span>
                 </p>
               </Panel>
             </div>
@@ -402,7 +419,7 @@ export default async function ShareStudioPage({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={qrDataUrl}
-                  alt={`QR code linking to ${targetUrl}`}
+                  alt={`QR code linking to ${shareUrl}`}
                   className="mx-auto h-40 w-40 rounded-xl border border-line bg-white p-2"
                 />
                 <p className="mt-2 text-[11.5px] text-ink-muted">
@@ -425,7 +442,7 @@ export default async function ShareStudioPage({
             <textarea
               rows={4}
               readOnly
-              defaultValue={`${caption}\n${targetUrl}`}
+              defaultValue={`${caption}\n${shareUrl}`}
               className="mb-3 w-full resize-y rounded-[10px] border border-line-input bg-white px-3.5 py-3 text-[13.5px] text-ink"
             />
             <div className="mb-3 flex flex-wrap gap-2">
@@ -443,17 +460,17 @@ export default async function ShareStudioPage({
                     Open this page on your phone to attach the product photo directly.
                   </p>
                 }
-                fallbackUrl={targetUrl}
+                fallbackUrl={shareUrl}
                 imageFilename="snapduka-story.png"
                 imageUrl={`/api/share/story-card${selectedProduct ? `?product=${selectedProduct.id}` : ""}`}
                 label="Share photo + caption…"
                 pendingLabel="Preparing…"
-                text={`${caption}\n${targetUrl}`}
+                text={`${caption}\n${shareUrl}`}
                 title={shop.display_name}
               />
-              <CopyButton value={`${caption}\n${targetUrl}`} label="Copy caption" />
+              <CopyButton value={`${caption}\n${shareUrl}`} label="Copy caption" />
               <a
-                href={`https://wa.me/?text=${encodeURIComponent(`${caption}\n${targetUrl}`)}`}
+                href={`https://wa.me/?text=${encodeURIComponent(`${caption}\n${shareUrl}`)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex min-h-9 items-center rounded-[9px] bg-success px-3.5 text-[12.5px] font-bold text-white no-underline transition-colors hover:bg-success-deep"
@@ -600,7 +617,7 @@ export default async function ShareStudioPage({
                     className="flex items-center justify-between gap-3 border-b border-[#F7F2EA] px-4.5 py-3 last:border-b-0"
                   >
                     <span className="text-[13.5px] font-semibold text-ink">
-                      {CHANNEL_LABEL[channel] ?? channel}
+                      {CHANNEL_LABEL[channel as ShareChannel] ?? channel}
                     </span>
                     <span className="text-[13.5px] font-bold text-ink">
                       {clicks.toLocaleString()}

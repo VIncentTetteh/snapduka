@@ -10,7 +10,15 @@ import { formatMoney } from "../i18n";
  * across them. That is why this lives in core rather than being restated in
  * each app.
  */
-export const SHARE_CHANNELS = ["whatsapp", "instagram", "tiktok", "snapchat"] as const;
+export const SHARE_CHANNELS = ["whatsapp", "instagram", "tiktok", "snapchat", "other"] as const;
+// "other" is not a platform. It is the link for every surface that shares
+// somewhere we cannot name in advance: the phone's native share sheet, the
+// X/Facebook/Telegram web intents, the caption panel, the QR code, the copy
+// button. All of those used to fall back to the plain storefront URL, because
+// `linkFor("other")` matched nothing — "other" was not a channel — so pages
+// whose own copy promised attribution were handing out untracked links and the
+// clicks vanished. Naming the bucket honestly beats silently dropping the
+// tracking.
 
 export type ShareChannel = (typeof SHARE_CHANNELS)[number];
 
@@ -20,6 +28,7 @@ export const CHANNEL_TOKEN_SUFFIX: Record<ShareChannel, string> = {
   instagram: "i",
   snapchat: "s",
   whatsapp: "w",
+  other: "o",
 };
 
 export const CHANNEL_LABEL: Record<ShareChannel, string> = {
@@ -27,6 +36,7 @@ export const CHANNEL_LABEL: Record<ShareChannel, string> = {
   instagram: "Instagram",
   tiktok: "TikTok",
   snapchat: "Snapchat",
+  other: "Everywhere else",
 };
 
 /**
@@ -42,6 +52,8 @@ export const CHANNEL_SUPPORTS_PREFILL: Record<ShareChannel, boolean> = {
   instagram: false,
   tiktok: false,
   snapchat: false,
+  // Not a platform, so there is no composer to pre-fill.
+  other: false,
 };
 
 /** Where a link for `destinationPath` points once shortened. */

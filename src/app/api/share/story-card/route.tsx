@@ -99,10 +99,35 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Without a campaign the card still has a destination — the product being
+  // shared — and its QR pointed at the bare shop homepage. So the most-posted
+  // artifact in the product sent every scan in untracked, and a card made for
+  // one product did not even open that product. Prefer the destination's
+  // "other" link, which is the channel these cards go out through.
+  if (!campaignToken && productId && product) {
+    const destination = `/${shop.slug}/products/${productId}`;
+    const { data: link } = await supabase
+      .from("campaign_links")
+      .select("token, channel")
+      .eq("seller_account_id", actor.sellerAccountId)
+      .eq("destination_path", destination)
+      .eq("active", true)
+      .order("channel")
+      .limit(8);
+    campaignToken =
+      link?.find((row) => row.channel === "other")?.token ?? link?.[0]?.token ?? null;
+  }
+
   const host = await appHost();
   // A tracked link when there is one to use, so a scan off a printed flyer is
-  // attributed instead of arriving as anonymous traffic.
-  const storeLink = campaignToken ? `${host}/l/${campaignToken}` : `${host}/${shop.slug}`;
+  // attributed instead of arriving as anonymous traffic. Falling back to the
+  // product page rather than the shop homepage: a seller who has minted no links
+  // yet should still get a card that opens the thing it pictures.
+  const storeLink = campaignToken
+    ? `${host}/l/${campaignToken}`
+    : productId && product
+      ? `${host}/${shop.slug}/products/${productId}`
+      : `${host}/${shop.slug}`;
   const title = campaignName ?? product?.name ?? shop.display_name;
   const price = product ? cardPrice(product.price_minor, product.currency) : null;
   // Rendered at 2x the display size (132px) for a crisp scan off a phone
