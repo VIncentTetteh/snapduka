@@ -65,10 +65,14 @@ export default async function ProductOpenGraphImage({
           />
         ) : null}
 
-        {/* Dark from the bottom so the text is legible over any photo. */}
+        {/* Dark from the bottom so the text is legible over any photo. Three
+            stops rather than two: a single ramp from 35% left the shop name and
+            price sitting on a bright product shot with too little contrast, and
+            product photography here is mostly light backgrounds. */}
         <div
           style={{
-            background: "linear-gradient(180deg, rgba(33,27,20,0) 35%, rgba(33,27,20,0.92) 100%)",
+            background:
+              "linear-gradient(180deg, rgba(33,27,20,0) 20%, rgba(33,27,20,0.62) 52%, rgba(33,27,20,0.97) 100%)",
             bottom: 0,
             display: "flex",
             flexDirection: "column",
