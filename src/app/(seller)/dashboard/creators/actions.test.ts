@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   sendEmail: vi.fn(),
   sendSms: vi.fn(),
   appOrigin: vi.fn(),
+  createAdminClient: vi.fn(),
+  enqueueCreatorNotification: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
@@ -28,6 +30,12 @@ vi.mock("@/lib/billing/resolve", () => ({
 vi.mock("@/lib/notifications/email", () => ({ sendEmail: mocks.sendEmail }));
 vi.mock("@/lib/notifications/sms", () => ({ sendSms: mocks.sendSms }));
 vi.mock("@/lib/app-url", () => ({ appOrigin: mocks.appOrigin }));
+// markCommissionsPaid now tells the creator about the payment, which pulls in
+// the admin client (and with it `server-only`, which throws outside webpack).
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
+vi.mock("@/lib/notifications/enqueue", () => ({
+  enqueueCreatorNotification: mocks.enqueueCreatorNotification,
+}));
 
 import { inviteCreator, markCommissionsPaid } from "./actions";
 
@@ -205,6 +213,70 @@ describe("inviteCreator", () => {
 });
 
 describe("markCommissionsPaid", () => {
+  /**
+   * The confirmation used to read "Payment recorded. The creator has been
+   * notified." while nothing anywhere notified a creator of anything. The
+   * creator found out by opening the portal on spec. So the message is now tied
+   * to whether the notification was actually enqueued.
+   */
+  it("tells the creator, and says so only when that worked", async () => {
+    mocks.createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({
+        data: { paymentId: "pay-1", amountMinor: 4000, currency: "GHS" },
+        error: null,
+      }),
+    });
+    mocks.createAdminClient.mockReturnValue({
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { display_name: "PurePlatter" } }) }) }),
+      }),
+    });
+    mocks.enqueueCreatorNotification.mockResolvedValue(true);
+
+    await expect(
+      markCommissionsPaid(
+        formData({ partnershipId: "p1", creatorId: "c1", method: "cash", commissionIds: ["k1"] }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.enqueueCreatorNotification).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        creatorId: "c1",
+        event: "creator_payment_recorded",
+        shopName: "PurePlatter",
+        dedupeKey: "pay-1",
+      }),
+    );
+    expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("has%20been%20told"));
+  });
+
+  it("does not claim the creator was told when the message could not be sent", async () => {
+    mocks.createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({
+        data: { paymentId: "pay-2", amountMinor: 4000, currency: "GHS" },
+        error: null,
+      }),
+    });
+    mocks.createAdminClient.mockReturnValue({
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }),
+      }),
+    });
+    mocks.enqueueCreatorNotification.mockResolvedValue(false);
+
+    await expect(
+      markCommissionsPaid(
+        formData({ partnershipId: "p1", creatorId: "c1", method: "cash", commissionIds: ["k1"] }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    // The payment is still recorded — only the claim about notifying changes.
+    const url = decodeURIComponent(String(mocks.redirect.mock.calls.at(-1)?.[0]));
+    expect(url).toContain("Payment recorded");
+    expect(url).toMatch(/tell them yourself/i);
+  });
+
   it("refuses an empty selection rather than recording a zero payment", async () => {
     mocks.createClient.mockResolvedValue({ rpc: vi.fn() });
 

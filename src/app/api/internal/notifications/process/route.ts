@@ -4,7 +4,21 @@ import { sendEmail } from "@/lib/notifications/email";
 import { nextAttemptAt } from "@/lib/notifications/outbox";
 import { sendPush } from "@/lib/notifications/push";
 import { sendSms } from "@/lib/notifications/sms";
-import { orderUpdateTemplate } from "@/lib/notifications/templates";
+import {
+  creatorUpdateTemplate,
+  orderUpdateTemplate,
+  type CreatorNotificationEvent,
+} from "@/lib/notifications/templates";
+
+const CREATOR_EVENTS: readonly CreatorNotificationEvent[] = [
+  "creator_partnership_accepted",
+  "creator_commission_earned",
+  "creator_payment_recorded",
+];
+
+function isCreatorEvent(template: string): template is CreatorNotificationEvent {
+  return (CREATOR_EVENTS as readonly string[]).includes(template);
+}
 import { sendWhatsApp } from "@/lib/notifications/whatsapp";
 import { appOrigin } from "@/lib/app-url";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -34,11 +48,23 @@ export async function POST(request: Request) {
       const trackingUrl = payload.trackingToken
         ? `${origin}/orders/${String(payload.trackingToken)}`
         : origin;
-      const template = orderUpdateTemplate({
-        reference: String(payload.reference),
-        status: String(payload.status),
-        trackingUrl: String(trackingUrl),
-      });
+
+      // Every row used to be rendered as an order update regardless of its
+      // `template` column, so anything else came out as "Order undefined is now
+      // undefined". Creator messages are about a partnership, a commission or a
+      // payment and have no order behind them at all.
+      const template = isCreatorEvent(claimed.template)
+        ? creatorUpdateTemplate({
+            event: claimed.template,
+            shopName: String(payload.shopName ?? "A SnapDuka shop"),
+            amount: payload.amount ? String(payload.amount) : undefined,
+            portalUrl: `${origin}/creator`,
+          })
+        : orderUpdateTemplate({
+            reference: String(payload.reference),
+            status: String(payload.status),
+            trackingUrl: String(trackingUrl),
+          });
       if (claimed.channel === "email") {
         const result = await sendEmail(claimed.recipient, template.subject, template.text);
         if (!result.delivered) throw new Error(result.reason);

@@ -9,7 +9,11 @@ import { getSellerPlan, planAllows, upgradeMessage } from "@/lib/billing/resolve
 import { inviteCreator as inviteCreatorRules } from "@/lib/creators/invite";
 import { generateCampaignToken, isUniqueViolation } from "@/lib/campaigns/tokens";
 import { MAX_RATE_BPS } from "@/lib/creators/commission";
+import { enqueueCreatorNotification } from "@/lib/notifications/enqueue";
+import { formatMoney } from "@/lib/i18n";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { CurrencyCode } from "@/lib/countries/types";
 
 const BASE = "/dashboard/creators";
 
@@ -149,8 +153,7 @@ export async function createCreatorLink(formData: FormData): Promise<void> {
  * commission is not payable, so a partial payment cannot be logged as a full one.
  */
 export async function markCommissionsPaid(formData: FormData): Promise<void> {
-  // Called for the guard, not the value: it refuses by redirecting.
-  await sellerContext();
+  const actor = await sellerContext();
 
   const partnershipId = String(formData.get("partnershipId"));
   const creatorId = String(formData.get("creatorId"));
@@ -163,7 +166,7 @@ export async function markCommissionsPaid(formData: FormData): Promise<void> {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.rpc("record_creator_commission_payment", {
+  const { data: result, error } = await supabase.rpc("record_creator_commission_payment", {
     p_creator_id: creatorId,
     p_commission_ids: commissionIds,
     p_method: method,
@@ -173,6 +176,43 @@ export async function markCommissionsPaid(formData: FormData): Promise<void> {
 
   if (error) back("error", error.message, detail);
 
+  // This message used to be a lie: nothing anywhere notified a creator of
+  // anything, so "the creator has been notified" was told to the seller while
+  // the creator learned of the payment only by opening the portal on spec. The
+  // notification is real now, and the confirmation is only claimed once it is
+  // enqueued.
+  const payment = result as
+    | { paymentId?: string; amountMinor?: number; currency?: string }
+    | null;
+  let notified = false;
+
+  if (payment?.paymentId) {
+    const admin = createAdminClient();
+    const { data: shop } = await admin
+      .from("shops")
+      .select("display_name")
+      .eq("seller_account_id", actor.sellerAccountId)
+      .maybeSingle();
+
+    notified = await enqueueCreatorNotification(admin, {
+      creatorId,
+      sellerAccountId: actor.sellerAccountId,
+      event: "creator_payment_recorded",
+      shopName: shop?.display_name ?? "A SnapDuka shop",
+      amount:
+        payment.amountMinor != null && payment.currency
+          ? formatMoney(payment.amountMinor, payment.currency as CurrencyCode)
+          : undefined,
+      dedupeKey: payment.paymentId,
+    });
+  }
+
   revalidatePath(detail);
-  back("message", "Payment recorded. The creator has been notified.", detail);
+  back(
+    "message",
+    notified
+      ? "Payment recorded. The creator has been told."
+      : "Payment recorded. We could not reach the creator, so tell them yourself.",
+    detail,
+  );
 }

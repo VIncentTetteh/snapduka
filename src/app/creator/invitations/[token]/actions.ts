@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 
 import { resolveCreatorContext, resolveServerActor } from "@/lib/auth/actor";
+import { enqueueCreatorNotification } from "@/lib/notifications/enqueue";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -69,6 +70,23 @@ export async function acceptCreatorInvitation(formData: FormData): Promise<never
     .update({ accepted_at: new Date().toISOString() })
     .eq("id", invite.id)
     .is("accepted_at", null);
+
+  // Confirms to the creator which shop they just joined and points at the one
+  // thing they should do next. Nothing used to acknowledge an accepted
+  // invitation at all, so the first act of the relationship was silence.
+  const { data: shopName } = await admin
+    .from("shops")
+    .select("display_name")
+    .eq("seller_account_id", invite.seller_account_id)
+    .maybeSingle();
+
+  await enqueueCreatorNotification(admin, {
+    creatorId: creator.creatorId,
+    sellerAccountId: invite.seller_account_id,
+    event: "creator_partnership_accepted",
+    shopName: shopName?.display_name ?? "A SnapDuka shop",
+    dedupeKey: `${invite.seller_account_id}:${creator.creatorId}`,
+  });
 
   redirect("/creator");
 }
