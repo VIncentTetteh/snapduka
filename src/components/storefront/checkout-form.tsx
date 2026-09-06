@@ -25,6 +25,8 @@ type CheckoutProduct = {
   variantId: string | null;
   variantName: string | null;
   quantity: number;
+  /** Null when the product genuinely has no photo; the gradient stands in. */
+  imageUrl?: string | null;
 };
 
 const INPUT =
@@ -263,11 +265,24 @@ export function CheckoutForm({
               key={key}
               className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-[#F7F2EA] px-4 py-3 last:border-b-0"
             >
+              {/* The gradient stays as the backdrop so a slow or missing image
+                  leaves a styled tile rather than an empty box. */}
               <span
                 aria-hidden="true"
-                className="block h-11 w-11 rounded-[10px]"
+                className="block h-11 w-11 overflow-hidden rounded-[10px]"
                 style={{ background: gradientForSeed(product.id) }}
-              />
+              >
+                {product.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    alt=""
+                    className="h-full w-full object-cover"
+                    height={44}
+                    src={product.imageUrl}
+                    width={44}
+                  />
+                ) : null}
+              </span>
               <span className="min-w-0">
                 <span className="block truncate text-[13.5px] font-semibold">{product.name}</span>
                 <span className="block text-[11.5px] text-ink-muted">

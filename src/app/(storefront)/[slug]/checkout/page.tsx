@@ -8,7 +8,7 @@ import { StoreHeader } from "@/components/storefront/store-header";
 import { fulfillmentSummary } from "@/lib/storefront/fulfillment-summary";
 import { getPublicProduct, getPublicShop } from "@/lib/storefront/queries";
 import { appOrigin } from "@/lib/app-url";
-import { normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
+import { mainImageUrl, normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
 import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -111,6 +111,13 @@ export default async function CheckoutPage({
       variantId: selectedVariant?.id ?? null,
       variantName: selectedVariant?.name ?? null,
       quantity: line.quantity,
+      // The photo the buyer was just looking at. getPublicProduct already
+      // loads product_media, so this was available all along and simply never
+      // passed on — checkout was the one surface in the app that showed a
+      // coloured square instead of the item, at the moment of paying for it.
+      // A variant with its own image wins, matching the product page.
+      imageUrl:
+        publicMediaUrl(selectedVariant?.image_path) ?? mainImageUrl(product!.product_media),
     };
   });
   const admin = createAdminClient();
