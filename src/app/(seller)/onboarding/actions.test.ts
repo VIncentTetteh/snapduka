@@ -57,14 +57,23 @@ describe("onboarding actions", () => {
 
   it("saves a draft shop without requiring policy acceptance", async () => {
     const rpc = vi.fn().mockResolvedValue({ error: null });
-    const from = vi.fn();
+    // The address is assigned by the database, so the action reads it back —
+    // without that the wizard would keep showing a placeholder on the very step
+    // whose job is to tell the seller what their link is.
+    const from = vi.fn(() => ({
+      select: () => ({
+        eq: () => ({ maybeSingle: async () => ({ data: { slug: "ama-market-k3fm" } }) }),
+      }),
+    }));
     mocks.createClient.mockResolvedValue({ from, rpc });
 
     const result = await saveShopAction(
       initialState,
       formData({
         displayName: "Ama Market",
-        slug: "Ama Market",
+        // A slug in the form is ignored: the RPC no longer takes one, so a
+        // hand-crafted POST cannot put an address in the URL either.
+        slug: "suma-ampim-st-23",
         legalName: "Ama Market Limited",
         registrationNumber: "",
       }),
@@ -73,14 +82,13 @@ describe("onboarding actions", () => {
     expect(result).toMatchObject({
       status: "success",
       message: "Shop identity saved.",
+      values: { slug: "ama-market-k3fm" },
     });
     expect(rpc).toHaveBeenCalledWith("save_onboarding_shop", {
-      p_slug: "ama-market",
       p_display_name: "Ama Market",
       p_legal_name: "Ama Market Limited",
       p_registration_number: "",
     });
-    expect(from).not.toHaveBeenCalled();
   });
 
   it("maps exhausted activation retries to a distinct processing state", () => {

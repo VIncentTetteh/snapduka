@@ -152,12 +152,27 @@ export function normalizePhoneNumber(
   return `+${callingCode}${country === "CI" ? digits : digits.replace(/^0/, "")}`;
 }
 
-export function normalizeShopSlug(input: string): string {
-  return input
+/**
+ * The readable half of a storefront address, from the shop's name.
+ *
+ * Must match `shop_slug_base` in SQL, which is what actually assigns the
+ * address — this exists so onboarding can preview the answer before the shop
+ * row exists. The server appends a short code; that half is not predictable
+ * here and the preview says so rather than inventing one.
+ *
+ * The address used to be a free-text field the seller filled in themselves, and
+ * one of them typed their street address into it. It is derived from the shop
+ * name now, which is already the shop's public identity.
+ */
+export function shopSlugBase(displayName: string): string {
+  const base = displayName
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+  // A name that is entirely punctuation slugifies to nothing, and the display
+  // name check only requires two characters — "!!" clears it.
+  return base || "shop";
 }
 
 const accountSetupSchema = z
@@ -174,9 +189,6 @@ const accountSetupSchema = z
 
 const shopIdentitySchema = z.object({
   displayName: z.string().trim().min(2, "Enter a shop display name."),
-  slug: z
-    .string()
-    .regex(slugPattern, "Use lowercase letters, numbers, and hyphens."),
   legalName: z.string().trim().min(2, "Enter the registered business name."),
   registrationNumber: z.string().trim().max(100).nullable(),
 });
@@ -244,14 +256,12 @@ export function parseAccountSetup(
 
 export function parseShopIdentity(input: {
   displayName: string;
-  slug: string;
   legalName: string;
   registrationNumber: string;
 }): FieldParseResult<z.infer<typeof shopIdentitySchema>> {
   return fieldResult(
     shopIdentitySchema.safeParse({
       displayName: input.displayName,
-      slug: normalizeShopSlug(input.slug),
       legalName: input.legalName,
       registrationNumber: input.registrationNumber.trim() || null,
     }),

@@ -199,7 +199,6 @@ export async function saveShopAction(
 ): Promise<OnboardingActionState> {
   const preserved = values(formData, [
     "displayName",
-    "slug",
     "legalName",
     "registrationNumber",
     "policyAccepted",
@@ -219,7 +218,6 @@ export async function saveShopAction(
 
   const parsed = parseShopIdentity({
     displayName: preserved.displayName,
-    slug: preserved.slug,
     legalName: preserved.legalName,
     registrationNumber: preserved.registrationNumber,
   });
@@ -234,25 +232,27 @@ export async function saveShopAction(
 
   const supabase = await createClient();
   const { error: shopError } = await supabase.rpc("save_onboarding_shop", {
-    p_slug: parsed.data.slug,
     p_display_name: parsed.data.displayName,
     p_legal_name: parsed.data.legalName,
     p_registration_number: parsed.data.registrationNumber ?? "",
   });
 
+  // No slug conflict branch any more: the address is derived from the shop name
+  // plus a code the RPC retries on collision, so "that address is taken" is no
+  // longer a thing a seller can hit — and there is no field for them to fix.
   if (shopError) {
-    const slugConflict =
-      shopError.code === "23505" ||
-      shopError.message.toLowerCase().includes("slug");
-
-    return errorState(
-      preserved,
-      slugConflict
-        ? "That shop address is already taken."
-        : "We could not save the shop identity. Please try again.",
-      slugConflict ? { slug: ["Choose a different shop address."] } : undefined,
-    );
+    return errorState(preserved, "We could not save the shop identity. Please try again.");
   }
+
+  // Read the address back, because the database assigns it. Without this the
+  // wizard would keep showing the placeholder code on the very step whose job is
+  // to tell the seller what their link is.
+  const { data: saved } = await supabase
+    .from("shops")
+    .select("slug")
+    .eq("seller_account_id", actor.sellerAccountId)
+    .maybeSingle();
+  const assigned: Record<string, string> = saved?.slug ? { slug: saved.slug } : {};
 
   if (preserved.policyAccepted === "on") {
     const { error: policyError } = await supabase
@@ -271,7 +271,7 @@ export async function saveShopAction(
 
     if (policyError) {
       return errorState(
-        { ...preserved, slug: parsed.data.slug },
+        { ...preserved, ...assigned },
         "Shop identity was saved, but policy acceptance could not be recorded.",
       );
     }
@@ -282,10 +282,7 @@ export async function saveShopAction(
     preserved.policyAccepted === "on"
       ? "Shop identity and policy acceptance saved."
       : "Shop identity saved.",
-    {
-      ...preserved,
-      slug: parsed.data.slug,
-    },
+    { ...preserved, ...assigned },
   );
 }
 

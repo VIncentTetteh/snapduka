@@ -16,7 +16,7 @@ import {
 import { createProductAction } from "@/app/(seller)/dashboard/products/actions";
 import { LogoMark } from "@/components/ui/logo";
 import { Req } from "@/components/ui/required-mark";
-import { normalizeShopSlug, type OnboardingState, type VerificationState } from "@/lib/auth/onboarding";
+import { shopSlugBase, type OnboardingState, type VerificationState } from "@/lib/auth/onboarding";
 import type { CountryCode } from "@/lib/countries/types";
 
 /* ------------------------------------------------------------------ */
@@ -202,8 +202,6 @@ export function OnboardingWizard({ model }: { model: OnboardingWizardModel }) {
   const [city, setCity] = useState("");
   const [contactName, setContactName] = useState(model.account?.contactName ?? "");
   const [whatsapp, setWhatsapp] = useState(model.account?.contactPhone ?? "");
-  const [slugInput, setSlugInput] = useState(model.shop?.slug ?? "");
-  const [slugEdited, setSlugEdited] = useState(Boolean(model.shop?.slug));
   const [fulfil, setFulfil] = useState({ rider: true, pickup: false, courier: false });
   const [fulfilFees, setFulfilFees] = useState<Record<string, string>>({ rider: "", pickup: "", courier: "" });
   const [prodName, setProdName] = useState("");
@@ -217,7 +215,10 @@ export function OnboardingWizard({ model }: { model: OnboardingWizardModel }) {
 
   // progress bookkeeping
   const [accountSaved, setAccountSaved] = useState(accountComplete);
-  const [shopSaved, setShopSaved] = useState(shopComplete);
+  // The database assigns the address, so the wizard learns it back from the
+  // save rather than deriving it. `model.shop` is a server prop and does not
+  // refresh mid-flow.
+  const [assignedSlug, setAssignedSlug] = useState(model.shop?.slug ?? null);
   const [savedFulfil, setSavedFulfil] = useState<Set<string>>(
     () => new Set(fulfillmentComplete ? FULFIL_OPTIONS.map((f) => f.id) : []),
   );
@@ -231,7 +232,11 @@ export function OnboardingWizard({ model }: { model: OnboardingWizardModel }) {
 
   const info = COUNTRY_INFO[country];
   const countryLocked = model.mode === "seller" || accountSaved;
-  const slug = slugEdited ? slugInput : normalizeShopSlug(shopName) || "your-shop";
+  // The real address once the shop exists, otherwise a preview of the readable
+  // half. The short code is assigned by the server and is not predictable here,
+  // so the preview shows the base and step 4 explains the rest rather than
+  // inventing a code that would then change.
+  const slug = assignedSlug ?? shopSlugBase(shopName);
   const anyFulfil = fulfil.rider || fulfil.pickup || fulfil.courier;
   // Server render uses the configured origin; after hydration the real
   // browser origin wins so links stay correct when dev ports shift.
@@ -309,14 +314,9 @@ export function OnboardingWizard({ model }: { model: OnboardingWizardModel }) {
         return;
       }
       case 4: {
-        if (slug.length < 3) {
-          setStepError("Your store link needs at least 3 characters.");
-          return;
-        }
         startTransition(async () => {
           const fd = new FormData();
           fd.set("displayName", shopName);
-          fd.set("slug", slug);
           fd.set("legalName", shopName);
           fd.set("registrationNumber", "");
           if (model.policyAccepted) fd.set("policyAccepted", "on");
@@ -325,7 +325,7 @@ export function OnboardingWizard({ model }: { model: OnboardingWizardModel }) {
             fail(result);
             return;
           }
-          setShopSaved(true);
+          if (result.values.slug) setAssignedSlug(result.values.slug);
           goTo(5);
         });
         return;
@@ -409,7 +409,6 @@ export function OnboardingWizard({ model }: { model: OnboardingWizardModel }) {
         startTransition(async () => {
           const fd = new FormData();
           fd.set("displayName", shopName);
-          fd.set("slug", slug);
           fd.set("legalName", shopName);
           fd.set("registrationNumber", "");
           fd.set("policyAccepted", "on");
@@ -724,30 +723,41 @@ export function OnboardingWizard({ model }: { model: OnboardingWizardModel }) {
               <>
                 <StepHeading
                   title="Your store link"
-                  sub="This is the link you'll share on Instagram, TikTok, Snapchat and WhatsApp. Short and memorable works best."
+                  sub="This is the link you'll share on Instagram, TikTok, Snapchat and WhatsApp. It comes from your shop name, so you don't have to think of one."
                 />
-                <label className={LABEL}>
-                  <span>Store address<Req /></span>
-                  <span className="flex items-center overflow-hidden rounded-[10px] border border-line-input bg-white focus-within:border-accent focus-within:shadow-[0_0_0_3px_rgba(168,67,26,0.12)]">
-                    <span className="whitespace-nowrap pl-3.5 text-[14px] text-ink-faint">{host}/</span>
-                    <input
-                      type="text"
-                      aria-label="Store slug"
-                      value={slug}
-                      onChange={(e) => {
-                        setSlugInput(normalizeShopSlug(e.target.value));
-                        setSlugEdited(true);
-                      }}
-                      className="h-[46px] min-w-[80px] flex-1 border-none bg-transparent pl-0.5 pr-3.5 text-[14.5px] font-semibold text-ink outline-none"
-                    />
+                {/*
+                  This used to be a text box the seller filled in themselves, and
+                  nothing said it was public or permanent. One seller typed their
+                  street address into it, and it went into the link they shared
+                  everywhere, the QR code, and the preview on every WhatsApp
+                  forward. It is derived now: the shop name they already chose,
+                  which is public by definition, plus a short code the server
+                  assigns so two shops with one name never collide.
+                */}
+                <div className={LABEL}>
+                  <span>Store address</span>
+                  <span className="flex items-center overflow-hidden rounded-[10px] border border-line bg-raised px-3.5 py-3">
+                    <span className="whitespace-nowrap text-[14px] text-ink-faint">{host}/</span>
+                    <span className="truncate text-[14.5px] font-semibold text-ink">
+                      {assignedSlug ?? (
+                        <>
+                          {slug}
+                          <span className="text-ink-faint">-••••</span>
+                        </>
+                      )}
+                    </span>
                   </span>
-                  {fieldError("slug") ? (
-                    <span className="text-[12px] font-medium text-danger">{fieldError("slug")}</span>
-                  ) : null}
-                </label>
+                </div>
                 <p role="status" className="mt-2.5 flex items-center gap-1.5 text-[12.5px] font-semibold text-success">
                   <CheckIcon size={13} />
-                  {shopSaved && model.shop?.slug === slug ? "This is your link" : "Checked when you continue"}
+                  {assignedSlug
+                    ? "This is your link"
+                    : "We'll finish it with a short code when you continue"}
+                </p>
+                <p className="mt-1.5 text-[12.5px] leading-[1.6] text-ink-soft">
+                  Anyone with the link can see it, so it uses your shop name — never your
+                  address or phone number. Change your shop name in Settings and this stays
+                  the same, so links you have already shared keep working.
                 </p>
               </>
             ) : null}

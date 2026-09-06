@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateOnboarding,
   normalizePhoneNumber,
-  normalizeShopSlug,
+  shopSlugBase,
   parseAccountSetup,
   parseSettlementInput,
   parseShopIdentity,
@@ -120,8 +120,21 @@ describe("onboarding input normalization", () => {
     );
   });
 
-  it("normalizes shop slugs to lowercase hyphen form", () => {
-    expect(normalizeShopSlug("  Ama's Fresh SHOP  ")).toBe("ama-s-fresh-shop");
+  /**
+   * The readable half of a storefront address. Must agree with `shop_slug_base`
+   * in SQL, which is what actually assigns it — this only previews the answer
+   * before the shop row exists.
+   */
+  it("derives a store address from the shop name", () => {
+    expect(shopSlugBase("  Ama's Fresh SHOP  ")).toBe("ama-s-fresh-shop");
+  });
+
+  it("falls back rather than returning an empty address", () => {
+    // The display-name check only requires two characters, and "!!" clears it —
+    // an empty base would build the URL `/-code`, which fails the slug format
+    // check in the database.
+    expect(shopSlugBase("!!")).toBe("shop");
+    expect(shopSlugBase("   ")).toBe("shop");
   });
 
   it("uses the verified auth email instead of trusting a submitted email", () => {
@@ -148,7 +161,6 @@ describe("onboarding input normalization", () => {
   it("rejects invalid identity input with field errors", () => {
     const result = parseShopIdentity({
       displayName: "",
-      slug: "---",
       legalName: "",
       registrationNumber: "",
     });
@@ -157,7 +169,6 @@ describe("onboarding input normalization", () => {
     if (!result.success) {
       expect(result.fieldErrors).toMatchObject({
         displayName: expect.any(Array),
-        slug: expect.any(Array),
         legalName: expect.any(Array),
       });
     }
@@ -166,16 +177,16 @@ describe("onboarding input normalization", () => {
   it("validates a draft shop without requiring policy acceptance", () => {
     const result = parseShopIdentity({
       displayName: "Ama Market",
-      slug: "Ama Market",
       legalName: "Ama Market Limited",
       registrationNumber: "",
     });
 
+    // No slug here at all: the address is assigned by the database from the
+    // display name, so there is nothing for a caller to submit or get wrong.
     expect(result).toEqual({
       success: true,
       data: {
         displayName: "Ama Market",
-        slug: "ama-market",
         legalName: "Ama Market Limited",
         registrationNumber: null,
       },

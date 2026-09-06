@@ -5196,7 +5196,6 @@ export type Database = {
           p_display_name: string
           p_legal_name: string
           p_registration_number: string
-          p_slug: string
         }
         Returns: string
       }
