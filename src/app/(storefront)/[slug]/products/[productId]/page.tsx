@@ -51,11 +51,14 @@ export default async function ProductPage({ params, searchParams }: Props) {
 
   // Both are decoration on an otherwise complete page, so they are fetched
   // together and neither is allowed to block the product itself.
+  // product.id, not the URL parameter: getPublicProduct is what established
+  // that this product belongs to this shop, so everything downstream should be
+  // keyed off its answer rather than off the request.
   const [reviews, statsByProduct] = await Promise.all([
-    getProductReviews(productId),
-    getReviewStats([productId]),
+    getProductReviews(shop.id, product.id),
+    getReviewStats([product.id]),
   ]);
-  const stats = statsByProduct.get(productId);
+  const stats = statsByProduct.get(product.id);
 
   const availability = deriveAvailability({
     policy: product.inventory_policy,

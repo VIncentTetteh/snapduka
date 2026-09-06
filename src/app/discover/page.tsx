@@ -48,7 +48,13 @@ export default async function DiscoverPage({
     query = query.or(
       `display_name.ilike.*${search}*,category.ilike.*${search}*,city.ilike.*${search}*`,
     );
-  const { data } = await query;
+  // The error was discarded, so a failed query rendered the same "No shops
+  // found" as an empty directory — the one message that tells a visitor to stop
+  // looking.
+  const { data, error } = await query;
+  if (error) {
+    console.error("[discover] could not load the directory", { error });
+  }
 
   return (
     <main className="sd-main min-h-screen bg-paper text-ink">

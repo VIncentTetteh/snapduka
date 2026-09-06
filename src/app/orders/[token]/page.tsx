@@ -99,7 +99,11 @@ export default async function TrackingPage({
   const admin = createAdminClient();
   const { data: order } = await admin
     .from("orders")
-    .select("*,order_lines(*),order_events(*),shops(display_name,slug),seller_accounts(contact_phone)")
+    // order_lines(*) pulled unit_cost_minor — the seller's cost of goods —
+    // onto a page anyone with the tracking token can open. It was not rendered,
+    // so nothing leaked; one `<Client order={order} />` would have changed
+    // that, and the page already names the six columns it actually uses.
+    .select("*,order_lines(id,product_id,product_name,variant_name,quantity,line_total_minor),order_events(*),shops(display_name,slug),seller_accounts(contact_phone)")
     .eq("tracking_token", token)
     .maybeSingle();
   if (!order) notFound();

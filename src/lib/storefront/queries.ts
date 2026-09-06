@@ -139,10 +139,21 @@ export async function getPublicProduct(shopId: string, productId: string) {
  * what a visitor sees. A hidden review is invisible here by construction rather
  * than by a filter someone could forget.
  */
-export async function getProductReviews(productId: string, limit = 20) {
+/**
+ * Reviews for one product of one shop.
+ *
+ * The shop is part of the query rather than assumed. Filtering on product_id
+ * alone was safe only because every caller happened to verify the product
+ * first — a property of the call sites, not of this function, and the product
+ * page was passing the raw URL parameter rather than the id it had just
+ * verified. product_reviews.shop_id exists and is indexed, so scoping here
+ * costs nothing and makes the guarantee local.
+ */
+export async function getProductReviews(shopId: string, productId: string, limit = 20) {
   const { data, error } = await publicClient()
     .from("product_reviews")
     .select("id, author_name, rating, body, seller_reply, seller_replied_at, created_at")
+    .eq("shop_id", shopId)
     .eq("product_id", productId)
     .order("created_at", { ascending: false })
     .limit(limit);
