@@ -59,6 +59,16 @@ export function CheckoutForm({
   const [hydrated, setHydrated] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  /**
+   * Whether the buyer can fix the failure themselves.
+   *
+   * The banner used to append "check your network or try another method" to
+   * every error. For a spent promo code — where the server sends a precise
+   * message and a 409 — that is advice about the wrong thing entirely, and
+   * nothing points at the promo field. A 409 means the server understood the
+   * request and refused it for a reason it stated.
+   */
+  const [buyerFixable, setBuyerFixable] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [selectedMethodId, setSelectedMethodId] = useState(methods[0]?.id ?? "");
@@ -169,6 +179,7 @@ export function CheckoutForm({
         setFieldErrors(errors);
         if (Object.keys(errors).length > 0) {
           setFailed(true);
+          setBuyerFixable(true);
           setMessage("Check the highlighted fields before continuing.");
           const firstInvalid = event.currentTarget.querySelector<HTMLElement>("[aria-invalid='true']");
           firstInvalid?.focus();
@@ -176,6 +187,7 @@ export function CheckoutForm({
         }
         setPending(true);
         setFailed(false);
+        setBuyerFixable(false);
         setMessage("Placing your order…");
         try {
           const response = await fetch("/api/checkout/orders", {
@@ -218,7 +230,10 @@ export function CheckoutForm({
             }),
           });
           const result = await response.json();
-          if (!response.ok) throw new Error(result.error);
+          if (!response.ok) {
+            setBuyerFixable(response.status === 409);
+            throw new Error(result.error);
+          }
           if (effectivePayment === "paystack") {
             const payment = await fetch("/api/payments/paystack/initialize", {
               method: "POST",
@@ -571,8 +586,10 @@ export function CheckoutForm({
                 <path d="M9 6.5v3.2m0 2.6h.01M9 2 1.8 15h14.4L9 2Z" stroke="#B42318" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <p className="m-0 text-[12.5px] leading-[1.5] text-[#7A1B10]">
-                <strong className="font-bold">That didn&rsquo;t go through.</strong> {message} Your
-                details are saved — check your network or try another method, then retry.
+                <strong className="font-bold">That didn&rsquo;t go through.</strong> {message}{" "}
+                {buyerFixable
+                  ? "Your details are saved — fix that above and try again."
+                  : "Your details are saved — check your network or try another method, then retry."}
               </p>
             </div>
           ) : (
