@@ -1,3 +1,4 @@
+import { Pager, parsePage } from "@/components/ui/pager";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -40,11 +41,16 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
   if (!shop) notFound();
   const canonicalUrl = canonicalStorefrontUrl(await appOrigin(), slug);
 
-  const [products, collections] = await Promise.all([
+  // `Number(filters.page || 1)` turned `?page=abc` into NaN, and a NaN range
+  // returns no rows — so a shared link with a mangled query string showed the
+  // buyer an empty shop rather than the catalogue. parsePage refuses anything
+  // that is not a positive integer and lands on page one.
+  const page = parsePage(filters.page);
+  const [{ products, hasNext }, collections] = await Promise.all([
     getPublicProducts(shop.id, {
       search: filters.q,
       collection: filters.collection,
-      page: Number(filters.page || 1),
+      page,
     }),
     getPublicCollections(shop.id),
   ]);
@@ -145,6 +151,16 @@ export default async function StorefrontPage({ params, searchParams }: Props) {
           products={products}
           reviewStats={reviewStats}
           slug={slug}
+        />
+
+        {/* There was no pagination control anywhere on the storefront, while the
+            query has always paged at 24 — so a shop with 25 products had the
+            rest unreachable unless the buyer knew to edit ?page= by hand. */}
+        <Pager
+          basePath={`/${slug}`}
+          hasNext={hasNext}
+          page={page}
+          params={{ q: filters.q, collection: filters.collection, campaign: filters.campaign }}
         />
 
         <p className="mt-7 text-center text-[11.5px] text-ink-faint">

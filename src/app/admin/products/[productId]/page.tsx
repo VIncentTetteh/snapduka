@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -24,6 +25,9 @@ export default async function AdminProductPage({
 }: {
   params: Promise<{ productId: string }>;
 }) {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin/products");
   const { productId } = await params;
   const admin = createAdminClient();
 

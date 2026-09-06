@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import Link from "next/link";
 
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -23,6 +24,9 @@ export default async function AdminSellersPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin/sellers");
   const { q } = await searchParams;
   const admin = createAdminClient();
 

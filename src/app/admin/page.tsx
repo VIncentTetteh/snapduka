@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import Link from "next/link";
 
 import { MetricTile } from "@/components/ui/metric-tile";
@@ -13,6 +14,9 @@ function isoDaysAgo(days: number): string {
 }
 
 export default async function AdminOverviewPage() {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin");
   const admin = createAdminClient();
   const since30d = isoDaysAgo(30);
 

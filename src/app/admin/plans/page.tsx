@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import { ActionBanner } from "@/components/ui/action-banner";
 import {
   syncPlatformFeeAction,
@@ -19,6 +20,9 @@ export default async function AdminPlansPage({
 }: {
   searchParams: Promise<{ error?: string; saved?: string }>;
 }) {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin/plans");
   const params = await searchParams;
   const admin = createAdminClient();
   const [{ data: plans }, { data: prices }, { data: subscriptions }, { data: countries }, { data: subaccounts }] = await Promise.all([

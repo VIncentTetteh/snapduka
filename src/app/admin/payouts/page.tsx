@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import { reviewPayoutAction } from "@/app/admin/actions";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -29,6 +30,9 @@ export default async function AdminPayoutsPage({
 }: {
   searchParams: Promise<{ status?: string; error?: string }>;
 }) {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin/payouts");
   const filters = await searchParams;
   const status = FILTERS.some((f) => f.value === filters.status) ? (filters.status ?? "") : "";
   const admin = createAdminClient();

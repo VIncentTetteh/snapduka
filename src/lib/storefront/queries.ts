@@ -29,12 +29,44 @@ export async function getPublicShop(slug: string) {
   return data;
 }
 
+export const STOREFRONT_PAGE_SIZE = 24;
+
+/** One product as the storefront grid consumes it. */
+export type PublicProduct = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  currency: "GHS" | "NGN" | "XOF";
+  price_minor: number;
+  compare_at_price_minor: number | null;
+  status: string;
+  inventory_policy: "track" | "continue_selling" | "deny_when_out_of_stock";
+  stock_quantity: number | null;
+  reserved_quantity: number;
+  product_media?: { object_path: string; alt_text: string | null; position: number }[] | null;
+};
+
+/**
+ * A page of a shop's catalogue, and whether there is another one.
+ *
+ * `page` used to arrive as `Number(searchParams.page || 1)`, so `?page=abc`
+ * became NaN, `Math.max(1, NaN)` stayed NaN, and `.range(NaN, NaN)` returned
+ * nothing — a buyer following a shared link with a mangled query string saw an
+ * empty shop, with no error and nothing to suggest the shop had any stock. It
+ * is caught in the page now, where the parameter is read, but a bad number
+ * reaching here must still land on page one rather than on nothing.
+ *
+ * One row more than the page size is fetched purely to answer `hasNext`, which
+ * is cheaper than a second exact count on every storefront render.
+ */
 export async function getPublicProducts(
   shopId: string,
   options: { search?: string; collection?: string; page?: number } = {},
-) {
-  const page = Math.max(1, options.page ?? 1);
-  const pageSize = 24;
+): Promise<{ products: PublicProduct[]; hasNext: boolean }> {
+  const requested = Number(options.page ?? 1);
+  const page = Number.isInteger(requested) && requested >= 1 ? requested : 1;
+  const pageSize = STOREFRONT_PAGE_SIZE;
   const client = publicClient();
   let productIds: string[] | null = null;
 
@@ -60,14 +92,16 @@ export async function getPublicProducts(
     .eq("shop_id", shopId)
     .eq("status", "active")
     .order("created_at", { ascending: false })
-    .range((page - 1) * pageSize, page * pageSize - 1);
+    .range((page - 1) * pageSize, page * pageSize);
 
   if (options.search?.trim()) query = query.ilike("name", `%${options.search.trim()}%`);
   if (productIds) query = query.in("id", productIds.length ? productIds : ["00000000-0000-0000-0000-000000000000"]);
 
   const { data, error } = await query;
   if (error) throw new Error("Unable to load products.", { cause: error });
-  return data ?? [];
+
+  const rows = (data ?? []) as PublicProduct[];
+  return { products: rows.slice(0, pageSize), hasNext: rows.length > pageSize };
 }
 
 export async function getPublicCollections(shopId: string) {

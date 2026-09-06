@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import { ActionBanner } from "@/components/ui/action-banner";
 import { createCategoryAction, setCategoryActiveAction } from "@/app/admin/products/actions";
 import { ProductListWithBulkActions, type AdminProductRow } from "@/components/admin/product-bulk-bar";
@@ -53,6 +54,9 @@ export default async function AdminProductsPage({
     saved?: string;
   }>;
 }) {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin/products");
   const { q, status, moderation, error: actionError, saved } = await searchParams;
   const term = q?.trim() ?? "";
   const admin = createAdminClient();

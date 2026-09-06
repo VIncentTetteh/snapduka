@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -20,6 +21,9 @@ function dotClass(action: string) {
 }
 
 export default async function AdminAuditPage() {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin/audit");
   const { data: events } = await createAdminClient()
     .from("audit_events")
     .select("id,actor_type,action,entity_type,entity_id,after_data,metadata,occurred_at")

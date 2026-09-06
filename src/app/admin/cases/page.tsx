@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import Link from "next/link";
 
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -28,6 +29,9 @@ function ageLabel(iso: string) {
 }
 
 export default async function AdminCasesPage() {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin/cases");
   const { data: cases } = await createAdminClient()
     .from("support_cases")
     .select(

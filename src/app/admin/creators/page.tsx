@@ -1,3 +1,4 @@
+import { requireOperator } from "@/lib/auth/require-operator";
 import { ActionBanner } from "@/components/ui/action-banner";
 import { setCreatorStatusAction } from "@/app/admin/actions";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -34,6 +35,9 @@ export default async function AdminCreatorsPage({
 }: {
   searchParams: Promise<{ status?: string; error?: string; saved?: string }>;
 }) {
+  // The layout redirects a non-operator; this is the handler's own check,
+  // because every query below runs through the service-role client.
+  await requireOperator("/admin/creators");
   const params = await searchParams;
   const admin = createAdminClient();
 
