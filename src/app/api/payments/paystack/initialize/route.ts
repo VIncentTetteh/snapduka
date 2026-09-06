@@ -8,7 +8,21 @@ import { appOrigin } from "@/lib/app-url";
 import { jsonObject } from "@/lib/db/json";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const schema = z.object({ orderId: z.uuid() });
+/**
+ * The tracking token is required, not just the order id.
+ *
+ * This took an order UUID and nothing else. It then built a Paystack page
+ * prefilled with that buyer's email and a callback URL containing the order's
+ * tracking_token — and the tracking token is the capability that opens
+ * /orders/<token>, with the buyer's name, phone, address and items on it. So an
+ * order id could be exchanged for the secret that an order id is not supposed
+ * to be equivalent to.
+ *
+ * The buyer who just placed the order has the token: /api/checkout/orders
+ * returns it, and the checkout form already holds it to redirect afterwards.
+ * Anyone who merely knows or guesses an id does not.
+ */
+const schema = z.object({ orderId: z.uuid(), trackingToken: z.uuid() });
 
 // 10 payment initializations per IP per 5 minutes
 const PAYSTACK_LIMIT = { limit: 10, windowMs: 5 * 60 * 1000 };
@@ -42,6 +56,9 @@ export async function POST(request: Request) {
       "id,seller_account_id,total_minor,currency,buyer_snapshot,tracking_token,payment_method,payment_status",
     )
     .eq("id", parsed.data.orderId)
+    // Both, so knowing the id alone gets nothing. Same 409 either way: a
+    // wrong token must not be distinguishable from an ineligible order.
+    .eq("tracking_token", parsed.data.trackingToken)
     .maybeSingle();
 
   if (!order || order.payment_method !== "paystack" || order.payment_status === "paid") {

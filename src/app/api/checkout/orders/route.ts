@@ -62,19 +62,64 @@ export async function POST(request: Request) {
   });
 
   if (error) {
-    const conflict = /unavailable|stock/i.test(error.message);
+    // Errors the buyer can act on carry their own message and a 409; anything
+    // else is ours and gets a generic one. "Promotion redemption limit reached"
+    // and "Promotion already used" used to fall through to the generic branch,
+    // so a buyer whose code had run out was told to retry — which cannot work,
+    // and nothing pointed at the promo field.
+    const buyerFixable = /unavailable|stock|promotion|fulfillment|delivery/i.test(error.message);
     return NextResponse.json(
-      { error: conflict ? error.message : "We could not place the order. Please retry." },
-      { status: conflict ? 409 : 500 },
+      { error: buyerFixable ? error.message : "We could not place the order. Please retry." },
+      { status: buyerFixable ? 409 : 500 },
     );
   }
 
   const result = data as { orderId?: string } | null;
   if (result?.orderId) {
-    await admin.from("abandoned_checkouts").update({ recovered_order_id: result.orderId }).eq("shop_id", parsed.data.shopId).eq("contact", parsed.data.buyer.email).is("recovered_order_id", null);
-    const { data: createdOrder } = await admin.from("orders").select("customer_id,public_reference,seller_account_id,total_minor,currency").eq("id", result.orderId).maybeSingle();
-    if (createdOrder) await enqueueIntegrationEvent({ data: { currency: createdOrder.currency, customerId: createdOrder.customer_id, orderId: result.orderId, reference: createdOrder.public_reference, totalMinor: createdOrder.total_minor }, eventId: `${result.orderId}:created`, eventType: "order.created", sellerAccountId: createdOrder.seller_account_id });
-    await enqueueOrderEventNotification(admin, result.orderId, "order_placed");
+    // Everything past this point is bookkeeping on an order that already
+    // exists. It ran un-caught, so a notification queue hiccup threw out of the
+    // route and the buyer was shown a failure for an order that had been
+    // placed — and, on a card payment, paid for. The likely next thing they do
+    // is order again.
+    try {
+      await admin
+        .from("abandoned_checkouts")
+        .update({ recovered_order_id: result.orderId })
+        .eq("shop_id", parsed.data.shopId)
+        .eq("contact", parsed.data.buyer.email)
+        .is("recovered_order_id", null);
+
+      const { data: createdOrder } = await admin
+        .from("orders")
+        .select("customer_id,public_reference,seller_account_id,total_minor,currency")
+        .eq("id", result.orderId)
+        .maybeSingle();
+
+      if (createdOrder) {
+        await enqueueIntegrationEvent({
+          data: {
+            currency: createdOrder.currency,
+            customerId: createdOrder.customer_id,
+            orderId: result.orderId,
+            reference: createdOrder.public_reference,
+            totalMinor: createdOrder.total_minor,
+          },
+          eventId: `${result.orderId}:created`,
+          eventType: "order.created",
+          sellerAccountId: createdOrder.seller_account_id,
+        });
+      }
+
+      await enqueueOrderEventNotification(admin, result.orderId, "order_placed");
+    } catch (postCommitError) {
+      // Loud in the logs, invisible to the buyer: the seller may not get their
+      // notification, which is recoverable, but telling the buyer their order
+      // failed is not.
+      console.error("[checkout] order placed but post-commit work failed", {
+        orderId: result.orderId,
+        error: postCommitError,
+      });
+    }
   }
 
   return NextResponse.json(data, { status: 201 });

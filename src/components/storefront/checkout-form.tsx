@@ -221,7 +221,12 @@ export function CheckoutForm({
             const payment = await fetch("/api/payments/paystack/initialize", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ orderId: result.orderId }),
+              // The token proves this browser is the one that placed the
+              // order; the id on its own is not a credential.
+              body: JSON.stringify({
+                orderId: result.orderId,
+                trackingToken: result.trackingToken,
+              }),
             });
             const paymentResult = await payment.json();
             if (payment.ok && paymentResult.authorizationUrl) {
