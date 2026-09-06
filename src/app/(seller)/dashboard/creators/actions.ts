@@ -182,7 +182,13 @@ export async function markCommissionsPaid(formData: FormData): Promise<void> {
   // notification is real now, and the confirmation is only claimed once it is
   // enqueued.
   const payment = result as
-    | { paymentId?: string; amountMinor?: number; currency?: string }
+    | {
+        paymentId?: string;
+        amountMinor?: number;
+        grossMinor?: number;
+        adjustmentMinor?: number;
+        currency?: string;
+      }
     | null;
   let notified = false;
 
@@ -207,12 +213,25 @@ export async function markCommissionsPaid(formData: FormData): Promise<void> {
     });
   }
 
+  // The RPC nets any outstanding carry-over off the payment, so the figure it
+  // recorded can be smaller than the commissions the seller ticked. They send
+  // the money themselves, so the confirmation names the amount rather than
+  // leaving them to assume it was the gross.
+  const currency = payment?.currency as CurrencyCode | undefined;
+  const netted =
+    payment?.adjustmentMinor != null &&
+    payment.adjustmentMinor < 0 &&
+    payment.amountMinor != null &&
+    currency
+      ? ` ${formatMoney(Math.abs(payment.adjustmentMinor), currency)} owed back was netted off, so ${formatMoney(payment.amountMinor, currency)} was recorded.`
+      : "";
+
   revalidatePath(detail);
   back(
     "message",
-    notified
+    (notified
       ? "Payment recorded. The creator has been told."
-      : "Payment recorded. We could not reach the creator, so tell them yourself.",
+      : "Payment recorded. We could not reach the creator, so tell them yourself.") + netted,
     detail,
   );
 }

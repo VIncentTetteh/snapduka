@@ -202,6 +202,19 @@ export default async function CreatorDetailPage({
               : ` on ${creator?.contact_phone ?? "their contact number"}`}
             . SnapDuka does not move money; this only records that you paid.
           </p>
+          {/* The seller sends the money by hand before pressing this, so the
+              netting has to be stated before they send, not after. owedNowMinor
+              is what the ledger will record with everything below ticked —
+              payable less the carry-over — and it is the same figure the RPC
+              computes, so the two cannot drift. */}
+          {balance.carryOverMinor < 0 ? (
+            <p className="mb-3 rounded-[10px] border border-danger-line bg-danger-tint px-3 py-2 text-[12.5px] font-semibold leading-[1.6] text-danger">
+              Send {formatMoney(balance.owedNowMinor, currency)}, not{" "}
+              {formatMoney(balance.payableMinor, currency)} — the{" "}
+              {formatMoney(Math.abs(balance.carryOverMinor), currency)} owed back comes off
+              this payment. Recording it settles the carry-over.
+            </p>
+          ) : null}
           <form action={markCommissionsPaid} className="grid gap-3">
             <input name="partnershipId" type="hidden" value={partnershipId} />
             <input name="creatorId" type="hidden" value={partnership.creator_id} />

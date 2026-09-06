@@ -1035,6 +1035,7 @@ export type Database = {
           id: string
           reason: string
           seller_account_id: string
+          settled_by_payment_id: string | null
         }
         Insert: {
           commission_id: string
@@ -1046,6 +1047,7 @@ export type Database = {
           id?: string
           reason: string
           seller_account_id: string
+          settled_by_payment_id?: string | null
         }
         Update: {
           commission_id?: string
@@ -1057,6 +1059,7 @@ export type Database = {
           id?: string
           reason?: string
           seller_account_id?: string
+          settled_by_payment_id?: string | null
         }
         Relationships: [
           {
@@ -1078,6 +1081,13 @@ export type Database = {
             columns: ["seller_account_id"]
             isOneToOne: false
             referencedRelation: "seller_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creator_commission_adjustments_settled_by_payment_id_fkey"
+            columns: ["settled_by_payment_id"]
+            isOneToOne: false
+            referencedRelation: "creator_commission_payments"
             referencedColumns: ["id"]
           },
         ]
@@ -5207,6 +5217,7 @@ export type Database = {
         Returns: {
           creator_id: string
           currency: Database["public"]["Enums"]["currency_code"]
+          owed_now_minor: number
           paid_minor: number
           payable_minor: number
           pending_minor: number

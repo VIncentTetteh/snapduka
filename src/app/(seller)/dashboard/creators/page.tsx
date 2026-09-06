@@ -64,6 +64,10 @@ export default async function CreatorsPage({
     payable_minor: number;
     paid_minor: number;
     reversed_minor: number;
+    // Payable net of any outstanding carry-over, computed in SQL by the same
+    // expression creator_commission_balances uses, so this tile and the detail
+    // page's "Owed now" cannot disagree for a creator with a post-payment refund.
+    owed_now_minor: number;
   };
 
   const totalsByCreator = new Map<string, CommissionTotals[]>();
@@ -80,7 +84,7 @@ export default async function CreatorsPage({
     (partnerships ?? []).filter((partnership) => ["invited", "active", "paused"].includes(partnership.status)).length +
     pendingInvites;
   const owedNow = ((commissions ?? []) as CommissionTotals[]).reduce(
-    (total, row) => total + Number(row.payable_minor),
+    (total, row) => total + Number(row.owed_now_minor),
     0,
   );
   const programmeCurrency = ((partnerships ?? [])[0]?.currency ??
@@ -192,7 +196,7 @@ export default async function CreatorsPage({
                     // No adjustments in this roll-up, so what is owed is simply
                     // what is payable — matching calculateCreatorBalance, which
                     // floors at zero.
-                    const owedMinor = Math.max(0, Number(totals?.payable_minor ?? 0));
+                    const owedMinor = Math.max(0, Number(totals?.owed_now_minor ?? 0));
                     return (
                       <Link
                         key={partnership.id}
