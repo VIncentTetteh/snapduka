@@ -15,6 +15,7 @@ describe("creatorUpdateTemplate", () => {
     for (const event of [
       "creator_partnership_accepted",
       "creator_commission_earned",
+      "creator_commission_payable",
       "creator_payment_recorded",
     ] as const) {
       const message = creatorUpdateTemplate({ ...base, event, amount: "GH₵ 40.00" });
@@ -26,6 +27,23 @@ describe("creatorUpdateTemplate", () => {
   it("points a new partner at making their link", () => {
     const message = creatorUpdateTemplate({ ...base, event: "creator_partnership_accepted" });
     expect(message.text).toContain("/creator/links");
+  });
+
+  /**
+   * The hold clock running out is not the money arriving. SnapDuka does not move
+   * it — the seller does — so this is the creator's cue to expect a payment, not
+   * a claim that one was sent.
+   */
+  it("says a matured commission is ready to be paid, not that it was paid", () => {
+    const message = creatorUpdateTemplate({
+      ...base,
+      event: "creator_commission_payable",
+      amount: "GH₵ 13.00",
+    });
+
+    expect(message.subject).toContain("GH₵ 13.00");
+    expect(message.subject).toContain("ready to be paid");
+    expect(`${message.subject} ${message.text}`).not.toMatch(/\bpaid you\b|\bhas been sent\b/);
   });
 
   it("states the amount earned", () => {

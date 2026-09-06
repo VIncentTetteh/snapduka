@@ -277,6 +277,75 @@ describe("markCommissionsPaid", () => {
     expect(url).toMatch(/tell them yourself/i);
   });
 
+  /**
+   * The RPC nets an outstanding carry-over off the payment, so what it records
+   * can be smaller than the commissions the seller ticked. SnapDuka moves no
+   * money — the seller sends it themselves — so a confirmation that did not name
+   * the amount would leave them assuming they had paid the gross.
+   */
+  it("names the netted amount when a carry-over came off the payment", async () => {
+    mocks.createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          paymentId: "pay-3",
+          amountMinor: 12680,
+          grossMinor: 17680,
+          adjustmentMinor: -5000,
+          currency: "GHS",
+        },
+        error: null,
+      }),
+    });
+    mocks.createAdminClient.mockReturnValue({
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { display_name: "PurePlatter" } }) }) }),
+      }),
+    });
+    mocks.enqueueCreatorNotification.mockResolvedValue(true);
+
+    await expect(
+      markCommissionsPaid(
+        formData({ partnershipId: "p1", creatorId: "c1", method: "cash", commissionIds: ["k1"] }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    const url = decodeURIComponent(String(mocks.redirect.mock.calls.at(-1)?.[0]));
+    expect(url).toMatch(/owed back was netted off/);
+    // Both figures, so the difference from what they ticked is explained.
+    expect(url).toContain("50.00");
+    expect(url).toContain("126.80");
+  });
+
+  it("says nothing about netting when there was no carry-over", async () => {
+    mocks.createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          paymentId: "pay-4",
+          amountMinor: 17680,
+          grossMinor: 17680,
+          adjustmentMinor: 0,
+          currency: "GHS",
+        },
+        error: null,
+      }),
+    });
+    mocks.createAdminClient.mockReturnValue({
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { display_name: "PurePlatter" } }) }) }),
+      }),
+    });
+    mocks.enqueueCreatorNotification.mockResolvedValue(true);
+
+    await expect(
+      markCommissionsPaid(
+        formData({ partnershipId: "p1", creatorId: "c1", method: "cash", commissionIds: ["k1"] }),
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    const url = decodeURIComponent(String(mocks.redirect.mock.calls.at(-1)?.[0]));
+    expect(url).not.toMatch(/netted off/);
+  });
+
   it("refuses an empty selection rather than recording a zero payment", async () => {
     mocks.createClient.mockResolvedValue({ rpc: vi.fn() });
 

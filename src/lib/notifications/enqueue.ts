@@ -1,4 +1,5 @@
 import type { createAdminClient } from "@/lib/supabase/admin";
+import type { CurrencyCode } from "@/lib/countries/types";
 import type { CreatorNotificationEvent } from "@/lib/notifications/templates";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -33,13 +34,15 @@ export async function enqueueOrderEventNotification(
  * `markCommissionsPaid` told the seller "the creator has been notified". A
  * creator learned that money had moved only by opening the portal on spec.
  *
- * Email when we have one, SMS otherwise. `creators.contact_phone` is NOT NULL
- * and `contact_email` is optional, so SMS is the channel that always exists —
- * the same order `inviteCreator` uses to deliver the invitation itself.
+ * The rules themselves — only an active creator, email when there is one and SMS
+ * otherwise, never the same event twice for the same thing — live in
+ * `enqueue_creator_notification` rather than here, because the other two events
+ * (a commission accruing, a commission maturing) fire from SQL with nobody
+ * pressing a button, and two copies of "who may be messaged" would drift.
  *
- * `notifications.seller_account_id` is NOT NULL and carries the shop the message
- * is about, not the recipient: a creator has no seller account, and the column
- * is what scopes the row for the worker and for support.
+ * The amount goes as minor units and a currency, not a formatted string: SQL
+ * cannot reproduce `Intl.NumberFormat`, so the worker formats and both paths
+ * render identically.
  */
 export async function enqueueCreatorNotification(
   admin: AdminClient,
@@ -48,47 +51,20 @@ export async function enqueueCreatorNotification(
     sellerAccountId: string;
     event: CreatorNotificationEvent;
     shopName: string;
-    /** Pre-formatted in the creator's currency by the caller. */
-    amount?: string;
+    amountMinor?: number;
+    currency?: CurrencyCode;
     /** Deduplicates a repeat of the same event for the same thing. */
     dedupeKey?: string;
   },
 ): Promise<boolean> {
-  const { data: creator } = await admin
-    .from("creators")
-    .select("contact_email,contact_phone,status")
-    .eq("id", input.creatorId)
-    .maybeSingle();
-  // A suspended or closed creator is not messaged.
-  if (!creator || creator.status !== "active") return false;
-
-  if (input.dedupeKey) {
-    const { data: existing } = await admin
-      .from("notifications")
-      .select("id")
-      .eq("template", input.event)
-      .contains("payload", { dedupeKey: input.dedupeKey })
-      .limit(1)
-      .maybeSingle();
-    // Already sent for this exact thing; treat as delivered rather than
-    // sending a second copy.
-    if (existing) return true;
-  }
-
-  const channel = creator.contact_email ? "email" : "sms";
-  const recipient = creator.contact_email ?? creator.contact_phone;
-
-  const { error } = await admin.from("notifications").insert({
-    seller_account_id: input.sellerAccountId,
-    channel,
-    recipient,
-    template: input.event,
-    payload: {
-      event: input.event,
-      shopName: input.shopName,
-      ...(input.amount ? { amount: input.amount } : {}),
-      ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
-    },
+  const { data, error } = await admin.rpc("enqueue_creator_notification", {
+    p_creator_id: input.creatorId,
+    p_seller_account_id: input.sellerAccountId,
+    p_event: input.event,
+    p_shop_name: input.shopName,
+    p_amount_minor: input.amountMinor ?? undefined,
+    p_currency: input.currency ?? undefined,
+    p_dedupe_key: input.dedupeKey ?? undefined,
   });
 
   // A creator not hearing about their money is bad; failing the seller's action
@@ -102,5 +78,5 @@ export async function enqueueCreatorNotification(
     return false;
   }
 
-  return true;
+  return data === true;
 }

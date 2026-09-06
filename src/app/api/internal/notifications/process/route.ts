@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import type { CurrencyCode } from "@/lib/countries/types";
+import { formatMoney } from "@/lib/i18n";
 import { sendEmail } from "@/lib/notifications/email";
 import { nextAttemptAt } from "@/lib/notifications/outbox";
 import { sendPush } from "@/lib/notifications/push";
@@ -13,6 +15,7 @@ import {
 const CREATOR_EVENTS: readonly CreatorNotificationEvent[] = [
   "creator_partnership_accepted",
   "creator_commission_earned",
+  "creator_commission_payable",
   "creator_payment_recorded",
 ];
 
@@ -23,6 +26,15 @@ import { sendWhatsApp } from "@/lib/notifications/whatsapp";
 import { appOrigin } from "@/lib/app-url";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
+
+/** The amount on a creator message, in their currency. */
+function creatorAmount(payload: Record<string, unknown>): string | undefined {
+  if (payload.amount) return String(payload.amount);
+  const minor = Number(payload.amountMinor);
+  const currency = payload.currency ? String(payload.currency) : null;
+  if (!currency || !Number.isFinite(minor)) return undefined;
+  return formatMoney(minor, currency as CurrencyCode);
+}
 
 export async function POST(request: Request) {
   if (!isInternalJobRequest(request)) {
@@ -57,7 +69,11 @@ export async function POST(request: Request) {
         ? creatorUpdateTemplate({
             event: claimed.template,
             shopName: String(payload.shopName ?? "A SnapDuka shop"),
-            amount: payload.amount ? String(payload.amount) : undefined,
+            // Formatted here rather than by whoever enqueued it: the two
+            // events that fire from SQL cannot reach Intl.NumberFormat, so the
+            // amount travels as minor units and a currency and is rendered
+            // once, in one place, for every path.
+            amount: creatorAmount(payload),
             portalUrl: `${origin}/creator`,
           })
         : orderUpdateTemplate({

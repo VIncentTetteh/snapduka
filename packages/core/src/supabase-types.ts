@@ -5033,6 +5033,18 @@ export type Database = {
         Args: never
         Returns: Database["public"]["Enums"]["seller_account_status"]
       }
+      enqueue_creator_notification: {
+        Args: {
+          p_amount_minor?: number
+          p_creator_id: string
+          p_currency?: Database["public"]["Enums"]["currency_code"]
+          p_dedupe_key?: string
+          p_event: string
+          p_seller_account_id: string
+          p_shop_name: string
+        }
+        Returns: boolean
+      }
       enqueue_order_notification: {
         Args: { p_event: string; p_order_id: string }
         Returns: undefined

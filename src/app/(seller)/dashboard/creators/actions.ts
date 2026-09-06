@@ -205,10 +205,8 @@ export async function markCommissionsPaid(formData: FormData): Promise<void> {
       sellerAccountId: actor.sellerAccountId,
       event: "creator_payment_recorded",
       shopName: shop?.display_name ?? "A SnapDuka shop",
-      amount:
-        payment.amountMinor != null && payment.currency
-          ? formatMoney(payment.amountMinor, payment.currency as CurrencyCode)
-          : undefined,
+      amountMinor: payment.amountMinor ?? undefined,
+      currency: payment.currency as CurrencyCode | undefined,
       dedupeKey: payment.paymentId,
     });
   }

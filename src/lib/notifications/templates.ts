@@ -9,6 +9,7 @@ export function orderUpdateTemplate(input: { reference: string; status: string; 
 export type CreatorNotificationEvent =
   | "creator_partnership_accepted"
   | "creator_commission_earned"
+  | "creator_commission_payable"
   | "creator_payment_recorded";
 
 /**
@@ -39,6 +40,14 @@ export function creatorUpdateTemplate(input: {
       return {
         subject: `You earned ${input.amount} from ${input.shopName}`,
         text: `Someone bought through your link. You earned ${input.amount} from ${input.shopName}. See it: ${input.portalUrl}`,
+      };
+    case "creator_commission_payable":
+      // The hold clock has run out. Deliberately does not say the money is on
+      // its way: SnapDuka does not move it, the seller does, and this is the
+      // creator's cue to expect it rather than a promise that it has been sent.
+      return {
+        subject: `${input.amount} from ${input.shopName} is ready to be paid`,
+        text: `Your ${input.amount} from ${input.shopName} has cleared its holding period and is ready for them to pay. See it: ${input.portalUrl}`,
       };
     case "creator_payment_recorded":
       // Deliberately "says they paid you": SnapDuka records the seller's
