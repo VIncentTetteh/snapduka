@@ -38,7 +38,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: `${product.name} | ${shop.display_name}`,
     description: product.description,
     alternates: { canonical: url },
+    // No `images` here either: opengraph-image.tsx next to this file is wired by
+    // Next's own convention, and naming the path by hand is what left the
+    // storefront declaring a 404. summary_large_image so the card is the photo
+    // rather than a thumbnail beside the title — this is the link creators post.
     openGraph: { title: product.name, url },
+    twitter: { card: "summary_large_image", title: product.name },
   };
 }
 

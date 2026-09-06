@@ -31,7 +31,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: `${shop.display_name} | SnapDuka`,
     description: `Shop ${shop.display_name} securely on SnapDuka.`,
     alternates: { canonical: url },
-    openGraph: { title: shop.display_name, url, images: [`/${slug}/opengraph-image`] },
+    // `images` is deliberately absent. opengraph-image.tsx sits next to this
+    // file, and Next wires that convention itself — at a hashed path like
+    // /<slug>/opengraph-image-gs1uzh. Naming `/${slug}/opengraph-image` by hand
+    // overrode that with a URL nothing serves, so every storefront link shared
+    // to WhatsApp, Facebook or X declared an image that 404s. A declared image
+    // that fails to load is worse than none: the card renders blank rather than
+    // falling back to a text preview.
+    openGraph: { title: shop.display_name, url },
   };
 }
 
