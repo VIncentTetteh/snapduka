@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import QRCode from "qrcode";
 
 import { appHost } from "@/lib/app-url";
-import { resolveServerActor } from "@/lib/auth/actor";
+import { resolveCreatorContext, resolveServerActor } from "@/lib/auth/actor";
 import { mainImageUrl, normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
 import { createRequestScopedClient } from "@/lib/supabase/request";
 export const dynamic = "force-dynamic";
@@ -33,19 +33,44 @@ const FALLBACK_GRADIENT = "linear-gradient(160deg, #E4D5BF 0%, #C7AE8A 55%, #A88
  * A campaign with no creative falls back to the same warm gradient.
  */
 export async function GET(request: NextRequest) {
-  const actor = await resolveServerActor();
-  if (actor.kind !== "seller") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const productId = request.nextUrl.searchParams.get("product");
   const campaignId = request.nextUrl.searchParams.get("campaign");
+  const partnershipId = request.nextUrl.searchParams.get("partnership");
   const supabase = await createRequestScopedClient();
+
+  const actor = await resolveServerActor();
+  // Whose shop this card is for. A seller gets their own; a creator gets one
+  // they are actively partnered with, which is the whole point — an influencer's
+  // job is posting, and until now the only ready-to-post image in the product
+  // was seller-only, so a creator had a link and nothing to put it on.
+  //
+  // Resolved from the partnership rather than trusted from the query string: RLS
+  // scopes creator_partnerships to the creator, so an id belonging to someone
+  // else simply returns nothing.
+  let sellerAccountId = actor.kind === "seller" ? actor.sellerAccountId : null;
+  let creatorPartnershipId: string | null = null;
+
+  if (partnershipId && (await resolveCreatorContext())) {
+    const { data: partnership } = await supabase
+      .from("creator_partnerships")
+      .select("id, seller_account_id, status")
+      .eq("id", partnershipId)
+      .maybeSingle();
+    // A paused partnership earns nothing, so it should not be producing posts.
+    if (partnership?.status === "active") {
+      sellerAccountId = partnership.seller_account_id;
+      creatorPartnershipId = partnership.id;
+    }
+  }
+
+  if (!sellerAccountId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const { data: shop } = await supabase
     .from("shops")
     .select("slug, display_name, currency, shop_branding(logo_path)")
-    .eq("seller_account_id", actor.sellerAccountId)
+    .eq("seller_account_id", sellerAccountId)
     .maybeSingle();
   if (!shop) {
     return NextResponse.json({ error: "Shop not found" }, { status: 404 });
@@ -90,7 +115,7 @@ export async function GET(request: NextRequest) {
       .from("products")
       .select("name, price_minor, currency, product_media(object_path, position)")
       .eq("id", productId)
-      .eq("seller_account_id", actor.sellerAccountId)
+      .eq("seller_account_id", sellerAccountId)
       .maybeSingle();
     if (data) {
       product = data;
@@ -104,16 +129,24 @@ export async function GET(request: NextRequest) {
   // artifact in the product sent every scan in untracked, and a card made for
   // one product did not even open that product. Prefer the destination's
   // "other" link, which is the channel these cards go out through.
-  if (!campaignToken && productId && product) {
-    const destination = `/${shop.slug}/products/${productId}`;
-    const { data: link } = await supabase
+  if (!campaignToken && (!productId || product)) {
+    const destination =
+      productId && product ? `/${shop.slug}/products/${productId}` : `/${shop.slug}`;
+    const query = supabase
       .from("campaign_links")
       .select("token, channel")
-      .eq("seller_account_id", actor.sellerAccountId)
+      .eq("seller_account_id", sellerAccountId)
       .eq("destination_path", destination)
       .eq("active", true)
       .order("channel")
       .limit(8);
+
+    // A creator's card must carry the creator's own token or the sale it
+    // produces is attributed to the shop and earns them nothing.
+    const { data: link } = await (creatorPartnershipId
+      ? query.eq("creator_partnership_id", creatorPartnershipId)
+      : query.is("creator_partnership_id", null));
+
     campaignToken =
       link?.find((row) => row.channel === "other")?.token ?? link?.[0]?.token ?? null;
   }

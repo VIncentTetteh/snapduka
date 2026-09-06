@@ -2,13 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   resolveServerActor: vi.fn(),
+  resolveCreatorContext: vi.fn(),
   createRequestScopedClient: vi.fn(),
   appHost: vi.fn(async () => "snapduka.vercel.app"),
   toDataURL: vi.fn(async () => "data:image/png;base64,QR"),
   ImageResponse: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
+vi.mock("@/lib/auth/actor", () => ({
+  resolveServerActor: mocks.resolveServerActor,
+  resolveCreatorContext: mocks.resolveCreatorContext,
+}));
 vi.mock("@/lib/app-url", () => ({ appHost: mocks.appHost }));
 vi.mock("@/lib/supabase/request", () => ({
   createRequestScopedClient: mocks.createRequestScopedClient,
@@ -51,11 +55,49 @@ const SHOP = {
   shop_branding: { logo_path: null },
 };
 
+type LinkRow = { token: string; channel?: string };
+
+/**
+ * A chain that answers however the route happens to walk it — the route filters
+ * campaign_links differently for a campaign, a seller and a creator, and the
+ * shape of that walk is not what these tests are about.
+ */
+function chain(rows: LinkRow[], filters: Record<string, unknown> = {}) {
+  const link = {
+    eq(column: string, value: unknown) {
+      filters[column] = value;
+      return link;
+    },
+    is(column: string, value: unknown) {
+      filters[column] = value;
+      return link;
+    },
+    order: () => link,
+    limit: () => link,
+    maybeSingle: async () => ({ data: rows[0] ?? null }),
+    then(resolve: (value: { data: LinkRow[] }) => unknown) {
+      return Promise.resolve(resolve({ data: rows }));
+    },
+  };
+  return link;
+}
+
 function client(options: {
   campaign?: { name: string; creative_path: string | null } | null;
   token?: string | null;
+  destinationLinks?: LinkRow[];
+  partnership?: { id: string; seller_account_id: string; status: string } | null;
+  product?: { name: string; price_minor: number; currency: string } | null;
+  filters?: Record<string, unknown>;
 }) {
-  const { campaign = null, token = null } = options;
+  const {
+    campaign = null,
+    token = null,
+    destinationLinks = [],
+    partnership = null,
+    product = null,
+    filters = {},
+  } = options;
   return {
     from(table: string) {
       if (table === "shops") {
@@ -64,18 +106,22 @@ function client(options: {
       if (table === "campaigns") {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: campaign }) }) }) };
       }
-      if (table === "campaign_links") {
+      if (table === "creator_partnerships") {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: partnership }) }) }),
+        };
+      }
+      if (table === "products") {
         return {
           select: () => ({
-            eq: () => ({
-              eq: () => ({
-                order: () => ({
-                  limit: () => ({ maybeSingle: async () => ({ data: token ? { token } : null }) }),
-                }),
-              }),
-            }),
+            eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: product }) }) }),
           }),
         };
+      }
+      if (table === "campaign_links") {
+        // The campaign branch reads one row; the destination branch reads a
+        // page of them and picks "other".
+        return { select: () => chain(token ? [{ token }] : destinationLinks, filters) };
       }
       return {
         select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) }),
@@ -101,13 +147,14 @@ beforeEach(() => {
   // background silently becomes null and the gradient fallback is used.
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://db.supabase.co");
   mocks.resolveServerActor.mockResolvedValue(SELLER);
+  mocks.resolveCreatorContext.mockResolvedValue(null);
   mocks.createRequestScopedClient.mockResolvedValue(client({}));
 });
 
 afterEach(() => vi.unstubAllEnvs());
 
 describe("GET /api/share/story-card", () => {
-  it("refuses anyone who is not a seller", async () => {
+  it("refuses anyone who is neither a seller nor a partnered creator", async () => {
     mocks.resolveServerActor.mockResolvedValue({ kind: "guest", authenticated: false });
 
     const response = await GET(request());
@@ -188,5 +235,89 @@ describe("GET /api/share/story-card", () => {
       "https://snapduka.vercel.app/pureplatter-foods-ltd",
       expect.anything(),
     );
+  });
+  it("points a product card's QR at that product's tracked link", async () => {
+    // A card requested for one product used to QR the shop homepage: the
+    // most-posted artifact in the product did not open the thing it pictured,
+    // and every scan arrived unattributed.
+    mocks.createRequestScopedClient.mockResolvedValue(
+      client({
+        product: { name: "Pure Grain Rice 5kg", price_minor: 12000, currency: "GHS" },
+        destinationLinks: [
+          { token: "6v9r5w-w", channel: "whatsapp" },
+          { token: "6v9r5w-o", channel: "other" },
+        ],
+      }),
+    );
+
+    await GET(request("product=prod-1"));
+
+    // "other" specifically: it is the channel these cards go out through.
+    expect(mocks.toDataURL).toHaveBeenCalledWith(
+      "https://snapduka.vercel.app/l/6v9r5w-o",
+      expect.anything(),
+    );
+  });
+
+  it("falls back to the product page, not the shop, when nothing is minted", async () => {
+    mocks.createRequestScopedClient.mockResolvedValue(
+      client({ product: { name: "Pure Grain Rice 5kg", price_minor: 12000, currency: "GHS" } }),
+    );
+
+    await GET(request("product=prod-1"));
+
+    expect(mocks.toDataURL).toHaveBeenCalledWith(
+      "https://snapduka.vercel.app/pureplatter-foods-ltd/products/prod-1",
+      expect.anything(),
+    );
+  });
+
+  it("gives a partnered creator a card for the shop, stamped with their own link", async () => {
+    // The creator's whole job is posting, and the only ready-to-post image in
+    // the product was seller-only. The token has to be theirs: a shop's own
+    // link would credit the sale to the shop and earn the creator nothing.
+    const filters: Record<string, unknown> = {};
+    mocks.resolveServerActor.mockResolvedValue({ kind: "guest", authenticated: true });
+    mocks.resolveCreatorContext.mockResolvedValue({ creatorId: "creator-1" });
+    mocks.createRequestScopedClient.mockResolvedValue(
+      client({
+        partnership: { id: "p-1", seller_account_id: "seller-1", status: "active" },
+        destinationLinks: [{ token: "akua-o", channel: "other" }],
+        filters,
+      }),
+    );
+
+    await GET(request("partnership=p-1"));
+
+    expect(filters.creator_partnership_id).toBe("p-1");
+    expect(mocks.toDataURL).toHaveBeenCalledWith(
+      "https://snapduka.vercel.app/l/akua-o",
+      expect.anything(),
+    );
+  });
+
+  it("refuses a creator whose partnership is paused", async () => {
+    // A paused partnership earns nothing, so it should not be producing posts.
+    mocks.resolveServerActor.mockResolvedValue({ kind: "guest", authenticated: true });
+    mocks.resolveCreatorContext.mockResolvedValue({ creatorId: "creator-1" });
+    mocks.createRequestScopedClient.mockResolvedValue(
+      client({ partnership: { id: "p-1", seller_account_id: "seller-1", status: "paused" } }),
+    );
+
+    const response = await GET(request("partnership=p-1"));
+
+    expect(response?.status).toBe(401);
+  });
+
+  it("refuses a partnership id that is not the caller's", async () => {
+    // RLS returns nothing rather than erroring, so an id belonging to another
+    // creator has to land on the same refusal as no id at all.
+    mocks.resolveServerActor.mockResolvedValue({ kind: "guest", authenticated: true });
+    mocks.resolveCreatorContext.mockResolvedValue({ creatorId: "creator-1" });
+    mocks.createRequestScopedClient.mockResolvedValue(client({ partnership: null }));
+
+    const response = await GET(request("partnership=someone-elses"));
+
+    expect(response?.status).toBe(401);
   });
 });

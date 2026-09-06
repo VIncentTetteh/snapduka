@@ -5,6 +5,7 @@ import {
   type ShareChannel,
 } from "@snapduka/core";
 
+import { ShareButtons } from "@/components/share/share-buttons";
 import { ActionBanner } from "@/components/ui/action-banner";
 import { CopyButton } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -232,6 +233,24 @@ export default async function CreatorLinksPage({
                     : undefined,
                 });
 
+                // The unit of work is a post, not a URL: the image, the words
+                // and the creator's own link, ready to send in one action. The
+                // card is requested against the partnership so the API resolves
+                // the shop from it and stamps the creator's token on the QR —
+                // a shop's own card would attribute the sale to the shop and
+                // earn the creator nothing.
+                const storyCardUrl = `/api/share/story-card?partnership=${first.creator_partnership_id}${
+                  product ? `&product=${product.id}` : ""
+                }`;
+                const groupLinks = group!.map((link) => ({
+                  channel: link.channel,
+                  shortUrl: shortLinkUrl(origin, link.token),
+                }));
+                const fallbackUrl =
+                  groupLinks.find((link) => link.channel === "other")?.shortUrl ??
+                  groupLinks[0]?.shortUrl ??
+                  `${origin}${destination}`;
+
                 return (
                   <Panel key={destination} className="px-4 py-3.5">
                     <p className="text-[13.5px] font-bold text-ink">
@@ -239,7 +258,21 @@ export default async function CreatorLinksPage({
                     </p>
                     <p className="mt-0.5 text-[12px] text-ink-muted">{shopName}</p>
 
-                    <div className="mt-3 grid gap-2">
+                    <div className="mt-3">
+                      <ShareButtons
+                        caption={caption}
+                        links={groupLinks}
+                        shopName={shopName}
+                        storeUrl={fallbackUrl}
+                        storyCardUrl={storyCardUrl}
+                      />
+                    </div>
+
+                    <details className="mt-3">
+                      <summary className="cursor-pointer text-[12px] font-semibold text-ink-soft hover:text-ink">
+                        How each app is doing
+                      </summary>
+                      <div className="mt-2 grid gap-2">
                       {group!.map((link) => {
                         const stat = stats.get(link.id) ?? { clicks: 0, orders: 0 };
                         const url = shortLinkUrl(origin, link.token);
@@ -268,7 +301,8 @@ export default async function CreatorLinksPage({
                           </div>
                         );
                       })}
-                    </div>
+                      </div>
+                    </details>
                   </Panel>
                 );
               })}

@@ -10,8 +10,8 @@ import {
   PROVIDER_LABEL,
   SOCIAL_PROVIDERS,
 } from "@/lib/social/providers";
-import { NativeShareButtonClient } from "@/components/seller/native-share-button-client";
-import { ShareButtons } from "@/components/seller/share-buttons";
+import { NativeShareButtonClient } from "@/components/share/native-share-button-client";
+import { ShareButtons } from "@/components/share/share-buttons";
 import { TrackedLinkShare } from "@/components/seller/tracked-link-share";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/ui/copy-button";

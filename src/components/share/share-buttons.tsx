@@ -7,7 +7,12 @@ import { NativeShareButton, useCanNativeShare } from "./native-share-button";
 type ChannelLink = { channel: string; shortUrl: string };
 
 /**
- * One-tap sharing. On mobile, the native share sheet is the primary action —
+ * One-tap sharing, for a seller and for a creator alike — which is why this
+ * lives under components/share rather than components/seller. A creator's post
+ * kit is the same three things as a seller's (image, caption, tracked link);
+ * only whose token is on the link differs, and the caller supplies that.
+ *
+ * On mobile, the native share sheet is the primary action —
  * it attaches the story-card image (the product photo, composited with
  * price/caption) directly, not just a link. WhatsApp/X/Facebook/Telegram
  * open with the post pre-filled via their web intents as a link-only
