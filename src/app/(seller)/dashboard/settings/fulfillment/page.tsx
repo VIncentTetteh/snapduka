@@ -5,9 +5,9 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/ui/submit-button";
 
-import { saveFulfillmentMethod, toggleFulfillmentMethod, updateFulfillmentFee } from "./actions";
-import { formatMoney } from "@/lib/i18n";
-import type { CurrencyCode } from "@/lib/countries/types";
+import { saveFulfillmentMethod, toggleFulfillmentMethod, updateFulfillmentFee, savePickupAddress } from "./actions";
+import { formatMoney } from "@snapduka/core";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export default async function FulfillmentSettingsPage({
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") redirect("/login?next=/dashboard/settings/fulfillment");
   const supabase = await createClient();
-  const [{ data: methods }, { data: shop }] = await Promise.all([
+  const [{ data: methods }, { data: shop }, { data: pickup }] = await Promise.all([
     supabase
       .from("fulfillment_methods")
       .select("id, type, name, fee_minor, instructions, active")
@@ -31,7 +31,13 @@ export default async function FulfillmentSettingsPage({
       .select("currency")
       .eq("seller_account_id", actor.sellerAccountId)
       .maybeSingle(),
+    supabase
+      .from("shop_pickup_addresses")
+      .select("address,contact_phone")
+      .eq("seller_account_id", actor.sellerAccountId)
+      .maybeSingle(),
   ]);
+  const pickupAddress = (pickup?.address ?? {}) as Partial<Record<string, string | null>>;
   const currency = (shop?.currency ?? "GHS") as CurrencyCode;
 
   return (
@@ -46,6 +52,26 @@ export default async function FulfillmentSettingsPage({
           Bolt/Yango booking, or a courier for interstate). Fees are in minor units: 2500 = {formatMoney(2500, currency)}.
         </p>
       </header>
+
+      <form action={savePickupAddress} className="card grid gap-3">
+        <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>
+          Courier pickup address
+        </h2>
+        <p className="m-0 text-sm" style={{ color: "var(--ink-soft)" }}>
+          Where couriers collect your parcels when you book delivery through SnapDuka. Only you and
+          your team can see it — it is never shown on your shop.
+        </p>
+        <input className="field-input" name="line1" placeholder="Street / house *" required defaultValue={pickupAddress.line1 ?? ""} />
+        <input className="field-input" name="area" placeholder="Area" defaultValue={pickupAddress.area ?? ""} />
+        <input className="field-input" name="city" placeholder="City *" required defaultValue={pickupAddress.city ?? ""} />
+        <input className="field-input" name="region" placeholder="Region" defaultValue={pickupAddress.region ?? ""} />
+        <input className="field-input" name="digitalAddress" placeholder="GhanaPostGPS, e.g. GA-123-4567" defaultValue={pickupAddress.digitalAddress ?? ""} />
+        <input className="field-input" name="landmark" placeholder="Landmark riders can find" defaultValue={pickupAddress.landmark ?? ""} />
+        <input className="field-input" name="contactPhone" inputMode="tel" placeholder="Pickup contact phone" defaultValue={pickup?.contact_phone ?? ""} />
+        <SubmitButton className="btn-primary justify-self-start" pendingLabel="Saving…">
+          Save pickup address
+        </SubmitButton>
+      </form>
 
       <form action={saveFulfillmentMethod} className="card grid gap-3">
         <h2 className="m-0 text-lg font-extrabold" style={{ color: "var(--ink)" }}>

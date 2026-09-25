@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { CartButton } from "@/components/storefront/cart-button";
 import { ShareButton } from "@/components/storefront/share-button";
-import type { CountryCode } from "@/lib/countries/types";
+import { TrustTierBadge } from "@/components/storefront/trust-tier-badge";
+import type { CountryCode } from "@snapduka/core";
 
 const COUNTRY_LABEL: Record<CountryCode, string> = {
   GH: "Ghana",
@@ -86,6 +88,11 @@ export function StoreHeader({
                   <path d="M4.4 7.2 6.2 9l3.4-3.8" stroke="#FFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               ) : null}
+              {/* Only rendered while `trust_score` is on for this seller;
+                  streamed in so the lookup never holds up the header. */}
+              <Suspense fallback={null}>
+                <TrustTierBadge slug={slug} />
+              </Suspense>
             </span>
             <span className="block truncate text-[11px] text-ink-muted">
               {[COUNTRY_LABEL[country] ?? country, fulfillment].filter(Boolean).join(" · ")}

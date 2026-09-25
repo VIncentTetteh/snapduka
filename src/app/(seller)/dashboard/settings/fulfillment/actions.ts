@@ -7,6 +7,12 @@ import { resolveServerActor, type Actor, type SellerActor } from "@/lib/auth/act
 import { hasPermission } from "@/lib/auth/permissions";
 import { parseFulfillmentMethod } from "@/lib/fulfillment/schema";
 import { createClient } from "@/lib/supabase/server";
+import {
+  ghanaPostGpsError,
+  LANDMARK_MAX_LENGTH,
+  normalizeGhanaPostGps,
+  type DeliveryAddress,
+} from "@snapduka/core";
 
 const PATH = "/dashboard/settings/fulfillment";
 
@@ -102,4 +108,62 @@ export async function toggleFulfillmentMethod(formData: FormData) {
 
   revalidatePath(PATH);
   redirect(`${PATH}?saved=${active ? "enabled" : "disabled"}`);
+}
+
+/**
+ * Where couriers collect parcels. Quotes and bookings through a courier
+ * integration need a pickup point; without one, SnapDuka can only offer the
+ * seller's own delivery fees. Private by design (shop_pickup_addresses, not
+ * shops, which anon can read): for most sellers this is their home.
+ */
+export async function savePickupAddress(formData: FormData) {
+  const actor = await resolveServerActor();
+  assertCanManageFulfillment(actor);
+
+  const field = (key: string) => String(formData.get(key) ?? "").trim();
+  const line1 = field("line1");
+  const city = field("city");
+  if (!line1 || !city) fail("Enter the street and city couriers should collect from.");
+
+  const digitalInput = field("digitalAddress");
+  let digitalAddress: string | null = null;
+  if (digitalInput) {
+    const problem = ghanaPostGpsError(digitalInput);
+    if (problem) fail(problem);
+    digitalAddress = normalizeGhanaPostGps(digitalInput);
+  }
+  const landmark = field("landmark").slice(0, LANDMARK_MAX_LENGTH) || null;
+
+  const supabase = await createClient();
+  const { data: shop } = await supabase
+    .from("shops")
+    .select("id,country")
+    .eq("seller_account_id", actor.sellerAccountId)
+    .maybeSingle();
+  if (!shop) fail("Set up your shop before adding a pickup address.");
+
+  const address: DeliveryAddress = {
+    line1,
+    area: field("area"),
+    city,
+    region: field("region"),
+    country: shop.country,
+    digitalAddress,
+    landmark,
+    geoSource: digitalAddress ? "digital_address" : "none",
+  };
+
+  const { error } = await supabase.from("shop_pickup_addresses").upsert(
+    {
+      shop_id: shop.id,
+      seller_account_id: actor.sellerAccountId,
+      address,
+      contact_phone: field("contactPhone") || null,
+    },
+    { onConflict: "shop_id" },
+  );
+  if (error) fail("The pickup address could not be saved. Try again.");
+
+  revalidatePath(PATH);
+  redirect(`${PATH}?saved=1`);
 }

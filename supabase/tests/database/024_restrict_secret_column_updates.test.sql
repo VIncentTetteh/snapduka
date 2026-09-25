@@ -19,8 +19,11 @@ values ('00000000-0000-0000-0000-000000024201','00000000-0000-0000-0000-00000002
 insert into public.outbound_webhooks (id, seller_account_id, url, event_types)
 values ('00000000-0000-0000-0000-000000024301','00000000-0000-0000-0000-000000024201','https://example.com/hook','{}');
 
-insert into public.courier_connections (id, seller_account_id, provider, credentials_encrypted)
-values ('00000000-0000-0000-0000-000000024401','00000000-0000-0000-0000-000000024201','fixture-provider','original-creds');
+-- courier_connections.credentials_encrypted was dropped in 202609250140 for
+-- the same reason: credentials live in Vault, referenced by
+-- credentials_secret_id, and that reference is what must not be seller-writable.
+insert into public.courier_connections (id, seller_account_id, provider)
+values ('00000000-0000-0000-0000-000000024401','00000000-0000-0000-0000-000000024201','fixture-provider');
 
 select throws_ok(
   $$ set local role authenticated; update public.outbound_webhooks set secret_id = gen_random_uuid() where id = '00000000-0000-0000-0000-000000024301' $$,
@@ -33,10 +36,10 @@ select lives_ok(
   'authenticated can still update outbound_webhooks.active'
 );
 select throws_ok(
-  $$ set local role authenticated; update public.courier_connections set credentials_encrypted = 'attacker-creds' where id = '00000000-0000-0000-0000-000000024401' $$,
+  $$ set local role authenticated; update public.courier_connections set credentials_secret_id = gen_random_uuid() where id = '00000000-0000-0000-0000-000000024401' $$,
   '42501',
   null,
-  'authenticated cannot update courier_connections.credentials_encrypted'
+  'authenticated cannot repoint courier_connections.credentials_secret_id at another vault secret'
 );
 select lives_ok(
   $$ set local role authenticated; update public.courier_connections set active = false where id = '00000000-0000-0000-0000-000000024401' $$,
