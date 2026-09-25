@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 /**
  * Compares what the ledger says SnapDuka holds against what Paystack actually
@@ -12,7 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * checks that matter most — the books balancing, the cached balances agreeing
  * with their entries — need no provider at all.
  */
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -30,12 +31,25 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: countries } = await admin
-    .from("country_configs")
-    .select("currency")
-    .eq("settlement_mode", "ledger");
-
-  const currencies = [...new Set((countries ?? []).map((row) => row.currency))];
+  // Every currency with any money on the ledger: markets fully cut over, plus
+  // markets where a pilot cohort is (per-seller settlement_mode_override).
+  // record_ledger_reconciliation decides whether drift may freeze payouts.
+  const [{ data: countries }, { data: pilotSellers }] = await Promise.all([
+    admin.from("country_configs").select("country,currency,settlement_mode"),
+    admin
+      .from("seller_accounts")
+      .select("country")
+      .eq("settlement_mode_override", "ledger")
+      .limit(1000),
+  ]);
+  const pilotCountries = new Set((pilotSellers ?? []).map((row) => row.country));
+  const currencies = [
+    ...new Set(
+      (countries ?? [])
+        .filter((row) => row.settlement_mode === "ledger" || pilotCountries.has(row.country))
+        .map((row) => row.currency),
+    ),
+  ];
   const results: Record<string, string> = {};
 
   for (const currency of currencies) {
@@ -62,4 +76,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ providerReachable, results });
 }
 
+export const POST = withCronMonitor("snapduka-reconcile-ledger", runJob, { schedule: "10 4 * * *" });
 export const GET = POST;

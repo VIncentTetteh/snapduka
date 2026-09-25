@@ -58,6 +58,24 @@ const ITEMS = [
     badgeKey: null,
   },
   {
+    href: "/admin/capital",
+    label: "Capital",
+    d: "M10 3v14m4-11H8.5a2.5 2.5 0 0 0 0 5h3a2.5 2.5 0 0 1 0 5H6",
+    badgeKey: null,
+  },
+  {
+    href: "/admin/ads",
+    label: "Promoted listings",
+    d: "M4 11V8l9-4v12l-9-4Zm0 0v4.5h2.5V12",
+    badgeKey: null,
+  },
+  {
+    href: "/admin/sms-opt-outs",
+    label: "SMS opt-outs",
+    d: "M4 4.5h12v8.5H8l-4 3v-3V4.5Zm3.5 4h5",
+    badgeKey: null,
+  },
+  {
     href: "/admin/audit",
     label: "Audit log",
     d: "M6 3h8a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 14 17H6a1.5 1.5 0 0 1-1.5-1.5v-11A1.5 1.5 0 0 1 6 3Zm1.5 4.5h5m-5 3h5m-5 3h3",

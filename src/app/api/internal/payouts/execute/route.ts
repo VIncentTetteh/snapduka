@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { PaystackApiError, paystackProvider } from "@/lib/payments/paystack";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 /** Rows claimed longer ago than this are assumed to have crashed mid-call. */
 const STALE_CLAIM_MS = 5 * 60 * 1000;
@@ -23,7 +24,7 @@ type Admin = ReturnType<typeof createAdminClient>;
  * evidence money moved — Ghanaian bank and mobile money transfers fail
  * asynchronously — so only the transfer.success webhook settles the books.
  */
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -40,6 +41,10 @@ async function sendApproved(admin: Admin) {
     .from("payout_requests")
     .select("id")
     .eq("status", "approved")
+    // Standard withdrawals wait for their daily batch (not_before); instant
+    // ones have none. claim_payout_for_transfer enforces this too — filtering
+    // here just keeps not-yet-due rows from crowding out due ones.
+    .or(`not_before.is.null,not_before.lte.${new Date().toISOString()}`)
     .order("created_at")
     .limit(20);
 
@@ -163,4 +168,5 @@ async function sweepStaleClaims(admin: Admin) {
   return recovered;
 }
 
+export const POST = withCronMonitor("snapduka-execute-payouts", runJob, { schedule: "*/2 * * * *" });
 export const GET = POST;

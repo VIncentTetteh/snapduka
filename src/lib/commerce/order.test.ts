@@ -56,4 +56,39 @@ describe("parseGuestOrder", () => {
     const result = parseGuestOrder(validInput({ buyer: { ...validInput().buyer, country: "US" } }));
     expect(result.success).toBe(false);
   });
+  it("keeps optional courier detail and normalises the GhanaPostGPS code", () => {
+    const base = validInput().buyer;
+    const result = parseGuestOrder(
+      validInput({
+        buyer: {
+          ...base,
+          address: { ...base.address, digitalAddress: "ga 123 4567", landmark: "Blue gate", lat: 5.6, lng: -0.18 },
+        },
+      }),
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.buyer.address).toMatchObject({
+        digitalAddress: "GA-123-4567",
+        landmark: "Blue gate",
+        lat: 5.6,
+        lng: -0.18,
+      });
+    }
+  });
+
+  it("drops a malformed GhanaPostGPS code instead of refusing the order", () => {
+    const base = validInput().buyer;
+    const result = parseGuestOrder(
+      validInput({ buyer: { ...base, address: { ...base.address, digitalAddress: "near the market" } } }),
+    );
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.buyer.address.digitalAddress).toBeUndefined();
+  });
+
+  it("refuses half a location pin", () => {
+    const base = validInput().buyer;
+    const result = parseGuestOrder(validInput({ buyer: { ...base, address: { ...base.address, lat: 5.6 } } }));
+    expect(result.success).toBe(false);
+  });
 });

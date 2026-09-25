@@ -7,9 +7,13 @@ import { InitialsAvatar, gradientForSeed } from "@/components/ui/gradient-placeh
 import { Panel } from "@/components/ui/surface";
 import { Timeline, type TimelineStep } from "@/components/ui/timeline";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import { protectionForSeller } from "@/lib/protect/service";
+import { PROTECT_SELLER_COPY } from "@snapduka/core";
+import type { CurrencyCode } from "@snapduka/core";
+import { DeliveryAddressDetails } from "@/components/seller/delivery-address-details";
+import { orderDeliveryAddress } from "@/lib/addresses/snapshot";
 
 type OrderLine = {
   id: string;
@@ -70,6 +74,12 @@ export default async function OrderPage({
     .maybeSingle();
   if (!order) notFound();
 
+  const protection =
+    order.protection_mode === "protect"
+      ? await protectionForSeller(order.id, actor.sellerAccountId)
+      : null;
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://snapduka.shop").replace(/\/$/, "");
+
   const buyer = (order.buyer_snapshot ?? {}) as BuyerSnapshot;
   const fulfillment = (order.fulfillment_method_snapshot ?? {}) as FulfillmentSnapshot;
   const lines = (order.order_lines ?? []) as OrderLine[];
@@ -122,6 +132,24 @@ export default async function OrderPage({
         >
           {actionError}
         </div>
+      ) : null}
+
+      {protection ? (
+        <section
+          aria-label="SnapDuka Protect"
+          className="mb-4 rounded-xl border border-accent/30 bg-raised px-4 py-3.5 text-[13px] leading-[1.55] text-ink-soft"
+        >
+          <p className="mb-1 font-bold text-ink">SnapDuka Protect · {protection.state.replace("_", " ")}</p>
+          <p className="m-0">{PROTECT_SELLER_COPY[protection.state]}</p>
+          {protection.state === "held" || protection.state === "in_transit" ? (
+            <p className="mb-0 mt-2">
+              Rider link (share with whoever delivers — the buyer gives them the code at the door):{" "}
+              <span className="break-all font-mono text-[12px] text-ink">
+                {appUrl}/d/{protection.riderToken}
+              </span>
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {/* Header */}
@@ -265,6 +293,7 @@ export default async function OrderPage({
             <div className="mt-3 grid gap-1.5 text-[13px] text-ink-soft">
               {buyer.phone ? <p className="m-0">{buyer.phone}</p> : null}
               {addr ? <p className="m-0">{addr}</p> : null}
+              <DeliveryAddressDetails address={orderDeliveryAddress(order, actor.country)} />
             </div>
             {whatsappUrl ? (
               <a

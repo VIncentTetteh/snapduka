@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizePhone } from "@/lib/i18n";
+import { normalizePhone } from "@snapduka/core";
 
 // Regression: ISSUE-008 — the product page told buyers to "Message the seller
 // on WhatsApp" as plain text, with no link and no number, on the one product

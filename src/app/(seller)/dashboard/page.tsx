@@ -7,10 +7,10 @@ import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { MetricTile } from "@/components/ui/metric-tile";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAnalyticsSummary } from "@/lib/analytics/summary";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();

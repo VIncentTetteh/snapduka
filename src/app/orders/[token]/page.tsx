@@ -4,10 +4,12 @@ import { notFound } from "next/navigation";
 import { OrderStatusPoller } from "@/components/storefront/order-status-poller";
 import { Timeline, type TimelineStep } from "@/components/ui/timeline";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
+import { ProtectPanel } from "@/components/storefront/protect-panel";
 import { ReviewForm } from "@/components/storefront/review-form";
 import { isSafeHttpUrl } from "@/lib/catalog/video";
 import { courierLabel, type CourierKey } from "@/lib/couriers/catalogue";
 import { buyerInitiatedWhatsApp } from "@/lib/notifications/whatsapp";
+import { protectionForOrder } from "@/lib/protect/service";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -113,6 +115,8 @@ export default async function TrackingPage({
     .eq("order_id", order.id)
     .maybeSingle();
 
+  const protection = order.protection_mode === "protect" ? await protectionForOrder(order.id) : null;
+
   const shop = order.shops as { display_name: string; slug: string };
   const phone = order.seller_accounts?.contact_phone as string | undefined;
   const cancelled = order.fulfillment_status === "cancelled";
@@ -177,6 +181,15 @@ export default async function TrackingPage({
             {statusLine}
           </p>
         </div>
+
+        {protection ? (
+          <ProtectPanel
+            token={token}
+            state={protection.state}
+            inspectionEndsAt={protection.inspectionEndsAt}
+            autoReleaseAt={protection.autoReleaseAt}
+          />
+        ) : null}
 
         {query.payment === "pending" && order.payment_status !== "paid" && (
           <div

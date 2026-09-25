@@ -6,8 +6,9 @@ import { appOrigin } from "@/lib/app-url";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { paginate } from "@/lib/supabase/paginate";
+import { withCronMonitor } from "@/lib/observability/cron";
 
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -95,4 +96,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ reminders, restocks });
 }
 
+export const POST = withCronMonitor("snapduka-retention", runJob, { schedule: "0 * * * *" });
 export const GET = POST;

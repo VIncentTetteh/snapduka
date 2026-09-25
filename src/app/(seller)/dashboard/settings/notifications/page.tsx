@@ -27,7 +27,7 @@ export default async function NotificationSettings({
   // order that could only ever dead-letter — the seller believed they had
   // enabled it and nobody was told otherwise. Buyers still get the order email
   // either way; the broken promise was to the seller.
-  const whatsappReady = isWhatsAppConfigured();
+  const whatsappReady = await isWhatsAppConfigured();
   const smsReady = isSmsConfigured();
 
   return (

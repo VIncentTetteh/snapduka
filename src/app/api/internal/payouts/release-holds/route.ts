@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 /**
  * Moves settled order credits from pending to available once the hold elapses.
@@ -11,7 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * hold never becomes withdrawable. That re-check is the whole reason a hold
  * exists, so it must not be duplicated here where it could drift.
  */
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -24,4 +25,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ released: data ?? 0 });
 }
 
+export const POST = withCronMonitor("snapduka-release-holds", runJob, { schedule: "50 3 * * *" });
 export const GET = POST;

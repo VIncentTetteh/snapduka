@@ -25,6 +25,21 @@ import { fail } from "./response";
 export async function requireSeller(
   permission: Permission,
 ): Promise<SellerActor | Response> {
+  const actor = await requireActiveSeller();
+  if (isResponse(actor)) return actor;
+  if (!hasPermission(actor.role ?? "owner", permission)) {
+    return fail("forbidden", "Your role does not allow this.");
+  }
+  return actor;
+}
+
+/**
+ * An active (or pending) seller of any role, with no specific permission.
+ * For reads every role needs — the account summary and its feature flags —
+ * where picking a permission would lock out a role that has no business
+ * being locked out (a fulfilment-only member still needs the flags).
+ */
+export async function requireActiveSeller(): Promise<SellerActor | Response> {
   const actor = await resolveServerActor();
 
   if (!actor.authenticated) {
@@ -40,9 +55,6 @@ export async function requireSeller(
         ? "This account is suspended. Contact support."
         : "This account is closed.",
     );
-  }
-  if (!hasPermission(actor.role ?? "owner", permission)) {
-    return fail("forbidden", "Your role does not allow this.");
   }
   return actor;
 }

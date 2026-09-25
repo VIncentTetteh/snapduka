@@ -169,9 +169,14 @@ an account.
   **Revisited 2026-07-31** (see `docs/adr/0001-pooled-account-and-seller-ledger.md`).
   Online payments now land in SnapDuka's main Paystack account and the seller
   is credited in an internal double-entry ledger, withdrawing on request via
-  Paystack Transfers. SnapDuka is a custodian of seller funds; it is still not
-  an escrow agent and offers no buyer-protection guarantee.
-- Required buyer accounts.
+  Paystack Transfers. SnapDuka is a custodian of seller funds.
+  **Revisited again 2026-09-25** (see `docs/adr/0002-snapduka-protect.md`):
+  SnapDuka Protect now holds a protected order's money until the buyer confirms
+  delivery or the timeout passes. It ships dark behind a per-market switch and
+  rollout flag, and general availability is gated on a legal opinion under the
+  Payment Systems and Services Act 2019 (Act 987).
+- Required buyer accounts. (Optional buyer accounts exist from 2026-09-25 —
+  section 6.15 — and guest checkout remains the default.)
 - A centralized marketplace feed as the primary acquisition model.
 - Service bookings, digital downloads, subscriptions sold by sellers, tickets,
   or paid content.
@@ -565,6 +570,146 @@ availability can change.
   payment-failure, account, and order patterns without automatically treating
   them as proof of wrongdoing.
 
+### 6.14 SnapDuka Protect, Money Movement, and Platform (Trust-and-Money Release)
+
+Added 2026-09-25 with the repositioning of SnapDuka as the trust and money
+layer for social commerce. Everything here ships behind feature flags and
+per-market switches, default off.
+
+- **PRT-001 (P0):** A buyer paying online must be able to opt in to SnapDuka
+  Protect before paying, see the Protect fee, and pay it as part of the order
+  total. Protect must not be changeable once payment has started.
+- **PRT-002 (P0):** A protected order's money must be held and must not start
+  the seller's settlement hold on the seller's own completion claim, from any
+  surface (dashboard, bulk action, mobile, public API, courier webhook).
+- **PRT-003 (P0):** On dispatch the buyer must receive a one-time six-digit
+  delivery code on their own phone; the code is stored only as a hash, is never
+  shown to the seller, and can be rotated by the buyer from the tracking page.
+- **PRT-004 (P0):** A rider must be able to confirm delivery with the buyer's
+  code on a page reached by a rider-only link; repeated wrong codes must lock.
+- **PRT-005 (P0):** A buyer must be able to confirm receipt themselves, after
+  which an inspection window runs before the normal settlement hold.
+- **PRT-006 (P0):** A buyer report about delivery or the item must freeze the
+  held money immediately; an operator must resolve it for the seller (release)
+  or the buyer (refund) with a recorded finding and an audit event.
+- **PRT-007 (P0):** Unconfirmed deliveries must confirm automatically after a
+  timeout, shortened by a courier's own delivery report; paid orders not
+  dispatched within the SLA must be flagged to operators.
+- **PRT-008 (P0):** Protect must be limited per market (switch), per seller
+  (rollout flag, ledger settlement required), per order and by total money held.
+- **PAY-014 (P0):** Card chargebacks must freeze the order's settlement, reserve
+  the seller's share if already released, and settle in the ledger when won or
+  lost.
+- **PAY-015 (P0):** Operators must be able to write off an uncollectable seller
+  debt to bad debt, never beyond what is owed, with an audit event.
+- **PAY-016 (P1):** Sellers should be able to choose a standard (daily batch)
+  or paid instant withdrawal; instant requires a verified account and no open
+  disputes.
+- **PAY-017 (P1):** Ledger settlement should be switchable per seller for pilot
+  cohorts and rollback, with reconciliation that only freezes payouts on
+  balance drift in fully cut-over markets.
+- **PAY-018 (P1):** Checkout should route to a healthy, enabled payment
+  provider and fail over only before the buyer authorises a payment.
+- **PAY-019 (P1):** Sellers should be able to download a wallet statement with
+  opening and closing balances for any period.
+- **OPS-010 (P1):** Operators should see weekly transacting sellers and GMV
+  through Protect.
+- **PLT-001 (P0):** New capabilities must ship behind feature flags resolved
+  per seller, country and percentage, failing closed.
+- **PLT-002 (P0):** State changes with side effects must emit transactional
+  outbox events delivered at least once to idempotent handlers.
+- **PLT-003 (P1):** Web errors and scheduled workers should report to error
+  tracking with personal data scrubbed.
+- **PLT-004 (P1):** User-facing strings should come from one catalogue per
+  locale, with machine-drafted translations marked for review and never shown
+  as reviewed copy.
+- **PLT-005 (P2):** Web design tokens should be generated from the shared token
+  source and checked in CI.
+
+### 6.15 Buyer Identity
+
+- **BYR-001 (P1):** Buyers should be able to create an optional SnapDuka profile
+  by phone sign-in, with explicit, versioned consent.
+- **BYR-002 (P1):** A signed-in buyer's past orders placed with their verified
+  phone should be claimable, and new orders linked at checkout with consent.
+- **BYR-003 (P1):** Buyers should see their orders across all shops.
+- **BYR-004 (P1):** Buyers should be able to save addresses and have checkout
+  prefilled, with guest checkout unchanged.
+- **BYR-005 (P0):** Buyers must be able to export and erase their profile, and
+  no seller may read another shop's buyers or any buyer profile.
+
+### 6.16 Conversational Commerce and AI
+
+- **WAC-001 (P1):** Order, delivery-code, dispatch and payout messages should
+  reach buyers and sellers over the WhatsApp Cloud API using approved templates
+  outside the 24-hour window, falling back to SMS.
+- **WAC-002 (P1):** Buyers should be able to message a shop on WhatsApp and get
+  catalog-grounded answers (stock, price, delivery quote, checkout link) from
+  an assistant that discloses it is automated, never invents prices or confirms
+  payment, and hands off to the seller on request, complaint or doubt.
+- **WAC-003 (P1):** Sellers should see and answer WhatsApp conversations in an
+  inbox on web and mobile, taking over from the assistant for 12 hours.
+- **WAC-004 (P2):** Sellers should receive a daily digest of sales and actions
+  over WhatsApp or SMS.
+- **AIL-001 (P1):** Sellers should be able to draft a product listing from a
+  photo (title, description, category, attributes, variants); the price
+  suggestion must come from market data, not the model, and nothing publishes
+  without the seller's review.
+- **AIL-002 (P2):** Sellers should be able to get caption suggestions per
+  channel and language, with drafts in Pidgin and Twi marked for checking.
+- **AIL-003 (P0):** Every model call must be logged with tokens and cost, and
+  capped per seller per month by plan.
+
+### 6.17 Delivery, Trust, and Risk
+
+- **DLV-001 (P1):** Couriers should integrate through one adapter contract for
+  quotes, booking, tracking and webhooks, each switchable per courier.
+- **DLV-002 (P1):** Buyers and the WhatsApp assistant should get delivery
+  quotes combining courier prices (with SnapDuka's margin) and the seller's own
+  delivery fees.
+- **DLV-003 (P1):** Checkout should capture an optional GhanaPostGPS digital
+  address, landmark and location pin without ever blocking an order.
+- **DLV-004 (P1):** Sellers should record a private courier pickup address.
+- **TRS-001 (P1):** Sellers should verify identity (Ghana Card, liveness,
+  business registration) through a KYC provider, storing only masked references.
+- **TRS-002 (P1):** Each seller should carry a nightly trust score and tier,
+  shown to buyers as a badge and used to gate instant withdrawals.
+- **TRS-003 (P1):** Risk rules should record signals at checkout, payout and
+  verification, observe-only until promoted to blocking.
+
+### 6.18 Financial Products, Creator Payouts, and Compliance
+
+Added 2026-09-25 (second round). Partner-dependent features run end to end
+against sandbox partners and stay behind flags until contracts exist.
+
+- **CRT-001 (P1):** For online orders on ledger settlement, SnapDuka should pay
+  a creator's commission out of the seller's settlement into a creator wallet,
+  releasing it with the order, reversing it on refund or chargeback, and
+  letting the creator withdraw it; manual and cash-on-delivery commissions keep
+  today's record-only flow.
+- **FIN-001 (P1):** Eligible sellers should be offered partner-funded stock
+  financing sized from their SnapDuka sales, repaid by a capped share of each
+  release, never taking their balance below zero.
+- **FIN-002 (P2):** Buyers should be able to pay in instalments through a BNPL
+  partner, captured and refunded through the partner, never as a fallback for a
+  failed card payment.
+- **FIN-003 (P2):** Sellers should be able to fund promoted listings from their
+  balance and appear in clearly labelled sponsored slots on Discover, billed per
+  deduplicated click within a daily budget.
+- **DLV-005 (P1):** A delivery SnapDuka books on its own courier account must be
+  charged to the seller's held settlement (courier price plus margin), refused
+  up front when the order cannot cover it, and settled to the courier by an
+  operator.
+- **OPS-011 (P0):** Marketing SMS must carry opt-out instructions and honour
+  STOP/START across all sellers; transactional messages are never suppressed.
+- **OPS-012 (P1):** WhatsApp platform secrets should be read from Vault.
+- **OPS-013 (P1):** Operator dashboards and the public API must aggregate and
+  page in SQL correctly past the 1000-row response cap.
+- **OPS-014 (P2):** Analytics should be available to a warehouse through
+  PII-free views, a change-data publication and versioned dbt models.
+- **CAT-012 (P2):** Sellers should be able to assign a product category,
+  prefilled from an AI listing draft.
+
 ## 7. State and Data Requirements
 
 ### 7.1 Independent State Models
@@ -578,6 +723,9 @@ An order must not use one overloaded status. At minimum it contains:
   `failed`.
 - **Dispute state:** `none`, `opened`, `seller_response_due`, `under_review`,
   `resolved`, `closed`.
+- **Protect state** (protected orders only, `order_protections`): `held`,
+  `in_transit`, `releasable`, `released`, `disputed`, `refunded`, `cancelled`.
+  See `docs/adr/0002-snapduka-protect.md`.
 
 The implementation may add internal substates, but public and internal state
 transitions must be documented and deterministic.
@@ -710,6 +858,11 @@ accepted resolution, or correctly recorded as completed through an approved
 offline method.
 
 Test orders, known fraud, duplicates, and cancelled orders do not count.
+
+**Trust-and-money release (2026-09-25):** alongside completed orders, the
+strategy is measured by **weekly transacting sellers** (sellers with at least
+one paid order in the week) and **GMV through SnapDuka Protect**, both computed
+in SQL by `admin_north_star` (OPS-010).
 
 ### 10.2 Launch Success
 

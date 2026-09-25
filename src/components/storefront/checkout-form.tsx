@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { BuyerCheckoutPrefill, saveBuyerAddressIfRequested } from "@/components/storefront/buyer-checkout-prefill";
 import { useCart } from "@/components/storefront/cart-provider";
+import {
+  DeliveryAddressExtras,
+  digitalAddressError,
+  readDeliveryExtras,
+} from "@/components/storefront/delivery-address-extras";
 import { checkoutIdempotencyKey } from "@/lib/commerce/idempotency";
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { Req } from "@/components/ui/required-mark";
@@ -13,7 +19,7 @@ import {
   validatePhone,
   validateRequired,
 } from "@/lib/validation";
-import type { CountryCode, CurrencyCode } from "@/lib/countries/types";
+import { protectFeeMinor, type CountryCode, type CurrencyCode, type ProtectFeePolicy } from "@snapduka/core";
 import { formatPrice } from "@/lib/storefront/price";
 
 type Method = { id: string; name: string; type: string; fee_minor: number; instructions: string };
@@ -44,6 +50,8 @@ export function CheckoutForm({
   campaignToken,
   fromCart,
   onlinePaymentsAvailable,
+  protect = null,
+  bnpl = null,
 }: {
   shopId: string;
   shopName: string;
@@ -53,6 +61,10 @@ export function CheckoutForm({
   campaignToken?: string;
   fromCart: boolean;
   onlinePaymentsAvailable: boolean;
+  /** SnapDuka Protect offered for online payment here; null when not. */
+  protect?: ProtectFeePolicy | null;
+  /** Pay in instalments through a BNPL partner (flag `bnpl`); null when not offered. */
+  bnpl?: { label: string } | null;
 }) {
   const router = useRouter();
   const cart = useCart();
@@ -74,6 +86,11 @@ export function CheckoutForm({
   const [selectedMethodId, setSelectedMethodId] = useState(methods[0]?.id ?? "");
   const paystackOffered = onlinePaymentsAvailable && country !== "CI";
   const [paymentMethod, setPaymentMethod] = useState(paystackOffered ? "paystack" : "cash_on_delivery");
+  // On by default where offered: holding the money until delivery is the
+  // reason a buyer who has been burned before will pay online at all.
+  const [protectChosen, setProtectChosen] = useState(true);
+  // Off by default: paying later is a credit decision the buyer makes, never a default.
+  const [payLaterChosen, setPayLaterChosen] = useState(false);
   const [recoveryContact, setRecoveryContact] = useState("");
   const [recoveryConsent, setRecoveryConsent] = useState(false);
   const recoveryCaptured = useRef(false);
@@ -100,6 +117,9 @@ export function CheckoutForm({
     0,
   );
   const orderTotal = itemTotal + fee;
+  const protectActive = Boolean(protect) && paymentMethod === "paystack" && !isPickup && protectChosen;
+  // An estimate for display: the server prices it after any promo code.
+  const protectFee = protect && protectActive ? protectFeeMinor(orderTotal, protect) : 0;
   const currency = products[0]?.currency ?? "GHS";
   const effectivePayment = isPickup ? "pay_on_pickup" : paymentMethod;
 
@@ -143,6 +163,8 @@ export function CheckoutForm({
       if (line1Error) errors.line1 = line1Error;
       const cityError = validateRequired(String(values.get("city") ?? ""), "Enter the city.");
       if (cityError) errors.city = cityError;
+      const digitalError = digitalAddressError(values, country);
+      if (digitalError) errors.digitalAddress = digitalError;
     }
     return errors;
   }
@@ -166,7 +188,9 @@ export function CheckoutForm({
   const payLabel = pending
     ? "Processing…"
     : effectivePayment === "paystack"
-      ? `Pay ${fmtPrice(orderTotal)} with Paystack`
+      ? bnpl && payLaterChosen
+        ? `Continue to ${bnpl.label} · ${fmtPrice(orderTotal + protectFee)}`
+        : `Pay ${fmtPrice(orderTotal + protectFee)} with Paystack`
       : `Place order · ${fmtPrice(orderTotal)}`;
 
   return (
@@ -219,6 +243,7 @@ export function CheckoutForm({
                   area: values.get("area"),
                   city: values.get("city"),
                   region: values.get("region"),
+                  ...(isPickup ? {} : readDeliveryExtras(values, country)),
                 },
                 marketingConsent: values.get("marketingConsent") === "on",
               },
@@ -234,8 +259,31 @@ export function CheckoutForm({
             setBuyerFixable(response.status === 409);
             throw new Error(result.error);
           }
+          // The order exists; saving the address is best-effort and opt-in.
+          saveBuyerAddressIfRequested(values, country);
           if (effectivePayment === "paystack") {
-            const payment = await fetch("/api/payments/paystack/initialize", {
+            if (protect) {
+              // Always state the choice, not only when opting in: a retry
+              // reuses the same order, which may already carry Protect from
+              // an earlier attempt the buyer has since unticked.
+              const protectResponse = await fetch(`/api/orders/${result.trackingToken}/protect`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ enabled: protectActive }),
+              });
+              if (!protectResponse.ok && protectActive) {
+                const protectResult = await protectResponse.json().catch(() => ({}));
+                // The order exists unpaid; the buyer can untick Protect and
+                // pay again, which reuses the same order.
+                throw new Error(
+                  `${protectResult.error ?? "Protect could not be added."} Untick Protect to pay without it.`,
+                );
+              }
+            }
+            // Same order either way; only who collects the money differs. The
+            // BNPL partner pays SnapDuka in full and the buyer repays them.
+            const payLater = Boolean(bnpl) && payLaterChosen;
+            const payment = await fetch(payLater ? "/api/payments/bnpl/initialize" : "/api/payments/paystack/initialize", {
               method: "POST",
               headers: { "content-type": "application/json" },
               // The token proves this browser is the one that placed the
@@ -341,6 +389,8 @@ export function CheckoutForm({
       {/* Contact */}
       <section aria-label="Contact details" className={`${SECTION} grid gap-3`}>
         <h2 className={`${SECTION_TITLE} mb-0`}>Contact</h2>
+        {/* Signed-in buyers only (flag buyer_accounts); renders nothing for a guest. */}
+        <BuyerCheckoutPrefill country={country} />
         <label className={LABEL}>
           <span>Full name<Req /></span>
           <input
@@ -476,6 +526,11 @@ export function CheckoutForm({
               placeholder={country === "NG" ? "State (optional)" : "Region (optional)"}
               aria-label={country === "NG" ? "State" : "Region"}
             />
+            <DeliveryAddressExtras
+              country={country}
+              error={fieldErrors.digitalAddress}
+              onEdit={() => clearFieldError("digitalAddress")}
+            />
           </div>
         ) : (
           <>
@@ -511,6 +566,38 @@ export function CheckoutForm({
                   <span className="block text-[11.5px] text-ink-muted">
                     Card, mobile money or bank — instant confirmation
                   </span>
+                </span>
+              </label>
+            ) : null}
+            {protect && paymentMethod === "paystack" ? (
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-[11px] border border-line bg-white p-3.5 text-[12.5px] leading-[1.5] text-ink-soft">
+                <input
+                  type="checkbox"
+                  checked={protectChosen}
+                  onChange={(event) => setProtectChosen(event.target.checked)}
+                  className="mt-0.5 h-[17px] w-[17px] accent-[#A8431A]"
+                />
+                <span>
+                  <span className="block text-[13.5px] font-bold text-ink">
+                    Protect my payment{protectFee > 0 ? ` (+${fmtPrice(protectFee)})` : ""}
+                  </span>
+                  SnapDuka holds your money until you receive your order. You get a delivery code —
+                  give it to the rider only when your order is in your hands.
+                </span>
+              </label>
+            ) : null}
+            {bnpl && paymentMethod === "paystack" ? (
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-[11px] border border-line bg-white p-3.5 text-[12.5px] leading-[1.5] text-ink-soft">
+                <input
+                  type="checkbox"
+                  checked={payLaterChosen}
+                  onChange={(event) => setPayLaterChosen(event.target.checked)}
+                  className="mt-0.5 h-[17px] w-[17px] accent-[#A8431A]"
+                />
+                <span>
+                  <span className="block text-[13.5px] font-bold text-ink">{bnpl.label}</span>
+                  Split this order into instalments with our pay-later partner. You agree the
+                  instalments with them; the seller is paid in full now.
                 </span>
               </label>
             ) : null}
@@ -559,9 +646,15 @@ export function CheckoutForm({
             <span>{selectedMethod ? `Delivery · ${selectedMethod.name}` : "Delivery"}</span>
             <span className="font-semibold text-ink">{fee > 0 ? fmtPrice(fee) : "Free"}</span>
           </span>
+          {protectFee > 0 ? (
+            <span className="flex justify-between text-[13.5px] text-ink-soft">
+              <span>SnapDuka Protect</span>
+              <span className="font-semibold text-ink">{fmtPrice(protectFee)}</span>
+            </span>
+          ) : null}
           <span className="flex justify-between border-t border-line-soft pt-2.5 text-[15.5px] font-bold text-ink">
             <span>Total</span>
-            <span>{fmtPrice(orderTotal)}</span>
+            <span>{fmtPrice(orderTotal + protectFee)}</span>
           </span>
         </div>
 

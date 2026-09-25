@@ -11,6 +11,10 @@ vi.mock("next/navigation", () => ({
   redirect: mocks.redirect,
 }));
 
+// The layout reads the wa_outbound flag for the inbox link; this test only
+// covers the redirect, which happens first.
+vi.mock("@/lib/flags", () => ({ isFeatureEnabled: async () => false }));
+
 vi.mock("@/lib/auth/actor", () => ({
   resolveServerActor: mocks.resolveServerActor,
 }));

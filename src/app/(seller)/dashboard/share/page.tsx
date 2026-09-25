@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { CHANNEL_LABEL, shareCaption, shortLinkUrl, type ShareChannel } from "@snapduka/core";
+
+import { CaptionSuggestions } from "@/components/seller/caption-suggestions";
+import { isFeatureEnabled } from "@/lib/flags";
 import QRCode from "qrcode";
 
 import { disconnectSocialAccountAction, generateShareLinksAction } from "./actions";
@@ -20,7 +23,7 @@ import { PageHeader, Panel } from "@/components/ui/surface";
 import { appOrigin } from "@/lib/app-url";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 import { fetchAnalyticsSummary } from "@/lib/analytics/summary";
 
 export const dynamic = "force-dynamic";
@@ -118,6 +121,7 @@ export default async function ShareStudioPage({
         .maybeSingle()
     : { data: null };
   const selectedProduct = listedProduct ?? fetchedProduct;
+  const aiCaptions = await isFeatureEnabled("ai_captions", { sellerAccountId: actor.sellerAccountId });
   const destinationPath = selectedProduct
     ? `/${shop.slug}/products/${selectedProduct.id}`
     : `/${shop.slug}`;
@@ -384,6 +388,9 @@ export default async function ShareStudioPage({
                   <br />
                   <span className="font-mono text-[12.5px] text-accent">{shareUrl}</span>
                 </p>
+                {selectedProduct && aiCaptions ? (
+                  <CaptionSuggestions productId={selectedProduct.id} shareUrl={shareUrl} />
+                ) : null}
               </Panel>
             </div>
 

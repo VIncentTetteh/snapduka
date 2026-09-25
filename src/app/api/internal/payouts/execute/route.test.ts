@@ -28,7 +28,7 @@ vi.mock("@/lib/supabase/admin", () => ({
     from: (table: string) => ({
       select: () => ({
         eq: () => ({
-          order: () => ({ limit: mocks.approved }),
+          or: () => ({ order: () => ({ limit: mocks.approved }) }),
           is: () => ({ lt: () => ({ limit: mocks.stale }) }),
         }),
       }),

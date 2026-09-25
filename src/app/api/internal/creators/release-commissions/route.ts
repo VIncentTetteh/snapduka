@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 /**
  * Moves creator commissions from `pending` to `payable` once their hold window
@@ -17,7 +18,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * secret, and safe to run twice — releasing an already-released commission
  * matches nothing.
  */
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -30,4 +31,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ released: released ?? 0 });
 }
 
+export const POST = withCronMonitor("snapduka-release-commissions", runJob, { schedule: "45 3 * * *" });
 export const GET = POST;

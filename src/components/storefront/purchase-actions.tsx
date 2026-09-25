@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { useCart } from "@/components/storefront/cart-provider";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 import { formatPrice } from "@/lib/storefront/price";
 
 type Variant = {

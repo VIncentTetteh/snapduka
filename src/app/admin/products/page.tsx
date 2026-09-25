@@ -8,10 +8,10 @@ import { MetricTile } from "@/components/ui/metric-tile";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { mainImageUrl } from "@/lib/storefront/media";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { oneOf, PRODUCT_STATUSES } from "@/lib/db/enums";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 

@@ -7,10 +7,10 @@ import { ModerationBadge } from "@/components/admin/moderation-badge";
 import { ProductStatusBadge } from "@/components/seller/status-badges";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { FormActionButton, SubmitButton } from "@/components/ui/submit-button";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { publicMediaUrl } from "@/lib/storefront/media";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 

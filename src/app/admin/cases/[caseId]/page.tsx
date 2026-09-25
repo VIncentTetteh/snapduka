@@ -4,12 +4,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { addCaseMessageAction, resolveCaseAction } from "@/app/admin/actions";
+import { resolveProtectDisputeAction } from "@/app/admin/protect-actions";
+import { protectionForOrder } from "@/lib/protect/service";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +69,7 @@ export default async function AdminCasePage({
     .slice()
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   const isOpen = !["resolved", "closed"].includes(item.status);
+  const protection = order?.id ? await protectionForOrder(order.id) : null;
 
   return (
     <main className="sd-main mx-auto max-w-[1080px] px-4 pt-6 sm:px-6">
@@ -187,6 +190,46 @@ export default async function AdminCasePage({
               </Link>
             ) : null}
           </Panel>
+
+          {protection?.state === "disputed" && order ? (
+            <Panel className="p-4.5">
+              <h2 className="mb-1 text-[14px] font-bold">SnapDuka Protect dispute</h2>
+              <p className="mb-3 text-[12.5px] leading-[1.55] text-ink-soft">
+                The buyer&apos;s payment is held. Releasing pays the seller; refunding returns the full
+                order total to the buyer through Paystack.
+              </p>
+              <form action={resolveProtectDisputeAction} className="grid gap-3">
+                <input name="caseId" type="hidden" value={item.id} />
+                <input name="orderId" type="hidden" value={order.id} />
+                <label className="grid gap-1.5 text-[12.5px] font-semibold text-ink" htmlFor="protect-note">
+                  Finding (shown to buyer and seller)
+                  <textarea
+                    id="protect-note"
+                    name="note"
+                    required
+                    rows={3}
+                    className="w-full rounded-[10px] border border-line-input bg-white px-3.5 py-2.5 text-[14px] text-ink outline-none focus:border-accent"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    name="outcome"
+                    value="release"
+                    className="min-h-10 cursor-pointer rounded-[9px] border border-line bg-white px-4 text-[13px] font-bold text-ink"
+                  >
+                    Release to seller
+                  </button>
+                  <button
+                    name="outcome"
+                    value="refund"
+                    className="min-h-10 cursor-pointer rounded-[9px] border-none bg-ink px-4 text-[13px] font-bold text-white"
+                  >
+                    Refund buyer
+                  </button>
+                </div>
+              </form>
+            </Panel>
+          ) : null}
 
           <Panel className="p-4.5">
             <h2 className="mb-3 text-[14px] font-bold">Resolve</h2>

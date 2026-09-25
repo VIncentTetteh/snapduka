@@ -5,9 +5,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FilterPills } from "@/components/ui/filter-pills";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { FormActionButton } from "@/components/ui/submit-button";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,7 @@ export default async function AdminPayoutsPage({
   const { data: payouts } = await admin
     .from("payout_requests")
     .select(
-      "id,reference,amount_minor,fee_minor,currency,status,destination,review_reason,created_at,seller_accounts(id,contact_name,created_at,status)",
+      "id,reference,amount_minor,fee_minor,currency,status,destination,review_reason,created_at,creator_id,seller_accounts(id,contact_name,created_at,status),creators(display_name,status,created_at)",
     )
     .eq("status", status || "requested")
     .order("created_at", { ascending: true })
@@ -85,15 +85,23 @@ export default async function AdminPayoutsPage({
               | { id: string; contact_name?: string; created_at?: string; status?: string }[]
               | null;
             const sellerRow = Array.isArray(seller) ? seller[0] : seller;
+            // Creator withdrawals share this queue (202609250203); they carry a
+            // creator, not a seller, and must not be labelled as a seller's.
+            const creatorRaw = payout.creators as
+              | { display_name?: string; status?: string; created_at?: string }
+              | { display_name?: string; status?: string; created_at?: string }[]
+              | null;
+            const creatorRow = payout.creator_id ? (Array.isArray(creatorRaw) ? creatorRaw[0] : creatorRaw) : null;
             const destination = payout.destination as {
               bankName?: string;
               accountLast4?: string;
             } | null;
             const spec = STATUS[payout.status] ?? { label: payout.status, tone: "neutral" as BadgeTone };
+            const ownerStatus = creatorRow ? creatorRow.status : sellerRow?.status;
             const risk =
-              sellerRow?.status === "suspended"
+              ownerStatus === "suspended"
                 ? { label: "High risk", tone: "danger" as BadgeTone }
-                : sellerRow?.status === "restricted"
+                : ownerStatus === "restricted" || ownerStatus === "paused"
                   ? { label: "Elevated", tone: "warn" as BadgeTone }
                   : { label: "Low risk", tone: "success" as BadgeTone };
             const reviewable = payout.status === "requested" || payout.status === "approved";
@@ -110,16 +118,20 @@ export default async function AdminPayoutsPage({
                       <Badge tone={risk.tone}>{risk.label}</Badge>
                     </p>
                     <p className="mt-1 text-[13px] text-ink-soft">
-                      {sellerRow?.contact_name ?? "Seller"}
+                      {creatorRow
+                        ? `Creator · ${creatorRow.display_name ?? "unnamed"}`
+                        : (sellerRow?.contact_name ?? "Seller")}
                       {destination?.bankName
                         ? ` · ${destination.bankName} •••${destination.accountLast4 ?? ""}`
                         : ""}
                     </p>
                     <p className="mt-0.5 text-[11.5px] text-ink-muted">
                       Requested {new Date(payout.created_at).toLocaleString()}
-                      {sellerRow?.created_at
-                        ? ` · Seller since ${new Date(sellerRow.created_at).toLocaleDateString()}`
-                        : ""}
+                      {creatorRow?.created_at
+                        ? ` · Creator since ${new Date(creatorRow.created_at).toLocaleDateString()}`
+                        : sellerRow?.created_at
+                          ? ` · Seller since ${new Date(sellerRow.created_at).toLocaleDateString()}`
+                          : ""}
                     </p>
                   </div>
                   <div className="text-right">

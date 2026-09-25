@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/seller/mobile-nav";
 import { SidebarNav } from "@/components/seller/sidebar-nav";
 import { resolveCreatorContext, resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan } from "@/lib/billing/resolve";
+import { isFeatureEnabled } from "@/lib/flags";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -35,14 +36,28 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   // A shop owner can also hold a creator profile for someone else's shop; the
   // nav link is the only way back to it, since they always resolve as a seller.
-  const isCreator = Boolean(await resolveCreatorContext());
+  const scope = { sellerAccountId: actor.sellerAccountId };
+  const [isCreator, showInbox, showCapital, showAds] = await Promise.all([
+    resolveCreatorContext().then(Boolean),
+    isFeatureEnabled("wa_outbound", scope),
+    isFeatureEnabled("stock_financing", scope),
+    isFeatureEnabled("promoted_listings", scope),
+  ]);
 
   const shopName = shop?.display_name ?? "SnapDuka";
   const ownerName = account?.contact_name ?? shopName;
 
   return (
     <div className="flex min-h-svh bg-paper text-ink">
-      <SidebarNav shopName={shopName} planName={plan.planName} planCode={plan.planCode} isCreator={isCreator} />
+      <SidebarNav
+        shopName={shopName}
+        planName={plan.planName}
+        planCode={plan.planCode}
+        isCreator={isCreator}
+        showInbox={showInbox}
+        showCapital={showCapital}
+        showAds={showAds}
+      />
       <div className="min-w-0 flex-1">
         <DashboardHeader
           isPublished={shop?.status === "published"}

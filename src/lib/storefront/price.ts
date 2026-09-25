@@ -1,8 +1,8 @@
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 /**
  * Buyers see the symbol they use locally, not the ISO code. `formatMoney` in
- * @/lib/i18n stays the seller-facing formatter — dashboards and invoices read
+ * @snapduka/core stays the seller-facing formatter — dashboards and invoices read
  * better with unambiguous ISO codes.
  */
 const SYMBOL: Record<CurrencyCode, string> = { GHS: "GH₵", NGN: "₦", XOF: "CFA" };

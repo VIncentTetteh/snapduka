@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 /**
  * Releases stock held by checkouts that were abandoned.
@@ -20,7 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * `offline_due` is the case that matters here — a cash-on-delivery order is
  * unpaid for days by design.
  */
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -38,4 +39,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ released: data?.length ?? 0 });
 }
 
+export const POST = withCronMonitor("snapduka-sweep-reservations", runJob, { schedule: "*/10 * * * *" });
 export const GET = POST;

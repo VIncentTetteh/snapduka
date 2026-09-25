@@ -1,3 +1,4 @@
+import { isFeatureEnabled } from "@/lib/flags";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
@@ -115,6 +116,17 @@ export default async function ProductPage({ params, searchParams }: Props) {
       )}`
     : null;
   const canonicalUrl = canonicalStorefrontUrl(await appOrigin(), slug, productId);
+  // The WhatsApp assistant lives on SnapDuka's shared number; the SHOP-<code>
+  // prefix is how an inbound message is bound to this shop (202609250122).
+  const assistantNumber = process.env.WHATSAPP_DISPLAY_NUMBER?.replace(/[^0-9]/g, "");
+  const assistantHref =
+    assistantNumber &&
+    shop.slug_code &&
+    (await isFeatureEnabled("wa_agent", { sellerAccountId: shop.seller_account_id }))
+      ? `https://wa.me/${assistantNumber}?text=${encodeURIComponent(
+          `SHOP-${shop.slug_code} Hi, I have a question about ${product.name}`,
+        )}`
+      : null;
 
   return (
     <main className="sd-main min-h-svh bg-paper pb-24 text-ink sm:pb-10">
@@ -203,6 +215,19 @@ export default async function ProductPage({ params, searchParams }: Props) {
                 </svg>
                 Delivery and pickup options shown at checkout
               </p>
+              {assistantHref ? (
+                <a
+                  className="m-0 flex items-center gap-2.5 text-[12.5px] font-semibold text-ink-soft no-underline hover:text-ink"
+                  href={assistantHref}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="flex-none text-price">
+                    <path d="M10 2.5a7.5 7.5 0 0 0-6.4 11.4L2.5 17.5l3.7-1A7.5 7.5 0 1 0 10 2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                  </svg>
+                  Chat on WhatsApp — instant answers, any time
+                </a>
+              ) : null}
               {whatsappHref ? (
                 <a
                   className="m-0 flex items-center gap-2.5 text-[12.5px] font-semibold text-ink-soft no-underline hover:text-ink"

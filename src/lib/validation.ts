@@ -1,4 +1,4 @@
-import type { CountryCode } from "@/lib/countries/types";
+import type { CountryCode } from "@snapduka/core";
 
 /**
  * Client-safe field validators shared by buyer/seller forms.

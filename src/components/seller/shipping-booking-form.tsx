@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { courierOptions, requiresCustomName, type CourierKey } from "@/lib/couriers/catalogue";
-import type { CountryCode } from "@/lib/countries/types";
+import type { CountryCode } from "@snapduka/core";
 
 type Props = {
   orderId: string;

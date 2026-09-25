@@ -7,9 +7,9 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan } from "@/lib/billing/resolve";
 import type { EntitlementValue } from "@/lib/billing/resolve";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 import { cancelPendingUpgrade, cancelSubscription, changePlan, keepCurrentPlan } from "./actions";
 import { SubscriptionVerifier } from "./subscription-verifier";

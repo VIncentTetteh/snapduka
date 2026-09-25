@@ -124,6 +124,13 @@ export default async function SettingsPage() {
       tone: "accent",
     },
     {
+      title: "Verification",
+      description: "Verify your identity so buyers see the verified check.",
+      href: "/dashboard/settings/verification",
+      status: "View",
+      tone: "neutral",
+    },
+    {
       title: "Account",
       description: "Close your SnapDuka account.",
       href: "/dashboard/settings/account",

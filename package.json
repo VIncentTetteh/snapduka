@@ -23,6 +23,9 @@
     "test:e2e": "node scripts/local-supabase-env.mjs pnpm exec playwright test",
     "lighthouse": "node scripts/local-supabase-env.mjs pnpm exec lhci autorun",
     "traceability": "node scripts/check-traceability.mjs",
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "tokens:gen": "node scripts/gen-tokens.mjs",
+    "tokens:check": "node scripts/gen-tokens.mjs --check",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "create:operator": "node scripts/local-supabase-env.mjs node scripts/create-operator.mjs",
@@ -33,6 +36,8 @@
     "db:types": "supabase gen types typescript --local > packages/core/src/supabase-types.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "@sentry/nextjs": "11.0.0",
     "@snapduka/core": "workspace:*",
     "@supabase/ssr": "0.12.0",
     "@supabase/supabase-js": "2.108.1",

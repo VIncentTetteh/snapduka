@@ -6,7 +6,7 @@ import { FilterPills } from "@/components/ui/filter-pills";
 import { InitialsAvatar } from "@/components/ui/gradient-placeholder";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import {
   ORDER_RANGES,
   buildOrderSearchFilter,
@@ -16,7 +16,7 @@ import {
   rangeCutoff,
 } from "@/lib/orders/search";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 const FILTERS = [
   { label: "All", value: "" },

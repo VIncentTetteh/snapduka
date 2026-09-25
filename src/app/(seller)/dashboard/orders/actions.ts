@@ -31,6 +31,8 @@ const FAILURE_MESSAGE: Record<TransitionFailure, string> = {
     "This order changed while you had it open. Reload the page to see where it is now.",
   illegal_transition: "That order cannot move to this status from where it is now.",
   offline_unconfirmed: "Tick “Payment received” before completing a cash order.",
+  protect_pending_delivery:
+    "This order is protected: it completes when the buyer confirms delivery with their code.",
 };
 
 /** An assertion so callers narrow to a seller without a dead `return`. */

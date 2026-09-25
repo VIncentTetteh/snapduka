@@ -6,13 +6,18 @@ const mocks = vi.hoisted(() => ({
   sendEmail: vi.fn(),
   sendWhatsApp: vi.fn(),
   sendPush: vi.fn(),
+  sendSms: vi.fn(),
+  isFeatureEnabled: vi.fn(),
 }));
 
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/internal-jobs/auth", () => ({ isInternalJobRequest: mocks.isInternalJobRequest }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 vi.mock("@/lib/notifications/email", () => ({ sendEmail: mocks.sendEmail }));
 vi.mock("@/lib/notifications/whatsapp", () => ({ sendWhatsApp: mocks.sendWhatsApp }));
 vi.mock("@/lib/notifications/push", () => ({ sendPush: mocks.sendPush }));
+vi.mock("@/lib/notifications/sms", () => ({ sendSms: mocks.sendSms }));
+vi.mock("@/lib/flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
 vi.mock("@/lib/app-url", () => ({ appOrigin: async () => "https://snapduka.test" }));
 
 import { POST } from "./route";
@@ -84,8 +89,17 @@ function adminMock(opts: {
   customersError?: unknown;
   onCustomerPage?: (ids: string[]) => void;
   updateSpy?: (table: string, payload: Record<string, unknown>) => void;
+  suppressed?: string[];
+  suppressionError?: unknown;
+  onUpsert?: (row: Record<string, unknown>) => void;
 }) {
   return {
+    rpc: vi.fn(async (fn: string, args: { p_phones?: string[] }) => {
+      if (fn !== "sms_suppressed_phones") return { data: null, error: { message: `unexpected rpc ${fn}` } };
+      if (opts.suppressionError) return { data: null, error: opts.suppressionError };
+      const phones = args.p_phones ?? [];
+      return { data: (opts.suppressed ?? []).filter((phone) => phones.includes(phone)).map((phone) => ({ phone })), error: null };
+    }),
     from: (table: string) => ({
       select: (_columns?: string, options?: { head?: boolean }) => {
         if (table === "marketing_broadcasts") return builder({ rows: opts.broadcasts ?? [BROADCAST] });
@@ -106,7 +120,10 @@ function adminMock(opts: {
         // The broadcast claim reads back through .select().maybeSingle().
         return builder({ single: { id: "b-1" } });
       },
-      upsert: () => builder({ single: { id: `d-${Math.random()}` } }),
+      upsert: (row: Record<string, unknown>) => {
+        opts.onUpsert?.(row);
+        return builder({ single: { id: `d-${Math.random()}` } });
+      },
     }),
   };
 }
@@ -118,6 +135,8 @@ describe("POST /api/internal/marketing/process", () => {
     mocks.sendEmail.mockResolvedValue({ delivered: true });
     mocks.sendWhatsApp.mockResolvedValue({ delivered: true });
     mocks.sendPush.mockResolvedValue({ delivered: true });
+    mocks.sendSms.mockResolvedValue({ delivered: true });
+    mocks.isFeatureEnabled.mockResolvedValue(true);
   });
 
   it("rejects unauthorized requests", async () => {
@@ -177,5 +196,95 @@ describe("POST /api/internal/marketing/process", () => {
     expect(mocks.sendEmail).not.toHaveBeenCalled();
     expect(updates).toContainEqual(["marketing_broadcasts", { state: "scheduled" }]);
     expect(updates).not.toContainEqual(["marketing_broadcasts", { state: "sent" }]);
+  });
+
+  it("sends an SMS broadcast, capped to two segments, while sms_broadcasts is on", async () => {
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({ broadcasts: [{ ...BROADCAST, channel: "sms", body: "x".repeat(600) }], customers: [customer("c-1")] }),
+    );
+
+    const body = await (await POST(request())).json();
+
+    expect(body.delivered).toBe(1);
+    expect(mocks.sendSms).toHaveBeenCalledWith("+233200000000", expect.any(String));
+    expect(mocks.sendSms.mock.calls[0][1].length).toBeLessThanOrEqual(459);
+    expect(mocks.isFeatureEnabled).toHaveBeenCalledWith("sms_broadcasts", { sellerAccountId: "seller-1" });
+  });
+
+  it("appends the opt-out footer to every marketing SMS", async () => {
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({ broadcasts: [{ ...BROADCAST, channel: "sms", body: "New drop today" }], customers: [customer("c-1")] }),
+    );
+
+    await POST(request());
+
+    expect(mocks.sendSms).toHaveBeenCalledWith("+233200000000", "New drop today Reply STOP to opt out");
+  });
+
+  /**
+   * A buyer who replied STOP to the shared sender is suppressed for every
+   * seller: the skip is recorded (so the seller can see why) and nothing is sent.
+   */
+  it("skips a number that opted out of SMS, and records why", async () => {
+    const upserts: Record<string, unknown>[] = [];
+    const optedOut = { ...customer("c-2"), phone: "+233209999999" };
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({
+        broadcasts: [{ ...BROADCAST, channel: "sms" }],
+        customers: [customer("c-1"), optedOut],
+        suppressed: ["+233209999999"],
+        onUpsert: (row) => upserts.push(row),
+      }),
+    );
+
+    const body = await (await POST(request())).json();
+
+    expect(body.delivered).toBe(1);
+    expect(mocks.sendSms).toHaveBeenCalledTimes(1);
+    expect(mocks.sendSms).toHaveBeenCalledWith("+233200000000", expect.any(String));
+    expect(upserts).toContainEqual(expect.objectContaining({ customer_id: "c-2", state: "skipped", reason: "sms_opted_out" }));
+  });
+
+  it("does not suppress other channels for an SMS opt-out", async () => {
+    const admin = adminMock({ customers: [customer("c-1")], suppressed: ["+233200000000"] });
+    mocks.createAdminClient.mockReturnValue(admin);
+
+    const body = await (await POST(request())).json();
+
+    expect(body.delivered).toBe(1);
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing and reschedules when the opt-out lookup fails", async () => {
+    const updates: [string, Record<string, unknown>][] = [];
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({
+        broadcasts: [{ ...BROADCAST, channel: "sms" }],
+        customers: [customer("c-1")],
+        suppressionError: { message: "down" },
+        updateSpy: (table, payload) => updates.push([table, payload]),
+      }),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const body = await (await POST(request())).json();
+
+    expect(body.delivered).toBe(0);
+    expect(mocks.sendSms).not.toHaveBeenCalled();
+    expect(updates).toContainEqual(["marketing_broadcasts", { state: "scheduled" }]);
+    expect(updates).not.toContainEqual(["marketing_broadcasts", { state: "sent" }]);
+  });
+
+  it("does not send SMS broadcasts while the flag is off", async () => {
+    mocks.isFeatureEnabled.mockResolvedValue(false);
+    mocks.createAdminClient.mockReturnValue(
+      adminMock({ broadcasts: [{ ...BROADCAST, channel: "sms" }], customers: [customer("c-1")] }),
+    );
+
+    const body = await (await POST(request())).json();
+
+    expect(body.delivered).toBe(0);
+    expect(mocks.sendSms).not.toHaveBeenCalled();
   });
 });

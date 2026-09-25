@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import type { CurrencyCode } from "@/lib/countries/types";
-import { formatMoney } from "@/lib/i18n";
+import type { CurrencyCode } from "@snapduka/core";
+import { formatMoney } from "@snapduka/core";
 import { sendEmail } from "@/lib/notifications/email";
 import { nextAttemptAt } from "@/lib/notifications/outbox";
 import { sendPush } from "@/lib/notifications/push";
@@ -9,6 +9,8 @@ import { sendSms } from "@/lib/notifications/sms";
 import {
   creatorUpdateTemplate,
   orderUpdateTemplate,
+  sellerFinanceTemplate,
+  type SellerFinanceEvent,
   type CreatorNotificationEvent,
 } from "@/lib/notifications/templates";
 
@@ -17,15 +19,27 @@ const CREATOR_EVENTS: readonly CreatorNotificationEvent[] = [
   "creator_commission_earned",
   "creator_commission_payable",
   "creator_payment_recorded",
+  "creator_wallet_available",
 ];
+
+const FINANCE_EVENTS: readonly SellerFinanceEvent[] = ["financing_disbursed", "financing_repaid"];
+
+function isFinanceEvent(template: string): template is SellerFinanceEvent {
+  return (FINANCE_EVENTS as readonly string[]).includes(template);
+}
 
 function isCreatorEvent(template: string): template is CreatorNotificationEvent {
   return (CREATOR_EVENTS as readonly string[]).includes(template);
 }
-import { sendWhatsApp } from "@/lib/notifications/whatsapp";
+import {
+  PERMANENT_WHATSAPP_FAILURES,
+  sendWhatsApp,
+  whatsAppTemplateForNotification,
+} from "@/lib/notifications/whatsapp";
 import { appOrigin } from "@/lib/app-url";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 /** The amount on a creator message, in their currency. */
 function creatorAmount(payload: Record<string, unknown>): string | undefined {
@@ -36,7 +50,7 @@ function creatorAmount(payload: Record<string, unknown>): string | undefined {
   return formatMoney(minor, currency as CurrencyCode);
 }
 
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -76,7 +90,13 @@ export async function POST(request: Request) {
             amount: creatorAmount(payload),
             portalUrl: `${origin}/creator`,
           })
-        : orderUpdateTemplate({
+        : isFinanceEvent(claimed.template)
+          ? sellerFinanceTemplate({
+              event: claimed.template,
+              amount: payload.amountMinor != null ? creatorAmount(payload) : undefined,
+              dashboardUrl: `${origin}/dashboard`,
+            })
+          : orderUpdateTemplate({
             reference: String(payload.reference),
             status: String(payload.status),
             trackingUrl: String(trackingUrl),
@@ -85,7 +105,12 @@ export async function POST(request: Request) {
         const result = await sendEmail(claimed.recipient, template.subject, template.text);
         if (!result.delivered) throw new Error(result.reason);
       } else if (claimed.channel === "whatsapp") {
-        const result = await sendWhatsApp(claimed.recipient, template.text);
+        // Free-form inside the buyer's 24h window; outside it, the approved
+        // template for this event (if there is one).
+        const result = await sendWhatsApp(claimed.recipient, template.text, {
+          sellerAccountId: claimed.seller_account_id,
+          template: whatsAppTemplateForNotification(claimed.template, payload, String(trackingUrl)),
+        });
         if (!result.delivered) throw new Error(result.reason);
       } else if (claimed.channel === "push") {
         // orderId rides along so tapping the notification on a phone opens that
@@ -113,7 +138,7 @@ export async function POST(request: Request) {
       // with exponential backoff burns a day of worker runs to reach the same
       // answer, and buries the real cause under generic retry noise. Fail it
       // straight to dead_letter with the reason intact.
-      const retryAt = message === "not_configured"
+      const retryAt = message === "not_configured" || PERMANENT_WHATSAPP_FAILURES.has(message)
         ? null
         : nextAttemptAt(new Date(), claimed.attempts);
       await admin.from("notifications").update({
@@ -126,4 +151,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ processed });
 }
 
+export const POST = withCronMonitor("snapduka-notifications", runJob, { schedule: "*/2 * * * *" });
 export const GET = POST;

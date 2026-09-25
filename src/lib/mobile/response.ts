@@ -19,6 +19,12 @@ export type MobileErrorCode =
   | "version_conflict"
   | "validation_failed"
   | "rate_limited"
+  /**
+   * A request with the same Idempotency-Key is still running. Transient: the
+   * client retries later and then receives the stored outcome. Clients that
+   * predate the code map it to "internal", which they also retry.
+   */
+  | "in_progress"
   | "internal";
 
 const STATUS: Record<MobileErrorCode, number> = {
@@ -30,6 +36,7 @@ const STATUS: Record<MobileErrorCode, number> = {
   version_conflict: 409,
   validation_failed: 422,
   rate_limited: 429,
+  in_progress: 409,
   internal: 500,
 };
 

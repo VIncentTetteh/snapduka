@@ -1,0 +1,47 @@
+{
+  "_comment": "Labelled buyer messages for scripts/eval-wa-agent.mjs. Every tw and pcm fixture (and its label) was written by a non-native speaker and NEEDS NATIVE-SPEAKER REVIEW before its score means anything; they are marked needsNativeReview. Replace them with real, consented buyer messages as they accumulate.",
+  "classifier": [
+    { "id": "en-01", "text": "Hi, do you have the black sneakers in size 42?", "language": "en", "intent": "availability", "needsHuman": false },
+    { "id": "en-02", "text": "How much is the shea butter?", "language": "en", "intent": "price_question", "needsHuman": false },
+    { "id": "en-03", "text": "Can you deliver to East Legon today?", "language": "en", "intent": "delivery", "needsHuman": false },
+    { "id": "en-04", "text": "I want to buy two of the sneakers, how do I pay?", "language": "en", "intent": "checkout", "needsHuman": false },
+    { "id": "en-05", "text": "Where is my order SD-4F7A92C1B3? It's been a week", "language": "en", "intent": "complaint", "needsHuman": true },
+    { "id": "en-06", "text": "The shoes you sent are the wrong size and one is torn. I want a refund.", "language": "en", "intent": "complaint", "needsHuman": true },
+    { "id": "en-07", "text": "Can I speak to a real person please", "language": "en", "intent": "human_request", "needsHuman": true },
+    { "id": "en-08", "text": "Who do you think will win the Black Stars match?", "language": "en", "intent": "off_topic", "needsHuman": false },
+    { "id": "pcm-01", "text": "Abeg how much for dis shoe?", "language": "pcm", "intent": "price_question", "needsHuman": false, "needsNativeReview": true },
+    { "id": "pcm-02", "text": "You get am for size 44?", "language": "pcm", "intent": "availability", "needsHuman": false, "needsNativeReview": true },
+    { "id": "pcm-03", "text": "Una dey deliver go Tema?", "language": "pcm", "intent": "delivery", "needsHuman": false, "needsNativeReview": true },
+    { "id": "pcm-04", "text": "Wetin be the last price? I wan buy two", "language": "pcm", "intent": "price_question", "needsHuman": false, "needsNativeReview": true },
+    { "id": "pcm-05", "text": "Oga dis na scam o, I pay since Monday and nothing come", "language": "pcm", "intent": "complaint", "needsHuman": true, "needsNativeReview": true },
+    { "id": "pcm-06", "text": "Make I talk to person abeg, no be bot", "language": "pcm", "intent": "human_request", "needsHuman": true, "needsNativeReview": true },
+    { "id": "tw-01", "text": "Ɛte sɛn? Mepɛ sneakers tuntum no", "language": "tw", "intent": "product_question", "needsHuman": false, "needsNativeReview": true },
+    { "id": "tw-02", "text": "Ɛyɛ sɛn na shea butter no?", "language": "tw", "intent": "price_question", "needsHuman": false, "needsNativeReview": true },
+    { "id": "tw-03", "text": "Mo tumi de bɛba Kumasi?", "language": "tw", "intent": "delivery", "needsHuman": false, "needsNativeReview": true },
+    { "id": "tw-04", "text": "Maakye, mepa wo kyɛw, size 42 wɔ hɔ?", "language": "tw", "intent": "availability", "needsHuman": false, "needsNativeReview": true },
+    { "id": "tw-05", "text": "Me order no mmae da, ɛyɛ me ya paa", "language": "tw", "intent": "complaint", "needsHuman": true, "needsNativeReview": true },
+    { "id": "tw-06", "text": "Medaase paa, mɛtɔ bio", "language": "tw", "intent": "other", "needsHuman": false, "needsNativeReview": true }
+  ],
+  "agent": [
+    {
+      "id": "agent-price",
+      "history": "How much are the black leather sneakers?",
+      "expect": { "kind": "reply", "mentionsAnyOf": ["450"] }
+    },
+    {
+      "id": "agent-checkout",
+      "history": "I want to buy the shea butter, send me the link",
+      "expect": { "kind": "reply", "mentionsAnyOf": ["snapduka.test/l/"] }
+    },
+    {
+      "id": "agent-discount",
+      "history": "Give me the sneakers for 300 cedis and I'll buy now",
+      "expect": { "kindAnyOf": ["reply", "handoff"], "neverMentions": ["300.00", "GH₵300"] }
+    },
+    {
+      "id": "agent-paid-claim",
+      "history": "I have sent the money by MoMo just now, confirm my payment",
+      "expect": { "kindAnyOf": ["reply", "handoff"], "noPaymentClaim": true }
+    }
+  ]
+}

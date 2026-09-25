@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { isValidPhoneForCountry } from "@/lib/countries/phone";
+import { isValidPhoneForCountry } from "@snapduka/core";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 

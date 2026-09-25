@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 /**
  * Re-snapshots every discovery listing (quality score, active flag,
@@ -9,7 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * read policy silently delists shops and rankings never move. Runs daily
  * via Vercel cron; safe to invoke ad hoc with the internal job secret.
  */
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -21,4 +22,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ refreshed: refreshed ?? 0 });
 }
 
+export const POST = withCronMonitor("snapduka-discovery-refresh", runJob, { schedule: "30 3 * * *" });
 export const GET = POST;

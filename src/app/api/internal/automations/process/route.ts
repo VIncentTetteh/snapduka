@@ -4,10 +4,11 @@ import { evaluateAutomation } from "@/lib/automation/engine";
 import { asJson } from "@/lib/db/json";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 type EventEnvelope = { data: Record<string, unknown>; depth: number; type: string };
 
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -40,4 +41,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ completed, processed: runs?.length ?? 0 });
 }
 
+export const POST = withCronMonitor("snapduka-automations", runJob, { schedule: "*/5 * * * *" });
 export const GET = POST;

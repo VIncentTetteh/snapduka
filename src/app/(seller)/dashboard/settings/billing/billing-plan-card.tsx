@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Panel } from "@/components/ui/surface";
-import { formatMoney } from "@/lib/i18n";
-import type { CurrencyCode } from "@/lib/countries/types";
+import { formatMoney } from "@snapduka/core";
+import type { CurrencyCode } from "@snapduka/core";
 
 import { changePlan } from "./actions";
 

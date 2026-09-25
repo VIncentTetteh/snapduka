@@ -6,9 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { InitialsAvatar } from "@/components/ui/gradient-placeholder";
 import { Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export default async function CustomerPage({
   params,

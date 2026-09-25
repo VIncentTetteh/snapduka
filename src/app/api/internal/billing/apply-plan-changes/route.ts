@@ -4,6 +4,7 @@ import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { paginate } from "@/lib/supabase/paginate";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 function periodEnd(start: Date, interval: string): string {
   const end = new Date(start);
@@ -33,7 +34,7 @@ const DOWNGRADE_RETRY_GRACE_DAYS = 3;
  * best-effort update instead, because leaving it set would let tomorrow's
  * run match this row again and charge the card a second time.
  */
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -292,4 +293,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ applied, failed, total: due?.length ?? 0 });
 }
 
+export const POST = withCronMonitor("snapduka-apply-plan-changes", runJob, { schedule: "15 3 * * *" });
 export const GET = POST;

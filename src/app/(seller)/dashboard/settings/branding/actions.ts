@@ -8,7 +8,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
 import { normalizeHostname } from "@/lib/domains/verification";
-import { normalizePhone } from "@/lib/i18n";
+import { normalizePhone } from "@snapduka/core";
 import { parseBranding } from "@/lib/shops/branding";
 import { createClient } from "@/lib/supabase/server";
 

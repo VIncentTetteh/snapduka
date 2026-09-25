@@ -95,11 +95,54 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
+const INBOX_ITEM: NavItem = {
+  href: "/dashboard/inbox",
+  label: "WhatsApp inbox",
+  icon: <StrokeIcon d="M4 4.5h12v8.5H8l-4 3v-3V4.5Z" />,
+};
+
+const CAPITAL_ITEM: NavItem = {
+  href: "/dashboard/capital",
+  label: "Capital",
+  icon: <StrokeIcon d="M10 3v14m4-11H8.5a2.5 2.5 0 0 0 0 5h3a2.5 2.5 0 0 1 0 5H6" />,
+};
+
+const ADS_ITEM: NavItem = {
+  href: "/dashboard/ads",
+  label: "Promoted listings",
+  icon: <StrokeIcon d="M4 11V8l9-4v12l-9-4Zm0 0v4.5h2.5V12" />,
+};
+
+type NavFlags = { showInbox: boolean; showCapital: boolean; showAds: boolean };
+
+/**
+ * Flag-gated entries join their groups: the inbox right after Orders, Capital
+ * after Balance & payouts, promoted listings at the end of Grow.
+ */
+function navGroups({ showInbox, showCapital, showAds }: NavFlags) {
+  return NAV_GROUPS.map((group) => {
+    let items = group.items;
+    const after = (href: string, item: NavItem) => {
+      const at = items.findIndex((existing) => existing.href === href) + 1;
+      items = [...items.slice(0, at), item, ...items.slice(at)];
+    };
+    if (group.label === "Sell") {
+      if (showInbox) after("/dashboard/orders", INBOX_ITEM);
+      if (showCapital) after("/dashboard/payouts", CAPITAL_ITEM);
+    }
+    if (group.label === "Grow" && showAds) items = [...items, ADS_ITEM];
+    return items === group.items ? group : { ...group, items };
+  });
+}
+
 export function SidebarNav({
   shopName,
   planName = "Free",
   planCode = "free",
   isCreator = false,
+  showInbox = false,
+  showCapital = false,
+  showAds = false,
 }: {
   shopName: string;
   isVerified?: boolean;
@@ -107,6 +150,12 @@ export function SidebarNav({
   planCode?: string;
   /** This account also holds a creator profile for someone else's shop. */
   isCreator?: boolean;
+  /** WhatsApp conversations are on for this seller (wa_outbound flag). */
+  showInbox?: boolean;
+  /** Stock financing is on for this seller (stock_financing flag). */
+  showCapital?: boolean;
+  /** Promoted listings are on for this seller (promoted_listings flag). */
+  showAds?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -128,7 +177,7 @@ export function SidebarNav({
 
       {/* Grouped nav */}
       <nav aria-label="Seller navigation" className="flex-1 overflow-y-auto px-2.5 py-3">
-        {NAV_GROUPS.map((group) => (
+        {navGroups({ showInbox, showCapital, showAds }).map((group) => (
           <div key={group.label} className="mb-4">
             <p className="mb-1 px-2.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink-faint">
               {group.label}

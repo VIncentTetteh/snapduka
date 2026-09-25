@@ -10,6 +10,9 @@ import { getPublicProduct, getPublicShop } from "@/lib/storefront/queries";
 import { appOrigin } from "@/lib/app-url";
 import { mainImageUrl, normalizeToOne, publicMediaUrl } from "@/lib/storefront/media";
 import { canonicalStorefrontUrl } from "@/lib/storefront/sharing";
+import { isFeatureEnabled } from "@/lib/flags";
+import { settlementModeFor } from "@/lib/protect/service";
+import { bnplCheckoutOption } from "@/lib/bnpl/availability";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -121,7 +124,8 @@ export default async function CheckoutPage({
     };
   });
   const admin = createAdminClient();
-  const [{ data: methods }, { data: seller }, { data: countryConfig }] = await Promise.all([
+  const [{ data: methods }, { data: seller }, { data: countryConfig }, settlementMode, protectFlag] =
+    await Promise.all([
     admin
       .from("fulfillment_methods")
       .select("id,name,type,fee_minor,instructions")
@@ -135,9 +139,13 @@ export default async function CheckoutPage({
       .maybeSingle(),
     admin
       .from("country_configs")
-      .select("settlement_mode,enabled")
+      .select("enabled,protect_enabled,protect_fee_bps,protect_fee_min_minor,protect_fee_cap_minor")
       .eq("country", shop.country)
       .maybeSingle(),
+    // The seller's effective mode: a pilot seller can be on the ledger before
+    // the rest of the market.
+    settlementModeFor(shop.seller_account_id),
+    isFeatureEnabled("protect", { sellerAccountId: shop.seller_account_id }),
   ]);
 
   // The subaccount row used to be the gate, and it was doing real work: its
@@ -160,12 +168,35 @@ export default async function CheckoutPage({
 
   const onlinePaymentsAvailable = Boolean(
     countryConfig?.enabled &&
-      (countryConfig.settlement_mode === "ledger"
+      (settlementMode === "ledger"
         ? sellerCanBeOwedMoney
         : // Legacy split: Paystack pays the subaccount directly, so the
           // subaccount existing is still exactly the right condition.
           legacySubaccount?.status === "active"),
   );
+
+  // Protect needs online payment into SnapDuka's account (ledger settlement),
+  // the market switched on, and the rollout flag on for this seller. The SQL
+  // re-checks all of it when the buyer opts in.
+  const protectOffer =
+    onlinePaymentsAvailable && protectFlag && countryConfig?.protect_enabled && settlementMode === "ledger"
+      ? {
+          feeBps: countryConfig.protect_fee_bps,
+          minMinor: countryConfig.protect_fee_min_minor,
+          capMinor: countryConfig.protect_fee_cap_minor,
+        }
+      : null;
+
+  // Pay in instalments (flag `bnpl`, ADR-0014): same conditions the BNPL
+  // initialize route enforces, so the option never appears only to fail.
+  const bnplOffer =
+    onlinePaymentsAvailable && products[0]
+      ? await bnplCheckoutOption({
+          sellerAccountId: shop.seller_account_id,
+          country: shop.country,
+          currency: products[0].currency as "GHS" | "NGN" | "XOF",
+        })
+      : null;
 
   return (
     <main className="sd-main min-h-svh bg-paper text-ink">
@@ -210,6 +241,8 @@ export default async function CheckoutPage({
           fromCart={Boolean(query.cart)}
           methods={methods ?? []}
           onlinePaymentsAvailable={onlinePaymentsAvailable}
+          protect={protectOffer}
+          bnpl={bnplOffer}
           products={products}
           shopId={shop.id}
           shopName={shop.display_name}

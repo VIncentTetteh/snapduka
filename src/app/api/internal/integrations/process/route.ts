@@ -4,8 +4,9 @@ import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
 import { isSafeWebhookUrl } from "@/lib/security/url";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { signWebhook } from "@/lib/webhooks/signing";
+import { withCronMonitor } from "@/lib/observability/cron";
 
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const admin = createAdminClient();
   const { data: jobs } = await admin
@@ -60,4 +61,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ delivered, processed: jobs?.length ?? 0 });
 }
 
+export const POST = withCronMonitor("snapduka-integrations", runJob, { schedule: "*/5 * * * *" });
 export const GET = POST;

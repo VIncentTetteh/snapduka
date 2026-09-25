@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 
 import { sendEmail } from "@/lib/notifications/email";
+import { isFeatureEnabled } from "@/lib/flags";
+import { smsBroadcastBody } from "@/lib/marketing/sms";
+import { suppressedSmsPhones } from "@/lib/marketing/sms-opt-out";
 import { sendPush } from "@/lib/notifications/push";
+import { sendSms } from "@/lib/notifications/sms";
 import { sendWhatsApp } from "@/lib/notifications/whatsapp";
 import { appOrigin } from "@/lib/app-url";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { paginate } from "@/lib/supabase/paginate";
 import { isInternalJobRequest } from "@/lib/internal-jobs/auth";
+import { withCronMonitor } from "@/lib/observability/cron";
 
 type SegmentRules = { minimumOrders?: number; minimumSpendMinor?: number; orderedWithinDays?: number };
 type CustomerOrder = { created_at: string; status: string; total_minor: number };
@@ -19,7 +24,7 @@ function matchesSegment(orders: CustomerOrder[], rules: SegmentRules) {
     && (!recentCutoff || eligible.some((order) => new Date(order.created_at).valueOf() >= recentCutoff));
 }
 
-export async function POST(request: Request) {
+async function runJob(request: Request) {
   if (!isInternalJobRequest(request)) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
@@ -72,11 +77,36 @@ export async function POST(request: Request) {
         .eq("state", "sending");
       continue;
     }
+    // SMS broadcasts ship behind a flag; checked once per broadcast, not per buyer.
+    const smsEnabled =
+      broadcast.channel === "sms" &&
+      (await isFeatureEnabled("sms_broadcasts", { sellerAccountId: broadcast.seller_account_id }));
+    // Numbers that replied STOP to the shared sender, for any seller. Looked up
+    // before a single SMS goes out; if the lookup fails the broadcast waits for
+    // the next run rather than texting people who asked us to stop.
+    let smsSuppressed = new Set<string>();
+    if (smsEnabled) {
+      try {
+        smsSuppressed = await suppressedSmsPhones(admin, customers.map((customer) => customer.phone));
+      } catch (error) {
+        console.error("[marketing] SMS opt-out lookup failed", {
+          broadcastId: broadcast.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await admin
+          .from("marketing_broadcasts")
+          .update({ state: "scheduled" })
+          .eq("id", broadcast.id)
+          .eq("state", "sending");
+        continue;
+      }
+    }
     const rules = ((broadcast.customer_segments as unknown as { rules?: SegmentRules } | null)?.rules ?? {}) as SegmentRules;
 
     for (const customer of customers) {
       const consented = customer.customer_consents.some((consent) => consent.purpose === "marketing" && consent.status === "granted");
       let reason: string | null = consented ? null : "marketing_consent_not_granted";
+      if (!reason && broadcast.channel === "sms" && smsSuppressed.has(customer.phone)) reason = "sms_opted_out";
       if (!reason && broadcast.segment_id && !matchesSegment(customer.orders as CustomerOrder[], rules)) reason = "outside_segment";
       if (!reason && cap === 0) reason = "frequency_cap_reached";
       if (!reason) {
@@ -92,6 +122,10 @@ export async function POST(request: Request) {
           if (!result.delivered) throw new Error(result.reason);
         } else if (broadcast.channel === "whatsapp") {
           const result = await sendWhatsApp(customer.phone, broadcast.body);
+          if (!result.delivered) throw new Error(result.reason);
+        } else if (broadcast.channel === "sms") {
+          if (!smsEnabled) throw new Error("not_enabled");
+          const result = await sendSms(customer.phone, smsBroadcastBody(broadcast.body));
           if (!result.delivered) throw new Error(result.reason);
         } else if (broadcast.channel === "push") {
           const { data: subscription } = await admin.from("push_subscriptions").select("endpoint").eq("customer_id", customer.id).eq("active", true).limit(1).maybeSingle();
@@ -112,4 +146,5 @@ export async function POST(request: Request) {
   return NextResponse.json({ broadcasts: broadcasts?.length ?? 0, delivered });
 }
 
+export const POST = withCronMonitor("snapduka-marketing", runJob, { schedule: "*/15 * * * *" });
 export const GET = POST;

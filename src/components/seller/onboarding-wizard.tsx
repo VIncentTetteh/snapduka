@@ -17,7 +17,7 @@ import { createProductAction } from "@/app/(seller)/dashboard/products/actions";
 import { LogoMark } from "@/components/ui/logo";
 import { Req } from "@/components/ui/required-mark";
 import { shopSlugBase, type OnboardingState, type VerificationState } from "@/lib/auth/onboarding";
-import type { CountryCode } from "@/lib/countries/types";
+import type { CountryCode } from "@snapduka/core";
 
 /* ------------------------------------------------------------------ */
 /* Model                                                               */
