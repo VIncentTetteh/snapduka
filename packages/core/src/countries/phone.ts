@@ -1,9 +1,11 @@
+// Single source for web + mobile (the web copy in src/lib/countries was removed).
 import type { CountryCode } from "./types";
 
 /**
  * Exact local-digit counts for each country's mobile numbers, applied to
  * the already-normalized "+<callingCode><digits>" shape produced by
- * normalizePhone().
+ * normalizePhone(). A shared 8-15-digit range (the old approach)
+ * silently accepted wrong-length numbers for every country.
  */
 const PHONE_RULES: Record<CountryCode, { callingCode: string; localDigits: number; example: string }> = {
   GH: { callingCode: "233", localDigits: 9, example: "+233241234567" },
@@ -24,4 +26,10 @@ export function isValidPhoneForCountry(normalizedPhone: string, country: Country
 
 export function phoneExampleFor(country: CountryCode): string {
   return PHONE_RULES[country].example;
+}
+
+/** Digits expected after the calling code. Lets callers write an exact
+ * error ("Ghana numbers have 9 digits after +233") instead of a vague one. */
+export function phoneLocalDigitsFor(country: CountryCode): number {
+  return PHONE_RULES[country].localDigits;
 }

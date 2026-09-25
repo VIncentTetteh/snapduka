@@ -1,11 +1,21 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
+
 export default function ErrorPage({
+  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // A boundary swallows the error, so the SDK's global handlers never see it.
+  // No-op when Sentry is not initialised (no DSN).
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   return (
     <main className="sd-main grid min-h-svh place-items-center bg-paper px-5 text-ink">
       <div className="w-full max-w-[440px] text-center">

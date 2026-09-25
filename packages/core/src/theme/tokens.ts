@@ -10,8 +10,11 @@
 //      that needs emphasis uses terracotta. Spraying green on generic success
 //      states is what made the two clients drift apart in the first place.
 //
-// These mirror `Snapduka/src/app/globals.css`, which is Tailwind v4 and holds
-// the same values in an @theme block. When you change one, change both.
+// The Tailwind v4 @theme block in `Snapduka/src/app/globals.css` is GENERATED
+// from this file (plus browser-only values in ./web.ts) by
+// scripts/gen-tokens.mjs. Change values here, run `pnpm tokens:gen`, and CI's
+// `pnpm tokens:check` fails if the two ever disagree. Keep this file free of
+// imports: the generator loads it directly with Node's type stripping.
 export const tokens = {
   color: {
     // ── Surfaces ──────────────────────────────────────────────────────────

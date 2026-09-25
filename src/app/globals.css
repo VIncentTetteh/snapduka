@@ -7,6 +7,7 @@
    Display type: Georgia serif (weight 500). Body: system sans.
    ════════════════════════════════════════════════════════════════ */
 
+/* BEGIN GENERATED: design tokens. Source: packages/core/src/theme/{tokens,web}.ts. Run `pnpm tokens:gen`; do not edit by hand. */
 @theme {
   /* Surfaces */
   --color-paper: #FAF7F2;
@@ -69,6 +70,7 @@
   --animate-sd-fade-up: sd-fade-up 0.6s ease both;
   --animate-sd-pulse: sd-pulse 1.6s ease-in-out infinite;
 }
+/* END GENERATED: design tokens */
 
 /* ─── Keyframes (referenced by animate-[…] arbitrary values) ───── */
 @keyframes sd-float {

@@ -34,6 +34,22 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # @snapduka/core has its own suite (i18n, countries, billing, ...) that the
+      # web app's vitest config does not include.
+      - name: Test shared core package
+        run: pnpm --filter @snapduka/core test
+
+      # Key and {placeholder} parity across en/fr/pcm/tw, and a count of machine
+      # drafts (needsReview) still awaiting a fluent reviewer. Loads the .ts
+      # catalogues via Node 22's built-in type stripping (22.18+).
+      - name: i18n catalogues
+        run: pnpm i18n:check
+
+      # globals.css @theme is generated from packages/core/src/theme; fail if
+      # someone edited one side only.
+      - name: Design tokens in sync
+        run: pnpm tokens:check
+
       - name: Product traceability
         run: pnpm traceability
 

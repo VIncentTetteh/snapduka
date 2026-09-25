@@ -1,4 +1,4 @@
-// Ported from Snapduka/src/lib/countries/types.ts — shared across web + mobile.
+// Single source for web + mobile (the web copy in src/lib/countries was removed).
 export type CountryCode = "GH" | "NG" | "CI";
 
 export type CurrencyCode = "GHS" | "NGN" | "XOF";
