@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { isValidPhoneForCountry } from "@/lib/countries/phone";
-import type { CountryCode } from "@/lib/countries/types";
+import { isValidPhoneForCountry } from "@snapduka/core";
+import type { CountryCode } from "@snapduka/core";
 
 export const onboardingMilestoneKeys = [
   "account",

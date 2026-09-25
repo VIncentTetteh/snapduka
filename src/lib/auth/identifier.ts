@@ -1,8 +1,7 @@
 import { z } from "zod";
 
-import { getCountryConfig } from "@/lib/countries/config";
-import { isValidPhoneForCountry, phoneExampleFor, phoneLocalDigitsFor } from "@/lib/countries/phone";
-import type { CountryCode } from "@/lib/countries/types";
+import { getCountryConfig, isValidPhoneForCountry, phoneExampleFor, phoneLocalDigitsFor } from "@snapduka/core";
+import type { CountryCode } from "@snapduka/core";
 
 export type ClassifiedIdentifier =
   | { kind: "email"; value: string }

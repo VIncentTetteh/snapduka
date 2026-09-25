@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { ATTRIBUTION_COOKIE, decodeAttribution } from "@/lib/campaigns/attribution";
+import { linkCheckoutOrderToBuyer } from "@/lib/buyer/link-order";
 import { parseGuestOrder } from "@/lib/commerce/order";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -108,6 +109,13 @@ export async function POST(request: Request) {
           eventType: "order.created",
           sellerAccountId: createdOrder.seller_account_id,
         });
+
+        // Signed-in buyer (flag buyer_accounts): attach the order to their
+        // cross-shop history. After the response, so checkout pays no latency
+        // for it; never throws, and a miss is recovered by claim_guest_orders().
+        const orderId = result.orderId;
+        const sellerAccountId = createdOrder.seller_account_id;
+        after(() => linkCheckoutOrderToBuyer(orderId, sellerAccountId));
       }
 
       await enqueueOrderEventNotification(admin, result.orderId, "order_placed");

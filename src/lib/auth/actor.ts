@@ -41,6 +41,26 @@ export type OperatorActor = {
   role: "operator";
 };
 
+/**
+ * A signed-in SnapDuka buyer (phone OTP) with a live buyer profile.
+ *
+ * Deliberately NOT a member of `Actor`: `resolveActor` never returns it, and
+ * must not. A buyer profile is keyed on the same auth user as a seller account
+ * can be, so folding it into `resolveActor` would either turn sellers into
+ * buyers (breaking every `actor.kind === "seller"` guard) or make a pure buyer
+ * stop resolving as `unprovisioned` (breaking onboarding). Buyer routes call
+ * `resolveBuyerActor` instead, and only they pay for the lookup.
+ */
+export type BuyerActor = {
+  kind: "buyer";
+  authenticated: true;
+  userId: string;
+  buyerProfileId: string;
+  phone: string;
+  /** Consent to the shared cross-shop profile (Act 843). */
+  consented: boolean;
+};
+
 export type Actor =
   | AnonymousActor
   | UnprovisionedActor
@@ -66,6 +86,12 @@ export type SellerAccountIdentity = {
   status: SellerAccountStatus;
 };
 
+export type BuyerProfileIdentity = {
+  id: string;
+  phone: string;
+  consentedAt: string | null;
+};
+
 export type ActorResolverDependencies = {
   getVerifiedUser: () => Promise<VerifiedAuthUser | null>;
   getSellerByAuthUserId: (
@@ -74,6 +100,8 @@ export type ActorResolverDependencies = {
   getMembershipByAuthUserId?: (authUserId: string) => Promise<(SellerAccountIdentity & { role: NonNullable<SellerActor["role"]> }) | null>;
   /** Optional so existing callers that only inject the seller deps still typecheck. */
   getCreatorByAuthUserId?: (authUserId: string) => Promise<CreatorIdentity | null>;
+  /** Only ever called by `resolveBuyerActor`; `resolveActor` never reads it. */
+  getBuyerProfileByAuthUserId?: (authUserId: string) => Promise<BuyerProfileIdentity | null>;
 };
 
 export async function resolveActor(
@@ -200,6 +228,19 @@ async function createSupabaseDependencies(): Promise<ActorResolverDependencies> 
       if (error) return null;
       return data as CreatorIdentity | null;
     },
+    async getBuyerProfileByAuthUserId(authUserId) {
+      // RLS (buyer_profiles_owner_read) already limits this to the caller's own
+      // live profile; the filters make the intent explicit and use the index.
+      const { data, error } = await supabase
+        .from("buyer_profiles")
+        .select("id, phone_e164, consent_shared_profile_at")
+        .eq("auth_user_id", authUserId)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (error || !data?.phone_e164) return null;
+      return { id: data.id, phone: data.phone_e164, consentedAt: data.consent_shared_profile_at };
+    },
   };
 }
 
@@ -244,4 +285,42 @@ export async function resolveCreatorContext(
   if (!creator) return null;
 
   return { creatorId: creator.id, handle: creator.handle, country: creator.country };
+}
+
+/**
+ * The buyer behind the current session, for buyer routes (/me, /api/buyer,
+ * checkout prefill and linking) only.
+ *
+ * Returns `unprovisioned` for a signed-in user with no buyer profile yet (the
+ * caller decides whether to run bootstrap_buyer_profile), whether or not that
+ * user is also a seller or creator: a seller buying from another shop is a
+ * buyer here and a seller everywhere else, and neither resolution affects the
+ * other.
+ */
+export async function resolveBuyerActor(
+  dependencies?: ActorResolverDependencies,
+): Promise<AnonymousActor | UnprovisionedActor | BuyerActor> {
+  const resolved = dependencies ?? (await createSupabaseDependencies());
+  const user = await resolved.getVerifiedUser();
+  if (!user) return { kind: "anonymous", authenticated: false };
+
+  // An operator is staff acting on other people's data; giving the same session
+  // a buyer identity would blur whose actions the audit trail records.
+  if (user.appMetadata.snapduka_role === "operator") {
+    return { kind: "anonymous", authenticated: false };
+  }
+
+  const profile = await resolved.getBuyerProfileByAuthUserId?.(user.id);
+  if (!profile) {
+    return { kind: "unprovisioned", authenticated: true, userId: user.id, email: user.email };
+  }
+
+  return {
+    kind: "buyer",
+    authenticated: true,
+    userId: user.id,
+    buyerProfileId: profile.id,
+    phone: profile.phone,
+    consented: profile.consentedAt !== null,
+  };
 }
