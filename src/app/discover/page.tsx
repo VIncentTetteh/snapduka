@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
+
+import type { CountryCode } from "@snapduka/core";
 
 import { gradientForSeed } from "@/components/ui/gradient-placeholder";
 import { BrandLink } from "@/components/ui/logo";
+import { SponsoredListings } from "@/components/discover/sponsored-listings";
+import { getSponsoredListings } from "@/lib/ads/sponsored";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +22,10 @@ const COUNTRY_LABELS: Record<string, string> = {
   NG: "Nigeria",
   CI: "Côte d'Ivoire",
 };
+
+function marketFor(value: string | null | undefined): CountryCode | null {
+  return value === "GH" || value === "NG" || value === "CI" ? value : null;
+}
 
 export default async function DiscoverPage({
   searchParams,
@@ -55,6 +64,14 @@ export default async function DiscoverPage({
   if (error) {
     console.error("[discover] could not load the directory", { error });
   }
+
+  // Promoted listings (flag `promoted_listings`, ADR-0014). An auction is per
+  // market, so it needs one: the chosen country, else the visitor's. Not shown
+  // against a search — sponsored results are not ranked for relevance yet, and
+  // an unrelated ad above what someone searched for reads as noise.
+  const adCountry = marketFor(filters.country) ?? marketFor((await headers()).get("x-vercel-ip-country"));
+  const sponsored =
+    adCountry && !search ? await getSponsoredListings({ country: adCountry, placement: "discover" }) : [];
 
   return (
     <main className="sd-main min-h-screen bg-paper text-ink">
@@ -106,6 +123,8 @@ export default async function DiscoverPage({
             Search
           </button>
         </form>
+
+        <SponsoredListings listings={sponsored} />
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {!data?.length && (
