@@ -14,12 +14,16 @@ select has_function(
   'run_internal_job exists'
 );
 
--- Twelve workers plus the pg_net response prune. A route under
--- src/app/api/internal with no row here is a worker that never runs, which is
--- the defect this whole file exists to prevent.
+-- Seventeen workers (one per route under src/app/api/internal, including the
+-- outbox drain, the Protect sweep, the seller digest, draft-media pruning and
+-- financing settlement) plus five SQL-only jobs: the pg_net response prune,
+-- the courier quote prune, the idempotency key prune, the nightly trust scores
+-- and the financing repayment sweep. A route under src/app/api/internal with
+-- no row here is a worker that never runs, which is the defect this whole
+-- file exists to prevent.
 select is(
   (select count(*)::int from cron.job where jobname like 'snapduka-%'),
-  13,
+  22,
   'every worker plus the pg_net response prune is scheduled'
 );
 

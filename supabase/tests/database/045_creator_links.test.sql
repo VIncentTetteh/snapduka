@@ -90,10 +90,18 @@ select throws_ok(
 
 -- Pausing a partnership is the seller's lever. It has to stop the creator
 -- making new links, not merely stop accrual afterwards.
+--
+-- The pause is applied here, as the test owner, not inside the creator's
+-- block: a creator can only SELECT partnerships, so an UPDATE issued as the
+-- creator silently changed zero rows, the partnership stayed active, and this
+-- assertion failed for a reason that had nothing to do with the policy.
+-- `set local role` inside the earlier blocks lasts for the whole transaction,
+-- so the role has to be reset before acting as the owner.
+reset role;
+update public.creator_partnerships set status = 'paused' where id = '0cc00000-0000-4000-8000-000000000040';
 select throws_ok(
   $$ set local role authenticated;
      set local request.jwt.claims = '{"sub":"0cc00000-0000-4000-8000-000000000002","role":"authenticated"}';
-     update public.creator_partnerships set status = 'paused' where id = '0cc00000-0000-4000-8000-000000000040';
      insert into public.campaign_links (seller_account_id, shop_id, name, token, channel, destination_path, creator_partnership_id)
      values ('0cc00000-0000-4000-8000-000000000010','0cc00000-0000-4000-8000-000000000020',
              'while paused','crtest-z','whatsapp','/partner-shop',

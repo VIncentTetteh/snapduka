@@ -16,8 +16,10 @@ select ok(
 select policies_are(
   'public',
   'social_accounts',
-  array['social_accounts_owner_read', 'social_accounts_owner_delete'],
-  'owner read/delete are the only client policies'
+  -- A manager may disconnect an account too (202609060090, the team access
+  -- matrix). Still no client write of tokens: there is no insert or update.
+  array['social_accounts_owner_read', 'social_accounts_owner_delete', 'social_accounts_team_delete'],
+  'owner read/delete and manager delete are the only client policies'
 );
 
 select throws_ok(

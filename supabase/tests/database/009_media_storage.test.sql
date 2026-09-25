@@ -16,9 +16,16 @@ select results_eq(
   'shop-logos bucket exists and is public'
 );
 
+-- Public buckets serve objects by URL without consulting RLS, so storefront
+-- images need no read policy; a blanket one only let anon LIST every seller's
+-- files (202609060093). What must hold now is the opposite of what this test
+-- used to assert: no unconditional read, only a seller's read of their folder.
 select ok(
-  exists(select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'media_public_read'),
-  'media objects are publicly readable'
+  not exists(select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects'
+               and cmd = 'SELECT' and 'anon' = any(roles))
+  and exists(select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects'
+               and policyname = 'media_seller_read'),
+  'media objects cannot be listed anonymously; sellers read their own folder'
 );
 select ok(
   exists(select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'media_seller_insert'),

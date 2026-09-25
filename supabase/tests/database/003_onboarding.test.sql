@@ -23,7 +23,8 @@ select hasnt_column(
 select has_function(
   'public',
   'save_onboarding_shop',
-  array['text', 'text', 'text', 'text']::name[],
+  -- The slug parameter was removed in 202609060101: the address is derived.
+  array['text', 'text', 'text']::name[],
   'transactional onboarding shop helper exists'
 );
 select has_function(
@@ -314,7 +315,6 @@ select lives_ok(
   $$
     select public.save_onboarding_shop(
       'Ama Market',
-      'Ama Market',
       'Ama Market Limited',
       'CS123456'
     )
@@ -322,14 +322,13 @@ select lives_ok(
   'seller can transactionally reserve a normalized draft slug'
 );
 
-select is(
+select ok(
   (
     select slug
     from public.shops
     where seller_account_id = '00000000-0000-0000-0000-000000003201'
-  ),
-  'ama-market',
-  'shop helper persists lowercase hyphen slug'
+  ) ~ '^ama-market-[23456789abcdefghjkmnpqrstvwxyz]{4}$',
+  'shop helper persists a lowercase hyphen slug derived from the name plus a code'
 );
 
 reset role;

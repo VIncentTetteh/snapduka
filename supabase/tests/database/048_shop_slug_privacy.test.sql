@@ -31,6 +31,8 @@ insert into public.seller_accounts (id, auth_user_id, country, status, is_active
  ('2dd00000-0000-4000-8000-000000000002','1dd00000-0000-4000-8000-000000000002','GH','pending',false,'Twin Tester');
 
 create temp table seen(what text, value text);
+-- The rows below are written while acting as the seller, not the test owner.
+grant all on seen to authenticated;
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"1dd00000-0000-4000-8000-000000000001","role":"authenticated"}';

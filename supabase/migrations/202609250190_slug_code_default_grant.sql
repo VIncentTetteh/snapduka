@@ -1,0 +1,15 @@
+-- Let row-level security, not a missing grant, decide who may insert a shop.
+--
+-- 202609060101 gave shops.slug_code a column default of generate_slug_code()
+-- and revoked the function from public. A column default runs as the inserting
+-- role, so every direct INSERT into shops by `authenticated` failed with
+-- "permission denied for function generate_slug_code" before RLS was even
+-- consulted. Onboarding was unaffected (save_onboarding_shop is SECURITY
+-- DEFINER), but it meant the RLS policies on shops were no longer the thing
+-- enforcing anything, and the tests that prove them (002, 003) could not run.
+--
+-- The function only returns random characters from a fixed alphabet; it reads
+-- no data. Granting it to authenticated (and service_role, the backend) exposes
+-- nothing. anon stays revoked. Production already grants both — checked
+-- 2026-09-25 — so this brings the repository in line with it, not the reverse.
+grant execute on function public.generate_slug_code(integer) to authenticated, service_role;

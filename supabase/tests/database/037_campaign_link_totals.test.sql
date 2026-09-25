@@ -32,9 +32,12 @@ values ('c3c30000-0000-4000-8000-000000000001', 'b3b30000-0000-4000-8000-0000000
 insert into public.campaign_links (id, seller_account_id, shop_id, name, token, channel, destination_path)
 values
   ('d3d30000-0000-4000-8000-000000000001', 'b3b30000-0000-4000-8000-000000000001',
-   'c3c30000-0000-4000-8000-000000000001', 'TikTok drop', 'tok-tiktok-1', 'tiktok', '/'),
+   'c3c30000-0000-4000-8000-000000000001', 'TikTok drop', 'tok-tiktok-1', 'tiktok', '/campaign-shop'),
   ('d3d30000-0000-4000-8000-000000000002', 'b3b30000-0000-4000-8000-000000000001',
-   'c3c30000-0000-4000-8000-000000000001', 'WhatsApp status', 'tok-whatsapp-1', 'whatsapp', '/');
+   'c3c30000-0000-4000-8000-000000000001', 'WhatsApp status', 'tok-whatsapp-1', 'whatsapp', '/campaign-shop');
+
+-- Destinations point into the link's own shop: a later guard refuses '/'
+-- (a tracked link that leaves the shop could not attribute anything).
 
 -- orders.customer_id is NOT NULL, so the conversion needs a real buyer.
 insert into public.customers (id, seller_account_id, name, email, phone, country)
