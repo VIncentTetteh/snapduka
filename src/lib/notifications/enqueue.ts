@@ -1,5 +1,5 @@
 import type { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 import type { CreatorNotificationEvent } from "@/lib/notifications/templates";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
