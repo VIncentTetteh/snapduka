@@ -8,6 +8,10 @@
  * client transitively would break both.
  */
 export {
+  canTransitionFulfillment,
+  isFulfillmentOnlyStep,
+  type FulfillmentOnlyStep,
+  type FulfillmentState,
   canTransitionOrder,
   fulfillmentForTransition,
   isSellerTransition,

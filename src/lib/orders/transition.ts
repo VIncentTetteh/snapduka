@@ -47,7 +47,8 @@ export type TransitionFailure =
   | "not_found"
   | "version_conflict"
   | "illegal_transition"
-  | "offline_unconfirmed";
+  | "offline_unconfirmed"
+  | "protect_pending_delivery";
 
 export type TransitionResult =
   | { ok: true; orderId: string; status: SellerTransition; version: number }
@@ -60,7 +61,7 @@ export async function transitionOrder(input: TransitionInput): Promise<Transitio
   const { data: order } = await admin
     .from("orders")
     .select(
-      "id,status,event_version,payment_status,customer_id,public_reference,total_minor,currency",
+      "id,status,event_version,payment_status,customer_id,public_reference,total_minor,currency,protection_mode",
     )
     .eq("id", orderId)
     .eq("seller_account_id", sellerAccountId)
@@ -73,6 +74,20 @@ export async function transitionOrder(input: TransitionInput): Promise<Transitio
   }
   if (next === "completed" && order.payment_status === "offline_due" && !offlinePaidConfirmed) {
     return { ok: false, reason: "offline_unconfirmed" };
+  }
+  // A protected order completes when the buyer confirms delivery, never on the
+  // seller's say-so. The database refuses it anyway (guard_protected_order);
+  // checking here turns that refusal into an answer the seller can act on
+  // instead of a misleading version conflict.
+  if (next === "completed" && order.protection_mode === "protect") {
+    const { data: protection } = await admin
+      .from("order_protections")
+      .select("state")
+      .eq("order_id", orderId)
+      .maybeSingle();
+    if (protection && ["held", "in_transit", "disputed"].includes(protection.state)) {
+      return { ok: false, reason: "protect_pending_delivery" };
+    }
   }
 
   const nextVersion = expectedVersion + 1;

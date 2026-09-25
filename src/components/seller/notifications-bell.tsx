@@ -12,6 +12,9 @@ const EVENT_LABEL: Record<string, string> = {
   shipment_booked: "Shipment booked",
   shipment_in_transit: "Delivery in transit",
   shipment_delivered: "Order delivered",
+  fulfillment_dispatched: "Order dispatched",
+  fulfillment_fulfilled: "Order delivered",
+  fulfillment_returned: "Order returned",
 };
 
 function timeAgo(iso: string) {
