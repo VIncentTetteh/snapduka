@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getBnplProviderById: vi.fn(),
   resolveServerActor: vi.fn(),
   createAdminClient: vi.fn(),
   refund: vi.fn(),
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
+vi.mock("@/lib/bnpl/registry", () => ({ getBnplProviderById: mocks.getBnplProviderById }));
 vi.mock("@/lib/payments/paystack", () => ({
   paystackProvider: () => ({ refund: mocks.refund }),
 }));

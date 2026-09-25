@@ -4,13 +4,27 @@ const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   createAdminClient: vi.fn(),
   initialize: vi.fn(),
+  settlementModeFor: vi.fn(),
+  fallbackInitialize: vi.fn(),
+  routes: null as null | { provider: { id: string; adapter: () => unknown }; reason: string }[],
+  inserts: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
+// Ledger settlement, so no Paystack subaccount is required and the route
+// reaches the provider — which is the path under test.
+vi.mock("@/lib/protect/service", () => ({ settlementModeFor: mocks.settlementModeFor }));
 vi.mock("@/lib/app-url", () => ({ appOrigin: async () => "https://snapduka.test" }));
-vi.mock("@/lib/payments/paystack", () => ({
-  paystackProvider: () => ({ initialize: mocks.initialize }),
+vi.mock("@/lib/payments/providers/registry", () => ({
+  PROVIDERS: [{ id: "paystack", adapter: () => ({ initialize: mocks.initialize }) }],
+}));
+vi.mock("@/lib/payments/providers/router", () => ({
+  routeCheckout: async () =>
+    mocks.routes ?? [
+      { provider: { id: "paystack", adapter: () => ({ initialize: mocks.initialize }) }, reason: "preferred" },
+    ],
+  recordPaymentOutcome: async () => {},
 }));
 
 import { POST } from "./route";
@@ -70,9 +84,12 @@ function adminMock() {
         return chain;
       },
       update: () => ({ eq: () => Promise.resolve({ error: null }) }),
-      insert: () => ({
-        select: () => ({ single: () => Promise.resolve({ data: { id: "attempt-1" }, error: null }) }),
-      }),
+      insert: (row: Record<string, unknown>) => {
+        mocks.inserts.push(row);
+        return {
+          select: () => ({ single: () => Promise.resolve({ data: { id: "attempt-1" }, error: null }) }),
+        };
+      },
     }),
   };
 }
@@ -89,6 +106,9 @@ describe("POST /api/payments/paystack/initialize", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.checkRateLimit.mockResolvedValue({ ok: true });
+    mocks.settlementModeFor.mockResolvedValue("ledger");
+    mocks.routes = null;
+    mocks.inserts.length = 0;
     mocks.createAdminClient.mockReturnValue(adminMock());
     mocks.initialize.mockResolvedValue({
       authorizationUrl: "https://paystack.test/pay/abc",
@@ -127,5 +147,25 @@ describe("POST /api/payments/paystack/initialize", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.initialize).toHaveBeenCalled();
+  });
+
+  it("falls back to the next provider only when initialisation fails", async () => {
+    mocks.initialize.mockRejectedValue(new Error("paystack down"));
+    mocks.fallbackInitialize.mockResolvedValue({ authorizationUrl: "https://hubtel.test/pay", reference: "r2" });
+    mocks.routes = [
+      { provider: { id: "paystack", adapter: () => ({ initialize: mocks.initialize }) }, reason: "preferred" },
+      { provider: { id: "hubtel", adapter: () => ({ initialize: mocks.fallbackInitialize }) }, reason: "fallback" },
+    ];
+
+    const response = await POST(request({ orderId: ORDER_ID, trackingToken: TOKEN }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ authorizationUrl: "https://hubtel.test/pay" });
+    // Two attempts, two references, each labelled with its provider and why.
+    expect(mocks.inserts.map((row) => [row.provider, row.route_reason])).toEqual([
+      ["paystack", "preferred"],
+      ["hubtel", "fallback"],
+    ]);
+    expect(mocks.inserts[0]!.reference).not.toBe(mocks.inserts[1]!.reference);
   });
 });

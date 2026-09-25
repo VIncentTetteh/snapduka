@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { SELLER_TRANSITIONS } from "@/lib/commerce/transitions";
 import { enforceRateLimit, isResponse, parseBody, requireSeller } from "@/lib/mobile/guard";
+import { withIdempotency } from "@/lib/mobile/idempotency";
 import { fail, failUnexpected, ok } from "@/lib/mobile/response";
 import { transitionOrder } from "@/lib/orders/transition";
 
@@ -38,6 +39,21 @@ export async function POST(
   });
   if (limited) return limited;
 
+  // The mobile app's offline queue replays this call after a lost response;
+  // the key makes that replay return the first outcome instead of running the
+  // transition again (see @/lib/mobile/idempotency).
+  return withIdempotency(
+    request,
+    { route: "orders.transition", sellerAccountId: actor.sellerAccountId },
+    () => transition(request, context, actor.sellerAccountId),
+  );
+}
+
+async function transition(
+  request: Request,
+  context: { params: Promise<{ orderId: string }> },
+  sellerAccountId: string,
+): Promise<Response> {
   const body = await parseBody(request, schema);
   if (isResponse(body)) return body;
 
@@ -48,7 +64,7 @@ export async function POST(
 
   try {
     const result = await transitionOrder({
-      sellerAccountId: actor.sellerAccountId,
+      sellerAccountId,
       orderId,
       next: body.status,
       expectedVersion: body.expectedVersion,
@@ -70,6 +86,11 @@ export async function POST(
         return fail("conflict", "That is not a valid next step for this order.");
       case "offline_unconfirmed":
         return fail("conflict", "Confirm you collected payment before completing this order.");
+      case "protect_pending_delivery":
+        return fail(
+          "conflict",
+          "This order is protected: it completes when the buyer confirms delivery.",
+        );
     }
   } catch (error) {
     return failUnexpected("orders.transition", error);

@@ -74,5 +74,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   }
 
+  // Card chargebacks. These used to be acknowledged and ignored, which under
+  // ledger settlement meant Paystack took a lost chargeback out of SnapDuka's
+  // balance while the seller kept the money. apply_paystack_dispute_event
+  // freezes, reserves and settles it in the ledger (202609250109).
+  if (typeof payload.event === "string" && payload.event.startsWith("charge.dispute.")) {
+    if (payload.data?.id == null || typeof payload.data?.transaction?.reference !== "string") {
+      return NextResponse.json({ error: "Invalid event." }, { status: 400 });
+    }
+    const { data, error } = await admin.rpc("apply_paystack_dispute_event", {
+      p_event_key: eventKey,
+      p_event: payload.event,
+      p_payload: payload,
+    });
+    if (error) {
+      console.error("[paystack/webhook] dispute event failed", { event: payload.event, error });
+      return NextResponse.json({ error: "Event processing failed." }, { status: 500 });
+    }
+    return NextResponse.json({ received: true, applied: data });
+  }
+
   return NextResponse.json({ received: true });
 }

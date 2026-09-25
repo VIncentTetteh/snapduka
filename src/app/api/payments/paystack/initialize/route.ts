@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { paystackProvider } from "@/lib/payments/paystack";
+import { PROVIDERS } from "@/lib/payments/providers/registry";
+import { recordPaymentOutcome, routeCheckout } from "@/lib/payments/providers/router";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { scheduleRiskAssessment } from "@/lib/risk/schedule";
 import { appOrigin } from "@/lib/app-url";
 import { jsonObject } from "@/lib/db/json";
+import { settlementModeFor } from "@/lib/protect/service";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -65,21 +68,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Order is not eligible for payment." }, { status: 409 });
   }
 
-  // Under settlement_mode='ledger' the full amount lands in SnapDuka's main
-  // account and the seller is credited internally, so no split is sent and no
+  // Observe-only risk check (src/lib/risk): runs after the response is sent and
+  // cannot delay, change or fail this payment.
+  scheduleRiskAssessment("checkout_init", (risk) => risk.assessCheckoutRisk(order.id));
+
+  // Under ledger settlement the full amount lands in SnapDuka's main account
+  // and the seller is credited internally, so no split is sent and no
   // subaccount is needed. The legacy mode still requires one, because there the
-  // subaccount IS how the seller gets paid.
-  const { data: seller } = await admin
-    .from("seller_accounts")
-    .select("country")
-    .eq("id", order.seller_account_id)
-    .maybeSingle();
-  const { data: countryConfig } = await admin
-    .from("country_configs")
-    .select("settlement_mode")
-    .eq("country", seller?.country ?? "GH")
-    .maybeSingle();
-  const onLedger = countryConfig?.settlement_mode === "ledger";
+  // subaccount IS how the seller gets paid. The mode is the seller's effective
+  // one (per-seller pilot override, else country), matching the SQL that books
+  // the capture.
+  const onLedger = (await settlementModeFor(order.seller_account_id)) === "ledger";
 
   let subaccountCode: string | undefined;
   if (!onLedger) {
@@ -100,24 +99,6 @@ export async function POST(request: Request) {
     subaccountCode = subaccount.provider_subaccount_code;
   }
 
-  const reference = `sd_${order.id.replaceAll("-", "").slice(0, 12)}_${randomUUID().slice(0, 8)}`;
-  const { data: attempt, error } = await admin
-    .from("payment_attempts")
-    .insert({
-      order_id: order.id,
-      seller_account_id: order.seller_account_id,
-      reference,
-      amount_minor: order.total_minor,
-      currency: order.currency,
-      status: "pending",
-    })
-    .select("id")
-    .single();
-
-  if (error || !attempt) {
-    return NextResponse.json({ error: "Payment could not be started." }, { status: 500 });
-  }
-
   // Paystack settles in GHS and NGN only. An XOF order reaching here would be
   // rejected by the provider with a currency error the buyer cannot act on;
   // Cote d'Ivoire has no online payment rail yet and checkout says so.
@@ -127,26 +108,69 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  const country = order.currency === "GHS" ? "GH" : "NG";
+
+  // Which provider takes this payment. Under the legacy split only Paystack
+  // can pay the seller's subaccount, so routing applies to ledger sellers only.
+  const routes = onLedger
+    ? await routeCheckout({ country, currency: order.currency, sellerAccountId: order.seller_account_id })
+    : [{ provider: PROVIDERS.find((p) => p.id === "paystack")!, reason: "legacy_split" }];
+  if (routes.length === 0) {
+    return NextResponse.json(
+      { error: "Online payment is temporarily unavailable. Choose pay on delivery or try again shortly." },
+      { status: 503 },
+    );
+  }
 
   // buyer_snapshot is jsonb, so the generated type is the full Json union.
   const buyer = jsonObject(order.buyer_snapshot);
+  const callbackUrl = `${await appOrigin()}/orders/${order.tracking_token}?payment=pending`;
 
-  try {
-    const result = await paystackProvider().initialize({
-      email: String(buyer.email),
-      amountMinor: order.total_minor,
-      currency: order.currency,
-      reference,
-      subaccount: subaccountCode,
-      callbackUrl: `${await appOrigin()}/orders/${order.tracking_token}?payment=pending`,
-      metadata: { orderId: order.id, attemptId: attempt.id },
-    });
-    return NextResponse.json(result);
-  } catch {
-    await admin.from("payment_attempts").update({ status: "failed" }).eq("id", attempt.id);
-    return NextResponse.json(
-      { error: "Paystack is temporarily unavailable. Retry or choose offline payment." },
-      { status: 502 },
-    );
+  // Fall back to the next provider ONLY when initialisation fails, i.e. before
+  // the buyer has been sent anywhere to authorise. Each attempt is its own
+  // payment_attempts row with its own reference, so a late success on a
+  // failed-over attempt can never be mistaken for the next one.
+  for (const route of routes) {
+    const reference = `sd_${order.id.replaceAll("-", "").slice(0, 12)}_${randomUUID().slice(0, 8)}`;
+    const { data: attempt, error } = await admin
+      .from("payment_attempts")
+      .insert({
+        order_id: order.id,
+        seller_account_id: order.seller_account_id,
+        reference,
+        amount_minor: order.total_minor,
+        currency: order.currency,
+        status: "pending",
+        provider: route.provider.id,
+        route_reason: route.reason,
+      })
+      .select("id")
+      .single();
+
+    if (error || !attempt) {
+      return NextResponse.json({ error: "Payment could not be started." }, { status: 500 });
+    }
+
+    try {
+      const result = await route.provider.adapter().initialize({
+        email: String(buyer.email),
+        amountMinor: order.total_minor,
+        currency: order.currency,
+        reference,
+        subaccount: subaccountCode,
+        callbackUrl,
+        metadata: { orderId: order.id, attemptId: attempt.id },
+      });
+      await recordPaymentOutcome(route.provider.id, country, true);
+      return NextResponse.json(result);
+    } catch {
+      await admin.from("payment_attempts").update({ status: "failed" }).eq("id", attempt.id);
+      await recordPaymentOutcome(route.provider.id, country, false);
+    }
   }
+
+  return NextResponse.json(
+    { error: "Online payment is temporarily unavailable. Retry or choose offline payment." },
+    { status: 502 },
+  );
 }

@@ -4,7 +4,13 @@ const mocks = vi.hoisted(() => ({
   resolveServerActor: vi.fn(),
   checkRateLimit: vi.fn(),
   transitionOrder: vi.fn(),
+  withIdempotency: vi.fn(),
 }));
+
+vi.mock("server-only", () => ({}));
+// Pass-through, so these tests stay about the route; the key store itself is
+// covered in @/lib/mobile/idempotency.test.ts.
+vi.mock("@/lib/mobile/idempotency", () => ({ withIdempotency: mocks.withIdempotency }));
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
@@ -49,6 +55,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveServerActor.mockResolvedValue(SELLER);
   mocks.checkRateLimit.mockResolvedValue({ ok: true });
+  mocks.withIdempotency.mockImplementation(
+    (_request: Request, _scope: unknown, handler: () => Promise<Response>) => handler(),
+  );
   mocks.transitionOrder.mockResolvedValue({
     ok: true,
     orderId: ORDER_ID,
@@ -223,5 +232,39 @@ describe("POST /api/mobile/v1/orders/[orderId]/transition", () => {
     const { body } = await envelope(await call({ status: "confirmed", expectedVersion: 1 }));
 
     expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe("idempotency", () => {
+  it("scopes the key to this route and the caller's seller account", async () => {
+    await call({ status: "confirmed", expectedVersion: 1 });
+
+    expect(mocks.withIdempotency).toHaveBeenCalledWith(
+      expect.any(Request),
+      { route: "orders.transition", sellerAccountId: "seller-1" },
+      expect.any(Function),
+    );
+  });
+
+  it("returns the stored response without transitioning again", async () => {
+    mocks.withIdempotency.mockResolvedValueOnce(
+      new Response(JSON.stringify({ order: { id: ORDER_ID, status: "confirmed", version: 2 } }), {
+        status: 200,
+      }),
+    );
+
+    const response = await call({ status: "confirmed", expectedVersion: 1 });
+
+    expect(response.status).toBe(200);
+    expect(mocks.transitionOrder).not.toHaveBeenCalled();
+  });
+
+  it("is not consulted for a caller who is not allowed to transition", async () => {
+    mocks.resolveServerActor.mockResolvedValue({ kind: "anonymous", authenticated: false });
+
+    await call({ status: "confirmed", expectedVersion: 1 });
+
+    // Otherwise an anonymous caller could probe for, or burn, a seller's keys.
+    expect(mocks.withIdempotency).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  isFeatureEnabled: vi.fn(async () => false),
   resolveServerActor: vi.fn(),
   createAdminClient: vi.fn(),
   createClient: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("@/lib/flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));

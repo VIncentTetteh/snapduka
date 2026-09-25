@@ -3,10 +3,11 @@ import { PayoutDestinationForm } from "@/components/seller/payout-destination-fo
 import { PayoutRequestForm } from "@/components/seller/payout-request-form";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { formatMoney } from "@/lib/i18n";
+import { isFeatureEnabled } from "@/lib/flags";
+import { formatMoney } from "@snapduka/core";
 import { earningsForCurrency, type EarningsRow } from "@/lib/payouts/balance";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function PayoutsPage() {
       }),
       supabase
         .from("country_configs")
-        .select("settlement_mode,payouts_enabled,minimum_payout_minor,payout_fee_minor,payout_hold_days")
+        .select("payouts_enabled,minimum_payout_minor,payout_fee_minor,payout_hold_days,instant_payout_fee_bps,instant_payout_fee_min_minor")
         .eq("country", actor.country)
         .maybeSingle(),
     ]);
@@ -74,7 +75,13 @@ export default async function PayoutsPage() {
 
   // A seller in the legacy split still has money settled directly by Paystack,
   // so showing them a wallet balance of zero would be actively misleading.
-  const onLedger = config?.settlement_mode === "ledger";
+  const { data: settlementMode } = await supabase.rpc("seller_settlement_mode", {
+    p_seller_account_id: actor.sellerAccountId,
+  });
+  const onLedger = settlementMode === "ledger";
+  const instantEnabled = await isFeatureEnabled("instant_payout", {
+    sellerAccountId: actor.sellerAccountId,
+  });
 
   // Per currency, so a second currency cannot contaminate this figure the way
   // summariseEarnings — which has no currency dimension — allowed.
@@ -208,7 +215,36 @@ export default async function PayoutsPage() {
                 hasDestination={Boolean(payoutDestination)}
                 payoutsEnabled={Boolean(config?.payouts_enabled)}
                 destinationLabel={destinationLabel}
+                instant={
+                  instantEnabled
+                    ? {
+                        feeBps: config?.instant_payout_fee_bps ?? 100,
+                        minFeeMinor: config?.instant_payout_fee_min_minor ?? 100,
+                      }
+                    : null
+                }
               />
+              <Panel className="p-4.5">
+                <h2 className="mb-1 text-[14px] font-bold">Statement</h2>
+                <p className="mb-3 text-[12.5px] leading-[1.6] text-ink-soft">
+                  Every movement in your SnapDuka balance with opening and closing balances — for your
+                  records, your accountant or a loan application.
+                </p>
+                <form action="/api/exports/wallet-statement" method="get" className="flex flex-wrap items-end gap-2.5">
+                  <input type="hidden" name="currency" value={currency} />
+                  <label className="grid gap-1 text-[12px] font-semibold text-ink">
+                    From
+                    <input type="date" name="from" required className="h-10 rounded-[9px] border border-line-input bg-white px-2.5 text-[13px]" />
+                  </label>
+                  <label className="grid gap-1 text-[12px] font-semibold text-ink">
+                    To
+                    <input type="date" name="to" required className="h-10 rounded-[9px] border border-line-input bg-white px-2.5 text-[13px]" />
+                  </label>
+                  <button className="min-h-10 cursor-pointer rounded-[9px] border border-line bg-white px-4 text-[13px] font-bold text-ink">
+                    Download CSV
+                  </button>
+                </form>
+              </Panel>
               <PayoutDestinationForm
                 currentLabel={destinationLabel}
                 currentAccountName={payoutDestination?.resolved_account_name ?? null}

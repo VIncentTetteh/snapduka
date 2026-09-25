@@ -1,7 +1,9 @@
+import type { CurrencyCode } from "@snapduka/core";
+
 export type InitializePaymentInput = {
   email: string;
   amountMinor: number;
-  currency: "GHS" | "NGN";
+  currency: CurrencyCode;
   reference: string;
   /**
    * Legacy split payments only. Omitted under settlement_mode='ledger', where

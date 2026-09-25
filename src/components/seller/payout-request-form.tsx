@@ -5,8 +5,8 @@ import { useActionState } from "react";
 import { requestPayoutAction, type PayoutActionState } from "@/app/(seller)/dashboard/payouts/actions";
 import { Panel } from "@/components/ui/surface";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { formatMoney } from "@/lib/i18n";
-import type { CurrencyCode } from "@/lib/countries/types";
+import { formatMoney } from "@snapduka/core";
+import type { CurrencyCode } from "@snapduka/core";
 
 const initialState: PayoutActionState = { status: "idle", values: { amount: "" } };
 
@@ -18,6 +18,8 @@ type Props = {
   hasDestination: boolean;
   payoutsEnabled: boolean;
   destinationLabel: string | null;
+  /** Instant withdrawal offered to this seller (flag on); the fee is quoted, the database decides. */
+  instant?: { feeBps: number; minFeeMinor: number } | null;
 };
 
 /**
@@ -36,6 +38,7 @@ export function PayoutRequestForm({
   hasDestination,
   payoutsEnabled,
   destinationLabel,
+  instant = null,
 }: Props) {
   const [state, action] = useActionState(requestPayoutAction, initialState);
 
@@ -78,6 +81,24 @@ export function PayoutRequestForm({
           <p className="text-[11.5px] text-ink-muted">
             {formatMoney(availableMinor, currency)} available
           </p>
+          {instant ? (
+            <fieldset className="grid gap-1.5 text-[12.5px]">
+              <legend className="mb-1 text-[12px] font-semibold text-ink">Speed</legend>
+              <label className="flex items-start gap-2">
+                <input type="radio" name="speed" value="standard" defaultChecked className="mt-0.5" />
+                <span>
+                  Standard, next daily batch (09:00 GMT) — {formatMoney(feeMinor, currency)} fee
+                </span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="radio" name="speed" value="instant" className="mt-0.5" />
+                <span>
+                  Instant, within minutes — {instant.feeBps / 100}% fee, at least{" "}
+                  {formatMoney(Math.max(instant.minFeeMinor, feeMinor), currency)}. Verified sellers only.
+                </span>
+              </label>
+            </fieldset>
+          ) : null}
           <SubmitButton
             className="min-h-10 cursor-pointer justify-self-start rounded-[9px] border-none bg-ink px-4 text-[13px] font-bold text-white transition-colors hover:bg-ink-2 disabled:cursor-wait disabled:opacity-60"
             pendingLabel="Requesting…"

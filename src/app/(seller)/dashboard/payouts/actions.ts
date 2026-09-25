@@ -3,13 +3,15 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
+import { isFeatureEnabled } from "@/lib/flags";
 import { paystackProvider } from "@/lib/payments/paystack";
 import { createPayoutDestination, type DestinationType } from "@/lib/payouts/destinations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { scheduleRiskAssessment } from "@/lib/risk/schedule";
 
 export type PayoutActionState = {
   status: "idle" | "success" | "error";
@@ -74,11 +76,20 @@ export async function requestPayoutAction(
   // XOF has no minor unit; everything else is 100 subunits.
   const amountMinor = Math.round(actor.country === "CI" ? amount : amount * 100);
 
+  // Instant is a flagged, paid option; the database re-checks eligibility
+  // (verified seller, nothing disputed) and prices it.
+  const wantsInstant = formData.get("speed") === "instant";
+  if (wantsInstant && !(await isFeatureEnabled("instant_payout", { sellerAccountId: actor.sellerAccountId }))) {
+    return { status: "error", message: "Instant withdrawal is not available yet.", values: preserved };
+  }
+
   const supabase = await createClient();
+  const idempotencyKey = `payout:${actor.sellerAccountId}:${randomUUID()}`;
   const { error } = await supabase.rpc("request_seller_payout", {
     p_amount_minor: amountMinor,
     // Survives a double-submit without sending twice.
-    p_idempotency_key: `payout:${actor.sellerAccountId}:${randomUUID()}`,
+    p_idempotency_key: idempotencyKey,
+    p_speed: wantsInstant ? "instant" : "standard",
   });
 
   if (error) {
@@ -87,10 +98,24 @@ export async function requestPayoutAction(
     return { status: "error", message: error.message, values: preserved };
   }
 
+  // Observe-only risk check (src/lib/risk): runs after the response and cannot
+  // change or fail the withdrawal that was just accepted.
+  const currency = actor.country === "NG" ? "NGN" : actor.country === "CI" ? "XOF" : "GHS";
+  scheduleRiskAssessment("payout_request", (risk) =>
+    risk.assessPayoutRisk({
+      sellerAccountId: actor.sellerAccountId,
+      amountMinor,
+      currency,
+      requestKey: idempotencyKey,
+    }),
+  );
+
   revalidatePath("/dashboard/payouts");
   return {
     status: "success",
-    message: "Withdrawal requested. You'll see it here once it reaches your bank.",
+    message: wantsInstant
+      ? "Instant withdrawal requested. It is on its way now."
+      : "Withdrawal requested. It goes out in the next daily batch (09:00 GMT).",
     values: { amount: "" },
   };
 }

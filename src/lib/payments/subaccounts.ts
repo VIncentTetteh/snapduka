@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { CountryCode } from "@/lib/countries/types";
+import type { CountryCode } from "@snapduka/core";
 
 export interface PaymentSubaccountProvider {
   create(input: {
