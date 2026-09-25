@@ -16,6 +16,7 @@ vi.mock("@/lib/flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
 vi.mock("@/lib/landing/data", () => ({
   visitorCountry: (h: Headers) => h.get("x-vercel-ip-country") ?? "GH",
   getLandingData: mocks.getLandingData,
+  getPlanFeatures: async () => [],
 }));
 vi.mock("@/components/landing/classic-landing", () => ({ ClassicLanding: () => "classic" }));
 vi.mock("@/components/landing/trust-landing", () => ({ TrustLanding: () => "trust" }));

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   getSellerPlan: vi.fn(),
   planAllows: vi.fn(),
+  isFeatureEnabled: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
@@ -19,7 +20,21 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/billing/resolve", () => ({ getSellerPlan: mocks.getSellerPlan, planAllows: mocks.planAllows }));
 
-import { addCustomDomain } from "./actions";
+vi.mock("@/lib/flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
+
+import { addCustomDomain, verifyCustomDomain } from "./actions";
+
+/** The ?error= message a refused action redirected with. */
+async function refusal(action: Promise<unknown>): Promise<string | null> {
+  try {
+    await action;
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith("NEXT_REDIRECT:")) throw error;
+    const url = String(mocks.redirect.mock.calls.at(-1)?.[0] ?? "");
+    return new URLSearchParams(url.split("?")[1] ?? "").get("error");
+  }
+  return null;
+}
 
 function formData(values: Record<string, string>) {
   const data = new FormData();
@@ -31,6 +46,28 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getSellerPlan.mockResolvedValue({});
   mocks.planAllows.mockReturnValue(true);
+  mocks.isFeatureEnabled.mockResolvedValue(true);
+});
+
+describe("custom domains while they are not connected to hosting", () => {
+  beforeEach(() => {
+    mocks.isFeatureEnabled.mockResolvedValue(false);
+    mocks.resolveServerActor.mockResolvedValue({
+      kind: "seller", sellerAccountId: "seller-1", status: "active", role: "owner",
+    });
+  });
+
+  it.each([
+    ["adding", () => addCustomDomain(formData({ hostname: "shop.example.com" }))],
+    ["verifying", () => verifyCustomDomain(formData({ domainId: "d-1" }))],
+  ])("refuses %s a domain, and says so", async (_label, run) => {
+    const from = vi.fn();
+    mocks.createClient.mockResolvedValue({ from });
+
+    expect(await refusal(run())).toMatch(/not available yet/i);
+    expect(from).not.toHaveBeenCalled();
+    expect(mocks.isFeatureEnabled).toHaveBeenCalledWith("custom_domains", { sellerAccountId: "seller-1" });
+  });
 });
 
 describe("addCustomDomain", () => {

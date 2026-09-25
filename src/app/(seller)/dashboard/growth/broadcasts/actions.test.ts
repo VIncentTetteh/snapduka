@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  isFeatureEnabled: vi.fn(async () => false),
+  broadcastChannels: vi.fn(async () => ["email", "push"]),
   redirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
-vi.mock("@/lib/flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
+vi.mock("@/lib/marketing/channels", () => ({ broadcastChannels: mocks.broadcastChannels }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 // redirect() throws in Next; reproducing it lets a refusal be asserted as
 // spoken rather than merely absent.
@@ -64,5 +64,16 @@ describe("createBroadcast", () => {
     expect(decodeURIComponent(String(mocks.redirect.mock.calls.at(-1)?.[0]))).toMatch(
       /customer group/i,
     );
+  });
+
+  it("refuses a channel that cannot deliver, naming the ones that can", async () => {
+    const insert = vi.fn();
+    mocks.createClient.mockResolvedValue({ from: vi.fn(() => ({ insert })) });
+
+    await expect(createBroadcast(formData({ channel: "whatsapp", body: "Hello" }))).rejects.toThrow(/NEXT_REDIRECT/);
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(mocks.broadcastChannels).toHaveBeenCalledWith("seller-1");
+    expect(decodeURIComponent(String(mocks.redirect.mock.calls.at(-1)?.[0]))).toMatch(/email, push/);
   });
 });

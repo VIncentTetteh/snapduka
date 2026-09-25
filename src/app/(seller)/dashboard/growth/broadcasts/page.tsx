@@ -1,14 +1,21 @@
-import { isFeatureEnabled } from "@/lib/flags";
 import { ActionBanner } from "@/components/ui/action-banner";
 import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
+import { broadcastChannels, type BroadcastChannel } from "@/lib/marketing/channels";
 import { sellerSmsSuppressedCount } from "@/lib/marketing/sms-opt-out";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 import { cancelBroadcast, createBroadcast, scheduleBroadcast } from "./actions";
+
+const CHANNEL_LABEL: Record<BroadcastChannel, string> = {
+  email: "Email",
+  whatsapp: "WhatsApp",
+  push: "Push notification",
+  sms: "SMS",
+};
 
 export default async function BroadcastsPage({
   searchParams,
@@ -19,7 +26,8 @@ export default async function BroadcastsPage({
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const smsBroadcasts = await isFeatureEnabled("sms_broadcasts", { sellerAccountId: actor.sellerAccountId });
+  const channels = await broadcastChannels(actor.sellerAccountId);
+  const smsBroadcasts = channels.includes("sms");
   // Service-role, scoped by the resolved account: opt-outs are platform data a
   // seller may only ever see as a count of their own customers — which buyers
   // texted STOP to the shared number is not theirs to know.
@@ -63,10 +71,11 @@ export default async function BroadcastsPage({
         <div className="grid gap-1">
           <label className="field-label" htmlFor="bc-channel">Channel</label>
           <select className="field-input" id="bc-channel" name="channel">
-            <option>email</option>
-            <option>whatsapp</option>
-            <option>push</option>
-            {smsBroadcasts ? <option value="sms">sms</option> : null}
+            {channels.map((channel) => (
+              <option key={channel} value={channel}>
+                {CHANNEL_LABEL[channel]}
+              </option>
+            ))}
           </select>
           {smsBroadcasts ? (
             <p className="m-0 text-xs" style={{ color: "var(--ink-3)" }}>

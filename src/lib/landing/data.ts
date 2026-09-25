@@ -2,6 +2,8 @@ import "server-only";
 
 import type { CountryCode, CurrencyCode } from "@snapduka/core";
 
+import { planFeatureBullets, planUpgradeBullets } from "@/lib/billing/plan-features";
+import type { EntitlementValue } from "@/lib/billing/resolve";
 import { isFeatureEnabled } from "@/lib/flags";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -25,6 +27,11 @@ export type LandingPlan = {
   name: string;
   /** Monthly price in minor units; 0 for Free; null when not sold in this market. */
   monthlyMinor: number | null;
+  /**
+   * From the plan's entitlements: everything Free includes, and for paid plans
+   * only what they add over the plan below ("Everything in Growth, plus").
+   */
+  features: string[];
 };
 
 export type LandingData = {
@@ -52,9 +59,39 @@ export type LandingData = {
 
 const PLAN_ORDER = ["free", "growth", "scale"] as const;
 
+type PlanEntitlementRow = { code: string; name: string; entitlements: unknown };
+
+/** Features per plan, in PLAN_ORDER. */
+export function landingPlanFeatures(
+  plans: readonly PlanEntitlementRow[],
+  options: { customDomains: boolean },
+): { code: LandingPlan["code"]; name: string; features: string[] }[] {
+  const entitlementsOf = (code: string) =>
+    (plans.find((row) => row.code === code)?.entitlements ?? {}) as Record<string, EntitlementValue>;
+  return PLAN_ORDER.map((code, index) => ({
+    code,
+    name: plans.find((row) => row.code === code)?.name ?? code[0]!.toUpperCase() + code.slice(1),
+    features:
+      index === 0
+        ? planFeatureBullets(entitlementsOf(code), options)
+        : planUpgradeBullets(entitlementsOf(PLAN_ORDER[index - 1]!), entitlementsOf(code), options),
+  }));
+}
+
+/** The active plans and what each includes, for the classic page (which does not price by market). */
+export async function getPlanFeatures(country: CountryCode) {
+  const admin = createAdminClient();
+  const [{ data: plans }, customDomains] = await Promise.all([
+    admin.from("plans").select("code,name,entitlements").eq("active", true).in("code", [...PLAN_ORDER]),
+    isFeatureEnabled("custom_domains", { country }),
+  ]);
+  return landingPlanFeatures(plans ?? [], { customDomains });
+}
+
 export async function getLandingData(country: CountryCode): Promise<LandingData> {
   const admin = createAdminClient();
-  const [{ data: config }, { data: plans }, protectFlag, waAgent, snapToList, instantPayout] = await Promise.all([
+  const [{ data: config }, { data: plans }, protectFlag, waAgent, snapToList, instantPayout, customDomains] =
+    await Promise.all([
     admin
       .from("country_configs")
       .select(
@@ -64,14 +101,17 @@ export async function getLandingData(country: CountryCode): Promise<LandingData>
       .maybeSingle(),
     admin
       .from("plans")
-      .select("code,name,plan_prices(country,interval,amount_minor,active)")
+      .select("code,name,entitlements,plan_prices(country,interval,amount_minor,active)")
       .eq("active", true)
       .in("code", [...PLAN_ORDER]),
     isFeatureEnabled("protect", { country }),
     isFeatureEnabled("wa_agent", { country }),
     isFeatureEnabled("snap_to_list", { country }),
     isFeatureEnabled("instant_payout", { country }),
+    isFeatureEnabled("custom_domains", { country }),
   ]);
+
+  const features = landingPlanFeatures(plans ?? [], { customDomains });
 
   const landingPlans: LandingPlan[] = PLAN_ORDER.map((code) => {
     const plan = (plans ?? []).find((row) => row.code === code);
@@ -81,6 +121,7 @@ export async function getLandingData(country: CountryCode): Promise<LandingData>
       code,
       name: plan?.name ?? code[0]!.toUpperCase() + code.slice(1),
       monthlyMinor: code === "free" ? 0 : (monthly?.amount_minor ?? null),
+      features: features.find((entry) => entry.code === code)?.features ?? [],
     };
   });
 

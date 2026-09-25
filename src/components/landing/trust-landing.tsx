@@ -241,7 +241,7 @@ export function TrustLanding({ data }: { data: LandingData }) {
             Every plan: {platform} on sales paid online, nothing on cash-on-delivery orders. Plans add tools as you grow.
           </p>
           <div className="mt-10 grid gap-4 md:grid-cols-3">
-            {data.plans.map((plan) => (
+            {data.plans.map((plan, index) => (
               <div
                 key={plan.code}
                 className={`rounded-[18px] border p-6 ${plan.code === "growth" ? "border-ink bg-white" : "border-line bg-paper"}`}
@@ -255,12 +255,22 @@ export function TrustLanding({ data }: { data: LandingData }) {
                       : `${formatMoney(plan.monthlyMinor, data.currency)} / month`}
                 </p>
                 <p className="mt-2 text-[14px] text-ink-soft">
-                  {plan.code === "free"
+                  {index === 0
                     ? `Storefront, checkout${data.features.protect ? ", Protect" : ""} and order management.`
-                    : plan.code === "growth"
-                      ? "Promotions, customer segments, delivery zones and analytics."
-                      : "Team accounts, advanced analytics and priority support."}
+                    : `Everything in ${data.plans[index - 1]!.name}, plus:`}
                 </p>
+                {plan.features.length ? (
+                  <ul className="mt-3 grid list-none gap-1.5 p-0">
+                    {plan.features.map((feature) => (
+                      <li key={feature} className="flex items-start gap-2 text-[13.5px] text-ink-soft">
+                        <span aria-hidden="true" className="font-bold text-success">
+                          ✓
+                        </span>
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             ))}
           </div>

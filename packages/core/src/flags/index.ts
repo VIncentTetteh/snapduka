@@ -34,6 +34,10 @@ export const FLAG_KEYS = [
   "stock_financing",
   "bnpl",
   "promoted_listings",
+  // Custom domains verify by TXT record, but nothing yet attaches a verified
+  // domain to the hosting project, so it cannot serve the shop. Off until it
+  // can; while off, the feature is neither sold nor offered.
+  "custom_domains",
 ] as const;
 
 export type StaticFlagKey = (typeof FLAG_KEYS)[number];

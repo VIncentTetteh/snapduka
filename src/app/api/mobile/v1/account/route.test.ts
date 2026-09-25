@@ -4,11 +4,13 @@ const mocks = vi.hoisted(() => ({
   resolveServerActor: vi.fn(),
   checkRateLimit: vi.fn(),
   flagSnapshot: vi.fn(),
+  broadcastChannels: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: mocks.resolveServerActor }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("@/lib/flags", () => ({ flagSnapshot: mocks.flagSnapshot }));
+vi.mock("@/lib/marketing/channels", () => ({ broadcastChannels: mocks.broadcastChannels }));
 
 import { GET } from "./route";
 
@@ -27,6 +29,7 @@ beforeEach(() => {
   mocks.resolveServerActor.mockResolvedValue(SELLER);
   mocks.checkRateLimit.mockResolvedValue({ ok: true });
   mocks.flagSnapshot.mockResolvedValue({ protect: true, snap_to_list: false });
+  mocks.broadcastChannels.mockResolvedValue(["email", "push"]);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
@@ -38,8 +41,10 @@ describe("GET /api/mobile/v1/account", () => {
     expect(await response.json()).toEqual({
       account: { sellerAccountId: "seller-1", userId: "u1", country: "GH", status: "active", role: "owner" },
       flags: { protect: true, snap_to_list: false },
+      broadcastChannels: ["email", "push"],
     });
     expect(mocks.flagSnapshot).toHaveBeenCalledWith("seller-1");
+    expect(mocks.broadcastChannels).toHaveBeenCalledWith("seller-1");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 

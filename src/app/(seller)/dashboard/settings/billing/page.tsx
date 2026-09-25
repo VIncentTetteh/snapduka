@@ -5,7 +5,9 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { resolveServerActor } from "@/lib/auth/actor";
+import { planFeatureBullets } from "@/lib/billing/plan-features";
 import { getSellerPlan } from "@/lib/billing/resolve";
+import { isFeatureEnabled } from "@/lib/flags";
 import type { EntitlementValue } from "@/lib/billing/resolve";
 import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
@@ -41,46 +43,6 @@ const STATE_TONE: Record<string, BadgeTone> = {
 
 const TIER: Record<string, number> = { free: 0, growth: 1, scale: 2 };
 
-/** Human bullets from the entitlements JSON, in presentation order. */
-function featureBullets(entitlements: Record<string, EntitlementValue>): string[] {
-  const n = (key: string) => entitlements[key];
-  const bullets: (string | null)[] = [
-    typeof n("products") === "number" ? `Up to ${n("products")} products` : null,
-    typeof n("staffAccounts") === "number"
-      ? Number(n("staffAccounts")) > 1
-        ? `${n("staffAccounts")} staff accounts`
-        : "Owner account only"
-      : null,
-    n("campaigns") === true ? "Tracked share links" : null,
-    n("creatorProgram") === true && typeof n("creatorPartnerships") === "number"
-      ? `Pay up to ${n("creatorPartnerships")} creators on commission`
-      : null,
-    n("promotions") === true ? "Discount promotions" : null,
-    typeof n("customerSegments") === "number" && Number(n("customerSegments")) > 0
-      ? `${n("customerSegments")} customer segments`
-      : null,
-    typeof n("broadcastsPerMonth") === "number" && Number(n("broadcastsPerMonth")) > 0
-      ? `${n("broadcastsPerMonth")} broadcasts per month`
-      : null,
-    n("branding") === true ? "Storefront theming" : null,
-    n("customDomain") === true ? "Custom domain" : null,
-    n("exports") === true ? "CSV order exports" : null,
-    typeof n("automationRules") === "number" && Number(n("automationRules")) > 0
-      ? `${n("automationRules")} automation rules`
-      : null,
-    typeof n("apiKeys") === "number" && Number(n("apiKeys")) > 0
-      ? `${n("apiKeys")} API keys + webhooks`
-      : null,
-    // "Courier integrations" was listed here for Scale only, but the
-    // courierIntegrations entitlement is never checked anywhere — every plan
-    // could already record a delivery — and there are no courier integrations:
-    // the seller books their own rider and records who it was. Recording that
-    // is basic order management, so it is not a plan differentiator.
-    n("discovery") === true ? "Discovery listing" : null,
-  ];
-  return bullets.filter((bullet): bullet is string => Boolean(bullet));
-}
-
 export default async function BillingPage({
   searchParams,
 }: {
@@ -90,7 +52,7 @@ export default async function BillingPage({
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
-  const [{ data: plans }, { data: subscription, error: subscriptionError }, plan] = await Promise.all([
+  const [{ data: plans }, { data: subscription, error: subscriptionError }, plan, customDomains] = await Promise.all([
     supabase
       .from("plans")
       .select("code,name,entitlements,plan_prices(id,country,currency,interval,amount_minor,active)")
@@ -104,7 +66,10 @@ export default async function BillingPage({
       .eq("seller_account_id", actor.sellerAccountId)
       .maybeSingle(),
     getSellerPlan(actor.sellerAccountId),
+    isFeatureEnabled("custom_domains", { sellerAccountId: actor.sellerAccountId }),
   ]);
+  const featureBullets = (entitlements: Record<string, EntitlementValue>) =>
+    planFeatureBullets(entitlements, { customDomains });
   if (subscriptionError) {
     console.error("[BillingPage] seller_subscriptions query failed", subscriptionError);
   }

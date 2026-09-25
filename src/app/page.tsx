@@ -5,7 +5,7 @@ import { ClassicLanding } from "@/components/landing/classic-landing";
 import { TrustLanding } from "@/components/landing/trust-landing";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { isFeatureEnabled } from "@/lib/flags";
-import { getLandingData, visitorCountry, type LandingData } from "@/lib/landing/data";
+import { getLandingData, getPlanFeatures, visitorCountry, type LandingData } from "@/lib/landing/data";
 
 /**
  * The public landing page, chosen per visitor market.
@@ -86,5 +86,16 @@ export default async function HomePage({
     }
   }
   const data = await trustLandingData();
-  return data ? <TrustLanding data={data} /> : <ClassicLanding />;
+  return data ? <TrustLanding data={data} /> : <ClassicLanding planFeatures={await classicPlanFeatures()} />;
+}
+
+/** Best effort: the classic page names no plan features rather than fail. */
+async function classicPlanFeatures() {
+  const country = visitorCountry(await headers());
+  try {
+    return await getPlanFeatures(country);
+  } catch (error) {
+    console.error("[landing] plan features unavailable", error);
+    return [];
+  }
 }

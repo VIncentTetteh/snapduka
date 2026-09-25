@@ -34,6 +34,18 @@ export async function isWhatsAppConfigured(): Promise<boolean> {
 }
 
 /**
+ * Whether a free-form marketing message to this seller's customers can be
+ * delivered. Only the legacy relay can: through the Cloud API a broadcast is
+ * free-form text, which Meta refuses outside the buyer's 24h window, and there
+ * is no approved marketing template to fall back on. So with the Cloud API on
+ * for the seller, WhatsApp broadcasts are not offered at all.
+ */
+export async function canBroadcastWhatsApp(sellerAccountId: string): Promise<boolean> {
+  if (await cloudEnabled(sellerAccountId)) return false;
+  return Boolean(process.env.WHATSAPP_WEBHOOK_URL);
+}
+
+/**
  * Reasons a send can never succeed on retry. The notification worker
  * dead-letters these straight away instead of spending five backed-off
  * attempts reaching the same answer.

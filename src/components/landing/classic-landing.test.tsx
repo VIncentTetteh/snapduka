@@ -35,6 +35,22 @@ describe("ClassicLanding", () => {
     expect(screen.getByText("Most popular")).toBeInTheDocument();
   });
 
+  it("lists what paid plans add from plan data, not fixed copy", () => {
+    render(
+      <HomePage
+        planFeatures={[
+          { code: "free", features: ["Up to 50 products"] },
+          { code: "growth", features: ["Up to 500 products", "Discount promotions"] },
+          { code: "scale", features: ["15 staff accounts"] },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Discount promotions")).toBeInTheDocument();
+    expect(screen.getByText("15 staff accounts")).toBeInTheDocument();
+    expect(screen.queryByText(/priority support|advanced analytics|sales analytics/i)).not.toBeInTheDocument();
+  });
+
   it("links buyers to discovery and sellers to sign in", () => {
     render(<HomePage />);
 

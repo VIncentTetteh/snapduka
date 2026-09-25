@@ -17,9 +17,9 @@ function data(overrides: Partial<LandingData["features"]> = {}): LandingData {
     country: "GH",
     currency: "GHS",
     plans: [
-      { code: "free", name: "Free", monthlyMinor: 0 },
-      { code: "growth", name: "Growth", monthlyMinor: 6000 },
-      { code: "scale", name: "Scale", monthlyMinor: null },
+      { code: "free", name: "Free", monthlyMinor: 0, features: ["Up to 50 products"] },
+      { code: "growth", name: "Growth", monthlyMinor: 6000, features: ["Up to 500 products", "Discount promotions"] },
+      { code: "scale", name: "Scale", monthlyMinor: null, features: ["15 staff accounts"] },
     ],
     fees: {
       platformBps: 700,
@@ -68,6 +68,14 @@ describe("TrustLanding", () => {
     expect(screen.getByText("No monthly fee")).toBeInTheDocument();
     expect(screen.getByText(/GH₵\s?60\.00 \/ month/)).toBeInTheDocument();
     expect(screen.getByText("Not yet in Ghana")).toBeInTheDocument();
+  });
+
+  it("lists each plan's features from its data, never a fixed promise", () => {
+    render(<TrustLanding data={data()} />);
+    expect(screen.getByText("Everything in Free, plus:")).toBeInTheDocument();
+    expect(screen.getByText("Everything in Growth, plus:")).toBeInTheDocument();
+    expect(screen.getByText("Discount promotions")).toBeInTheDocument();
+    expect(screen.queryByText(/priority support|advanced analytics/i)).not.toBeInTheDocument();
   });
 
   it("lists only the features switched on for the market", () => {

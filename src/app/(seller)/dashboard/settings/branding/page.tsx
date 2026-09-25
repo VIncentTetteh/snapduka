@@ -6,6 +6,7 @@ import { domainChallenge } from "@/lib/domains/verification";
 import { publicMediaUrl } from "@/lib/storefront/media";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
+import { isFeatureEnabled } from "@/lib/flags";
 import { createClient } from "@/lib/supabase/server";
 
 import { addCustomDomain, saveBranding, saveStorefrontContact, verifyCustomDomain } from "./actions";
@@ -24,10 +25,11 @@ export default async function BrandingPage({
     .select("id,slug")
     .eq("seller_account_id", actor.sellerAccountId)
     .single();
-  const [{ data: branding }, { data: domains }, plan] = await Promise.all([
+  const [{ data: branding }, { data: domains }, plan, domainsLive] = await Promise.all([
     supabase.from("shop_branding").select("*").eq("shop_id", shop?.id ?? "").maybeSingle(),
     supabase.from("custom_domains").select("id,hostname,status,verification_token,last_checked_at").eq("shop_id", shop?.id ?? ""),
     getSellerPlan(actor.sellerAccountId),
+    isFeatureEnabled("custom_domains", { sellerAccountId: actor.sellerAccountId }),
   ]);
   const themingAllowed = planAllows(plan, "branding");
   const domainAllowed = planAllows(plan, "customDomain");
@@ -38,8 +40,10 @@ export default async function BrandingPage({
 
       <header>
         <p className="page-eyebrow m-0">Growth</p>
-        <h1 className="page-title mt-1">Brand and domain</h1>
-        <p className="page-sub">Your SnapDuka URL always remains available while a custom domain is pending.</p>
+        <h1 className="page-title mt-1">{domainsLive ? "Brand and domain" : "Brand"}</h1>
+        {domainsLive ? (
+          <p className="page-sub">Your SnapDuka URL always remains available while a custom domain is pending.</p>
+        ) : null}
       </header>
 
       <section className="card grid gap-3">
@@ -109,7 +113,9 @@ export default async function BrandingPage({
       </form>
       )}
 
-      {!domainAllowed ? (
+      {/* Until a verified domain is attached to hosting it cannot serve the
+          shop, so the section is not offered at all (custom_domains flag). */}
+      {!domainsLive ? null : !domainAllowed ? (
         <UpgradePrompt feature="Custom domains" planName={plan.planName} />
       ) : (
       <form action={addCustomDomain} className="card grid gap-3">
@@ -122,7 +128,7 @@ export default async function BrandingPage({
       </form>
       )}
 
-      {domains?.map((domain) => {
+      {domainsLive && domains?.map((domain) => {
         const challenge = domainChallenge(domain.verification_token);
         return (
           <article className="card" key={domain.hostname}>

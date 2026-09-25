@@ -1,12 +1,12 @@
 "use server";
 
-import { isFeatureEnabled } from "@/lib/flags";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, withinPlanLimit } from "@/lib/billing/resolve";
+import { broadcastChannels } from "@/lib/marketing/channels";
 import { createClient } from "@/lib/supabase/server";
 
 const PATH = "/dashboard/growth/broadcasts";
@@ -47,12 +47,11 @@ export async function createBroadcast(formData: FormData) {
   const channel = String(formData.get("channel"));
   const body = String(formData.get("body") ?? "").trim();
   const segmentId = String(formData.get("segmentId") ?? "");
-  // SMS stays behind its flag until opt-out (STOP) handling exists: marketing
-  // SMS without a way to stop them is a compliance problem, not a feature.
-  const smsAllowed =
-    channel === "sms" && (await isFeatureEnabled("sms_broadcasts", { sellerAccountId: actor.sellerAccountId }));
-  if (!["email", "whatsapp", "push"].includes(channel) && !smsAllowed) {
-    fail("Choose whether to send by email, WhatsApp or push.");
+  // Only channels that can deliver: SMS waits on opt-out handling, WhatsApp on
+  // a transport that can send marketing (see broadcastChannels).
+  const channels = await broadcastChannels(actor.sellerAccountId);
+  if (!(channels as string[]).includes(channel)) {
+    fail(`Choose a channel your shop can send on: ${channels.join(", ")}.`);
   }
   if (!body) fail("Write the message before saving it.");
 

@@ -7,12 +7,17 @@ import { resolveTxt } from "node:dns/promises";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, planAllows } from "@/lib/billing/resolve";
+import { isFeatureEnabled } from "@/lib/flags";
 import { normalizeHostname } from "@/lib/domains/verification";
 import { normalizePhone } from "@snapduka/core";
 import { parseBranding } from "@/lib/shops/branding";
 import { createClient } from "@/lib/supabase/server";
 
 const PATH = "/dashboard/settings/branding";
+
+// A verified domain is not yet attached to hosting, so it could not serve the
+// shop; refusing beats a "verified" badge on a domain that shows nothing.
+const DOMAINS_NOT_LIVE = "Custom domains are not available yet. Your SnapDuka link keeps working.";
 
 /**
  * Branding refusals were all silent, and one sits on the happy path: theming is
@@ -215,6 +220,9 @@ export async function addCustomDomain(formData: FormData) {
   if (!hasPermission(actor.role ?? "owner", "settings.manage")) {
     fail("Your role does not allow changing shop settings.");
   }
+  if (!(await isFeatureEnabled("custom_domains", { sellerAccountId: actor.sellerAccountId }))) {
+    fail(DOMAINS_NOT_LIVE);
+  }
   const plan = await getSellerPlan(actor.sellerAccountId);
   if (!planAllows(plan, "customDomain")) {
     fail("A custom domain is not included in your plan.");
@@ -251,6 +259,9 @@ export async function verifyCustomDomain(formData: FormData) {
   if (actor.kind !== "seller") fail("Sign in as a seller to verify a domain.");
   if (!hasPermission(actor.role ?? "owner", "settings.manage")) {
     fail("Your role does not allow changing shop settings.");
+  }
+  if (!(await isFeatureEnabled("custom_domains", { sellerAccountId: actor.sellerAccountId }))) {
+    fail(DOMAINS_NOT_LIVE);
   }
   const domainId = String(formData.get("domainId") ?? "");
   const supabase = await createClient();

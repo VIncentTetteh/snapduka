@@ -1,4 +1,5 @@
 import { flagSnapshot } from "@/lib/flags";
+import { broadcastChannels } from "@/lib/marketing/channels";
 import { enforceRateLimit, isResponse, requireActiveSeller } from "@/lib/mobile/guard";
 import { failUnexpected, ok } from "@/lib/mobile/response";
 
@@ -27,7 +28,10 @@ export async function GET() {
   if (limited) return limited;
 
   try {
-    const flags = await flagSnapshot(actor.sellerAccountId);
+    const [flags, channels] = await Promise.all([
+      flagSnapshot(actor.sellerAccountId),
+      broadcastChannels(actor.sellerAccountId),
+    ]);
     const response = ok({
       account: {
         sellerAccountId: actor.sellerAccountId,
@@ -38,6 +42,9 @@ export async function GET() {
         role: actor.role ?? "owner",
       },
       flags,
+      // Which broadcast channels can deliver right now; the app offers only
+      // these (it writes broadcasts directly, so it cannot ask at save time).
+      broadcastChannels: channels,
     });
     // Per-seller and changes when an operator flips a flag: never cache it in
     // a shared layer.

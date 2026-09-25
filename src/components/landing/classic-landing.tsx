@@ -148,37 +148,42 @@ type Plan = {
   cta: string;
 };
 
-const PLANS: Plan[] = [
-  {
-    name: "Free",
-    price: "Free to start",
-    features: ["Your mobile storefront", "Online or cash-on-delivery payment", "Guest checkout", "Basic order management"],
-    cta: "Start free",
-  },
-  {
-    name: "Growth",
-    price: "Configured for your market",
-    featured: true,
-    features: [
-      "Everything in Free",
-      "Promotions and discount campaigns",
-      "Customer records and segments",
-      "Delivery zones and fees",
-      "Sales analytics",
-    ],
-    cta: "Choose Growth",
-  },
-  {
-    name: "Scale",
-    price: "Configured for your market",
-    features: ["Everything in Growth", "Multiple staff accounts", "Advanced analytics", "Priority support"],
-    cta: "Choose Scale",
-  },
-];
+const FREE_BASICS = ["Your mobile storefront", "Online or cash-on-delivery payment", "Guest checkout", "Basic order management"];
+
+/** What each paid plan adds, from its entitlements; empty if that lookup failed. */
+export type ClassicPlanFeatures = { code: "free" | "growth" | "scale"; features: string[] }[];
+
+/**
+ * The paid plans' bullets come from the plans table (see getPlanFeatures), so
+ * this page cannot promise anything an upgrade does not unlock. Without that
+ * data it names no features rather than guessing.
+ */
+function plansFor(planFeatures: ClassicPlanFeatures): Plan[] {
+  const added = (code: "growth" | "scale") => planFeatures.find((plan) => plan.code === code)?.features ?? [];
+  const extras = (code: "growth" | "scale") =>
+    added(code).length ? added(code) : ["More tools as your shop grows — see them when you sign up"];
+  return [
+    { name: "Free", price: "Free to start", features: FREE_BASICS, cta: "Start free" },
+    {
+      name: "Growth",
+      price: "Configured for your market",
+      featured: true,
+      features: ["Everything in Free", ...extras("growth")],
+      cta: "Choose Growth",
+    },
+    {
+      name: "Scale",
+      price: "Configured for your market",
+      features: ["Everything in Growth", ...extras("scale")],
+      cta: "Choose Scale",
+    },
+  ];
+}
 
 /* ----------------------------- page ------------------------------------- */
 
-export function ClassicLanding() {
+export function ClassicLanding({ planFeatures = [] }: { planFeatures?: ClassicPlanFeatures } = {}) {
+  const plans = plansFor(planFeatures);
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#211B14] antialiased">
       {/* ============ NAV ============ */}
@@ -573,7 +578,7 @@ export function ClassicLanding() {
             Plans are configured for your market and billed in your local currency.
           </p>
           <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-3">
-            {PLANS.map((plan) => (
+            {plans.map((plan) => (
               <div
                 key={plan.name}
                 className={`relative flex flex-col rounded-[18px] p-7 ${
