@@ -14,7 +14,7 @@ import { PageHeader, Panel } from "@/components/ui/surface";
 import { appOrigin } from "@/lib/app-url";
 import { resolveCreatorContext } from "@/lib/auth/actor";
 import { fetchPartnerShops } from "@/lib/creators/partner-shops";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 import { normalizeToOne } from "@/lib/storefront/media";
 import { createClient } from "@/lib/supabase/server";
 

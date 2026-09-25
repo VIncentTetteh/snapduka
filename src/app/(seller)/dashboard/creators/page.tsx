@@ -9,9 +9,9 @@ import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planAllows, planLimit } from "@/lib/billing/resolve";
 import { formatRate } from "@/lib/creators/commission";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 import { inviteCreator, revokeCreatorInvitation } from "./actions";
 

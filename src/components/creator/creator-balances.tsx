@@ -1,7 +1,7 @@
 import { Panel } from "@/components/ui/surface";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 import type { CreatorBalance } from "@/lib/creators/commission";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 
 /**
  * A creator's balances, one block per currency.

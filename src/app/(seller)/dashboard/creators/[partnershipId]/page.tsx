@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { shortLinkUrl } from "@snapduka/core";
+import { shortLinkUrl, formatMoney } from "@snapduka/core";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +11,9 @@ import { PageHeader, Panel } from "@/components/ui/surface";
 import { appOrigin } from "@/lib/app-url";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { formatRate } from "@/lib/creators/commission";
-import { formatMoney } from "@/lib/i18n";
+import { splitBySettlement, type SettlementTotalsRow } from "@/lib/creators/wallet";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 import { createCreatorLink, markCommissionsPaid, updatePartnership } from "../actions";
 
@@ -58,12 +58,12 @@ export default async function CreatorDetailPage({
     payout_details: Record<string, unknown>;
   } | null;
 
-  const [{ data: commissions }, { data: balanceRows }, { data: links }, { data: payments }] =
+  const [{ data: commissions }, { data: balanceRows }, { data: links }, { data: payments }, { data: settlementRows }] =
     await Promise.all([
       // The 200 most recent, for the two lists on this page.
       supabase
         .from("creator_commissions")
-        .select("id,status,amount_minor,basis_minor,rate_bps,currency,order_reference,order_placed_at,payable_at,reversal_reason")
+        .select("id,status,settlement,amount_minor,basis_minor,rate_bps,currency,order_reference,order_placed_at,payable_at,reversal_reason")
         .eq("seller_account_id", actor.sellerAccountId)
         .eq("creator_id", partnership.creator_id)
         .order("order_placed_at", { ascending: false })
@@ -84,7 +84,11 @@ export default async function CreatorDetailPage({
         .select("id,reference,amount_minor,currency,method,marked_at,confirmed_at,disputed_at")
         .eq("seller_account_id", actor.sellerAccountId)
         .eq("creator_id", partnership.creator_id)
-        .order("marked_at", { ascending: false }),
+        .order("marked_at", { ascending: false })
+        .limit(100),
+      // Split by who paid: SnapDuka out of your settlement, or you by hand.
+      // SECURITY INVOKER, so RLS limits it to commissions on this shop.
+      supabase.rpc("creator_commission_settlement_totals", { p_creator_id: partnership.creator_id }),
     ]);
 
   const currency = (partnership.currency ?? "GHS") as CurrencyCode;
@@ -110,6 +114,10 @@ export default async function CreatorDetailPage({
     carryOverMinor: Number(row?.carry_over_minor ?? 0),
   };
   const payable = (commissions ?? []).filter((commission) => commission.status === "payable");
+  const split = splitBySettlement(settlementRows as SettlementTotalsRow[] | null, {
+    creatorId: partnership.creator_id,
+    currency,
+  });
 
   return (
     <main className="sd-main mx-auto max-w-[1040px] px-4 pt-6 sm:px-6">
@@ -132,11 +140,18 @@ export default async function CreatorDetailPage({
         </div>
       ) : null}
 
-      <div className="mb-5 grid gap-2.5 sm:grid-cols-3">
+      <div className={`mb-5 grid gap-2.5 ${split.viaSnapDuka.count > 0 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
         {[
           { label: "Owed now", value: balance.owedNowMinor, hint: "Held long enough to pay" },
           { label: "On hold", value: balance.pendingMinor, hint: `${partnership.hold_days}-day refund window` },
-          { label: "Paid to date", value: balance.paidMinor, hint: "Recorded by you" },
+          { label: "Paid by you", value: split.recorded.paidMinor, hint: "Recorded by you" },
+          // Only once SnapDuka has paid this creator for you: commissions on
+          // online orders are set aside from your settlement at the sale and
+          // paid to the creator's SnapDuka balance after the hold, so there is
+          // nothing for you to send or record for them.
+          ...(split.viaSnapDuka.count > 0
+            ? [{ label: "Paid via SnapDuka", value: split.viaSnapDuka.paidMinor, hint: "Taken from your online sales" }]
+            : []),
         ].map((tile) => (
           <Panel key={tile.label} className="px-3.5 py-3">
             <p className="text-[12px] font-semibold text-ink-muted">{tile.label}</p>
@@ -145,6 +160,16 @@ export default async function CreatorDetailPage({
           </Panel>
         ))}
       </div>
+
+      {split.viaSnapDuka.pendingMinor > 0 ? (
+        <Panel className="mb-5 px-3.5 py-3">
+          <p className="text-[12.5px] leading-[1.6] text-ink-soft">
+            {formatMoney(split.viaSnapDuka.pendingMinor, currency)} of what is on hold is from online
+            orders. SnapDuka set it aside from those sales and pays it to{" "}
+            {creator?.display_name ?? "the creator"} after the hold — you do not need to send or record it.
+          </p>
+        </Panel>
+      ) : null}
 
       {balance.carryOverMinor < 0 ? (
         <Panel className="mb-5 px-3.5 py-3">
@@ -287,7 +312,9 @@ export default async function CreatorDetailPage({
                       <Badge tone={COMMISSION_TONE[row.status] ?? "neutral"}>
                         {row.status === "pending"
                           ? `holds to ${new Date(row.payable_at).toLocaleDateString()}`
-                          : row.status}
+                          : row.settlement === "ledger" && row.status === "paid"
+                            ? "paid via SnapDuka"
+                            : row.status}
                       </Badge>
                     </td>
                   </tr>

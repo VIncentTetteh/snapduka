@@ -5,9 +5,9 @@ import { Panel } from "@/components/ui/surface";
 import { PageHeader } from "@/components/ui/surface";
 import { resolveCreatorContext } from "@/lib/auth/actor";
 import { formatRate, type CreatorBalance } from "@/lib/creators/commission";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 

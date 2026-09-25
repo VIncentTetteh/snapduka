@@ -27,9 +27,12 @@ select policies_are(
   -- ownership but not values, so it let a seller insert a request for any
   -- amount at all. Requests now go through request_seller_payout, which checks
   -- the ledger under a row lock.
+  -- payout_requests_creator_read (202609250203): a creator reads their own
+  -- withdrawals; they are created only through request_creator_payout.
   array[
     'payout_requests_owner_operator_read',
-    'payout_requests_operator_update'
+    'payout_requests_operator_update',
+    'payout_requests_creator_read'
   ],
   'payout_requests policies are exactly the expected set'
 );

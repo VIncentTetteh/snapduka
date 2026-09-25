@@ -10,10 +10,10 @@ import { inviteCreator as inviteCreatorRules } from "@/lib/creators/invite";
 import { generateCampaignToken, isUniqueViolation } from "@/lib/campaigns/tokens";
 import { MAX_RATE_BPS } from "@/lib/creators/commission";
 import { enqueueCreatorNotification } from "@/lib/notifications/enqueue";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 const BASE = "/dashboard/creators";
 
