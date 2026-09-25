@@ -55,3 +55,5 @@ exists, never ahead of it.
 | OPS-013 | admin aggregates (202609250240), keyset cursors `lib/api/keyset-cursor.ts` for `/api/v1/{orders,customers,products}` | pgTAP 090, `list-routes.test.ts` |
 | OPS-014 | `warehouse` views and `warehouse_pub` (202609250242), `warehouse/` dbt project, funnel events (202609250241) | pgTAP 091–093, `check_models.py --verify` |
 | CAT-012 | `set_product_category` and policies (202609250263), product form category picker (web and mobile) | pgTAP 098, product action tests |
+| MKT-001 | `src/app/page.tsx` per-market selection, `components/landing/{trust-landing,protect-chat,classic-landing,testimonials}`, `lib/landing/data.ts`, `new_homepage` flag | `page.test.tsx`, `trust-landing.test.tsx`, `classic-landing.test.tsx`, `landing/data.test.ts` |
+| MKT-002 | `src/app/protect/page.tsx`, link from `ProtectPanel` | `protect/page.test.tsx` |

@@ -8,6 +8,8 @@
  */
 export const FLAG_KEYS = [
   "protect",
+  // The trust-led landing page, switched on per market with Protect.
+  "new_homepage",
   "ledger_settlement",
   "instant_payout",
   "wa_agent",

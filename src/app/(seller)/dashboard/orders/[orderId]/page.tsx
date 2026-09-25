@@ -10,6 +10,7 @@ import { resolveServerActor } from "@/lib/auth/actor";
 import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
 import { protectionForSeller } from "@/lib/protect/service";
+import { appOrigin } from "@/lib/app-url";
 import { PROTECT_SELLER_COPY } from "@snapduka/core";
 import type { CurrencyCode } from "@snapduka/core";
 import { DeliveryAddressDetails } from "@/components/seller/delivery-address-details";
@@ -78,7 +79,7 @@ export default async function OrderPage({
     order.protection_mode === "protect"
       ? await protectionForSeller(order.id, actor.sellerAccountId)
       : null;
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://snapduka.shop").replace(/\/$/, "");
+  const appUrl = (await appOrigin()).replace(/\/$/, "");
 
   const buyer = (order.buyer_snapshot ?? {}) as BuyerSnapshot;
   const fulfillment = (order.fulfillment_method_snapshot ?? {}) as FulfillmentSnapshot;

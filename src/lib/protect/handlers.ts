@@ -1,5 +1,6 @@
 import "server-only";
 
+import { appOrigin } from "@/lib/app-url";
 import { onDomainEvent, type DomainEvent } from "@/lib/events/handlers";
 import { startRefund } from "@/lib/payments/refunds";
 import { sendSms } from "@/lib/notifications/sms";
@@ -19,8 +20,9 @@ function payloadOf(event: DomainEvent): Payload {
     : {};
 }
 
-function appUrl(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL ?? "https://snapduka.shop").replace(/\/$/, "");
+/** The public origin for links in messages; never a guessed domain. */
+async function appUrl(): Promise<string> {
+  return (await appOrigin()).replace(/\/$/, "");
 }
 
 /**
@@ -63,7 +65,7 @@ export async function deliverCode(event: DomainEvent): Promise<void> {
       const text =
         `SnapDuka Protect: your delivery code for order ${order.public_reference} is ${code}. ` +
         `Give it to the rider ONLY when you have your order. ` +
-        `Track: ${appUrl()}/orders/${order.tracking_token}`;
+        `Track: ${await appUrl()}/orders/${order.tracking_token}`;
       const result = await sendSms(phone, text);
       if (!result.delivered) {
         console.warn(

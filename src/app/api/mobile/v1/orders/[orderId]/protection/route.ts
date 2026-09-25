@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { appOrigin } from "@/lib/app-url";
 import { isResponse, requireActiveSeller } from "@/lib/mobile/guard";
 import { fail, failUnexpected, ok } from "@/lib/mobile/response";
 import { protectionForSeller } from "@/lib/protect/service";
@@ -20,7 +21,7 @@ export async function GET(_request: Request, context: { params: Promise<{ orderI
   try {
     const protection = await protectionForSeller(orderId, actor.sellerAccountId);
     if (!protection) return ok({ protection: null });
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "https://snapduka.shop").replace(/\/$/, "");
+    const appUrl = (await appOrigin()).replace(/\/$/, "");
     return ok({
       protection: {
         state: protection.state,

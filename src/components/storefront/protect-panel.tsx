@@ -75,6 +75,11 @@ export function ProtectPanel({ token, state, inspectionEndsAt, autoReleaseAt }: 
         </svg>
         SnapDuka Protect
       </h2>
+      <p className="mb-2 text-[12px]">
+        <Link href="/protect" className="font-semibold text-accent underline">
+          How Protect works
+        </Link>
+      </p>
       <p className="mb-3 text-[13px] leading-[1.55] text-ink-soft">
         {confirmed ? PROTECT_BUYER_COPY.releasable : PROTECT_BUYER_COPY[state]}
       </p>

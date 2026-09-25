@@ -709,6 +709,13 @@ against sandbox partners and stay behind flags until contracts exist.
   PII-free views, a change-data publication and versioned dbt models.
 - **CAT-012 (P2):** Sellers should be able to assign a product category,
   prefilled from an AI listing draft.
+- **MKT-001 (P1):** The public landing page must only promise what is live in
+  the visitor's market: the trust-led page appears per market with the
+  `new_homepage` flag and live Protect, prices and fees are read from the
+  database, features are listed only where switched on, and testimonials
+  appear only when real.
+- **MKT-002 (P1):** Buyers should be able to read how SnapDuka Protect works,
+  with the market's real fee and time windows, from their order page.
 
 ## 7. State and Data Requirements
 

@@ -137,7 +137,9 @@ const INPUT =
 const LABEL = "grid gap-1.5 text-[12.5px] font-semibold text-ink";
 
 function configuredOrigin(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "https://snapduka.shop";
+  // The page's own origin rather than a guessed domain: a hard-coded fallback
+  // pointed at a domain that does not resolve.
+  return process.env.NEXT_PUBLIC_APP_URL ?? (typeof window === "undefined" ? "" : window.location.origin);
 }
 
 function subscribeNever(): () => void {
