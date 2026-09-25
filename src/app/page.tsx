@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 
 import { ClassicLanding } from "@/components/landing/classic-landing";
 import { TrustLanding } from "@/components/landing/trust-landing";
+import { resolveServerActor } from "@/lib/auth/actor";
 import { isFeatureEnabled } from "@/lib/flags";
 import { getLandingData, visitorCountry, type LandingData } from "@/lib/landing/data";
 
@@ -50,7 +51,40 @@ export async function generateMetadata(): Promise<Metadata> {
   return (await trustLandingData()) ? TRUST_METADATA : CLASSIC_METADATA;
 }
 
-export default async function HomePage() {
+/**
+ * `/?preview=trust` lets a signed-in operator see the trust-led page for their
+ * market before it is switched on, with a banner saying it is not public.
+ * Nobody else can reach it: for anyone who is not an operator the parameter is
+ * ignored and the normal choice applies.
+ */
+async function operatorPreview(): Promise<LandingData | null> {
+  const actor = await resolveServerActor();
+  if (actor.kind !== "operator") return null;
+  const country = visitorCountry(await headers());
+  const data = await getLandingData(country);
+  // Show the page as it will look once Protect is on in this market.
+  return { ...data, features: { ...data.features, protect: true } };
+}
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ preview?: string }>;
+} = {}) {
+  const query = (await searchParams) ?? {};
+  if (query.preview === "trust") {
+    const preview = await operatorPreview();
+    if (preview) {
+      return (
+        <>
+          <p className="m-0 bg-warn-tint px-4 py-2 text-center text-[13px] font-semibold text-warn">
+            Preview — not public. Visitors in this market see the classic page until new_homepage and Protect are on.
+          </p>
+          <TrustLanding data={preview} />
+        </>
+      );
+    }
+  }
   const data = await trustLandingData();
   return data ? <TrustLanding data={data} /> : <ClassicLanding />;
 }

@@ -3,6 +3,18 @@
 import type { ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
+import { Spinner } from "./spinner";
+
+/** Button content while its action runs: a spinner beside the pending label. */
+function Pending({ label }: { label: ReactNode }) {
+  return (
+    <span className="inline-flex items-center justify-center gap-2">
+      <Spinner size={15} />
+      {label}
+    </span>
+  );
+}
+
 type SubmitButtonProps = {
   children: ReactNode;
   pendingLabel?: string;
@@ -13,21 +25,22 @@ type SubmitButtonProps = {
 };
 
 /**
- * Submit button for a form with exactly one action. Shows `pendingLabel`
- * (or `children` if omitted) and disables itself while the enclosing
- * <form>'s action is in flight.
+ * Submit button for a form with exactly one action. Shows a spinner and
+ * `pendingLabel` (or `children` if omitted) and disables itself while the
+ * enclosing <form>'s action is in flight.
  */
 export function SubmitButton({ children, pendingLabel, className, disabled, role }: SubmitButtonProps) {
   const { pending } = useFormStatus();
   return (
     <button
+      aria-busy={pending || undefined}
       aria-disabled={pending || disabled}
       className={className}
       disabled={pending || disabled}
       role={role}
       type="submit"
     >
-      {pending ? (pendingLabel ?? children) : children}
+      {pending ? <Pending label={pendingLabel ?? children} /> : children}
     </button>
   );
 }
@@ -66,6 +79,7 @@ export function FormActionButton(props: FormActionButtonProps) {
       : status.data?.get(props.name!) === props.value);
   return (
     <button
+      aria-busy={isThisPending || undefined}
       aria-disabled={status.pending}
       className={className}
       disabled={status.pending}
@@ -74,7 +88,7 @@ export function FormActionButton(props: FormActionButtonProps) {
       type="submit"
       value={"value" in props ? props.value : undefined}
     >
-      {isThisPending ? (pendingLabel ?? children) : children}
+      {isThisPending ? <Pending label={pendingLabel ?? children} /> : children}
     </button>
   );
 }

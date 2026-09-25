@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
+import { NavigationProgress } from "@/components/ui/navigation-progress";
 import { OfflineBanner } from "@/components/ui/offline-banner";
 import { ServiceWorkerRegister } from "@/components/ui/service-worker-register";
 
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
   ),
   title: "SnapDuka | Social commerce, organized",
   description:
-    "Turn Instagram, TikTok, Snapchat and WhatsApp interest into organized, trackable orders with a storefront built for African social sellers. GHS, NGN and XOF. Paystack payments. Guest checkout.",
+    "Turn Instagram, TikTok, Snapchat and WhatsApp interest into organized, trackable orders with a storefront built for African social sellers. GHS, NGN and XOF. Online or cash payment. Guest checkout.",
   keywords: [
     "social commerce",
     "Ghana",
@@ -37,7 +38,16 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html data-scroll-behavior="smooth" lang="en">
       <head>
       </head>
-      <body><OfflineBanner />{children}<ServiceWorkerRegister /></body>
+      <body>
+        {/* useSearchParams needs a Suspense boundary to stay out of the way of
+            static rendering; the bar renders nothing until a navigation. */}
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
+        <OfflineBanner />
+        {children}
+        <ServiceWorkerRegister />
+      </body>
     </html>
   );
 }

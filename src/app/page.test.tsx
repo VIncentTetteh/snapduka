@@ -4,7 +4,10 @@ const mocks = vi.hoisted(() => ({
   isFeatureEnabled: vi.fn(),
   getLandingData: vi.fn(),
   country: "GH",
+  actor: { kind: "anonymous" } as { kind: string },
 }));
+
+vi.mock("@/lib/auth/actor", () => ({ resolveServerActor: async () => mocks.actor }));
 
 vi.mock("next/headers", () => ({
   headers: async () => new Headers({ "x-vercel-ip-country": mocks.country }),
@@ -28,6 +31,7 @@ function kind(element: unknown): string {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.country = "GH";
+  mocks.actor = { kind: "anonymous" };
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -61,5 +65,20 @@ describe("HomePage", () => {
     mocks.isFeatureEnabled.mockResolvedValue(false);
     await HomePage();
     expect(mocks.isFeatureEnabled).toHaveBeenCalledWith("new_homepage", { country: "NG" });
+  });
+
+  it("lets an operator preview the trust-led page before it is switched on", async () => {
+    mocks.actor = { kind: "operator" };
+    mocks.isFeatureEnabled.mockResolvedValue(false);
+    mocks.getLandingData.mockResolvedValue({ features: { protect: false } });
+    const page = await HomePage({ searchParams: Promise.resolve({ preview: "trust" }) });
+    const children = (page as { props: { children: unknown[] } }).props.children;
+    expect(JSON.stringify(children[0])).toMatch(/Preview — not public/);
+  });
+
+  it("ignores the preview parameter for everyone else", async () => {
+    mocks.actor = { kind: "seller" };
+    mocks.isFeatureEnabled.mockResolvedValue(false);
+    expect(kind(await HomePage({ searchParams: Promise.resolve({ preview: "trust" }) }))).toBe("classic");
   });
 });
