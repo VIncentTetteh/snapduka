@@ -1,16 +1,20 @@
+import { randomUUID } from "node:crypto";
+
+import { writeOffDebtAction } from "@/app/admin/protect-actions";
 import { requireOperator } from "@/lib/auth/require-operator";
 import { ActionBanner } from "@/components/ui/action-banner";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { applyRiskAction, approveVerificationAction, setDiscoveryRemovalAction } from "@/app/admin/actions";
+import { SellerTrustPanel } from "@/components/admin/seller-trust-panel";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { InitialsAvatar } from "@/components/ui/gradient-placeholder";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { FormActionButton, SubmitButton } from "@/components/ui/submit-button";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +42,7 @@ export default async function AdminSellerPage({
   const [
     { data: seller },
     { data: actions },
-    { data: paidOrders },
+    { data: gmvRows },
     { count: openCases },
     { data: discoveryPreference },
   ] = await Promise.all([
@@ -54,11 +58,11 @@ export default async function AdminSellerPage({
         .select("*")
         .eq("seller_account_id", sellerId)
         .order("created_at", { ascending: false }),
-      admin
-        .from("orders")
-        .select("total_minor,currency")
-        .eq("seller_account_id", sellerId)
-        .eq("payment_status", "paid"),
+      // Aggregated in SQL, per currency. This pulled every paid order the
+      // seller ever took and summed them here — capped at db.max_rows = 1000,
+      // so the sellers an operator most needs to assess were understated, and
+      // GHS and NGN were added together as if they were one currency.
+      admin.rpc("admin_seller_gmv", { p_seller_account_id: sellerId }),
       admin
         .from("support_cases")
         .select("id", { count: "exact", head: true })
@@ -77,8 +81,20 @@ export default async function AdminSellerPage({
     ? seller.seller_verifications[0]
     : seller.seller_verifications;
   const verificationState = (verification as { state?: string } | null)?.state ?? "not_started";
-  const currency = (paidOrders?.[0]?.currency ?? "GHS") as CurrencyCode;
-  const gmv = paidOrders?.reduce((sum, order) => sum + order.total_minor, 0) ?? 0;
+  // Rows arrive largest-GMV first; the headline shows that currency and the
+  // paid-order count covers every currency.
+  const currency = (gmvRows?.[0]?.currency ?? "GHS") as CurrencyCode;
+  const gmv = Number(gmvRows?.[0]?.gmv_minor ?? 0);
+  const paidOrderCount = (gmvRows ?? []).reduce((sum, row) => sum + Number(row.paid_orders), 0);
+  const otherCurrencies = Math.max((gmvRows?.length ?? 0) - 1, 0);
+  // Negative withdrawable balances: refunds or chargebacks after the seller had
+  // already withdrawn. Shown so an operator can decide whether to write off.
+  const { data: debts } = await admin
+    .from("ledger_accounts")
+    .select("currency,balance_minor")
+    .eq("owner_seller_account_id", sellerId)
+    .eq("kind", "seller_available")
+    .lt("balance_minor", 0);
   const statusTone: BadgeTone =
     seller.status === "active" ? "success" : seller.status === "suspended" ? "danger" : "warn";
 
@@ -115,10 +131,15 @@ export default async function AdminSellerPage({
           <p className="font-serif text-[22px] font-medium text-ink">
             {formatMoney(gmv, currency)}
           </p>
+          {otherCurrencies > 0 ? (
+            <p className="mt-0.5 text-[11.5px] text-ink-muted">
+              + {otherCurrencies} other {otherCurrencies === 1 ? "currency" : "currencies"}
+            </p>
+          ) : null}
         </Panel>
         <Panel className="p-4">
           <p className="mb-1.5 text-[12px] font-semibold text-ink-muted">Paid orders</p>
-          <p className="font-serif text-[22px] font-medium text-ink">{paidOrders?.length ?? 0}</p>
+          <p className="font-serif text-[22px] font-medium text-ink">{paidOrderCount}</p>
         </Panel>
         <Panel className="p-4">
           <p className="mb-1.5 text-[12px] font-semibold text-ink-muted">Open cases</p>
@@ -131,6 +152,8 @@ export default async function AdminSellerPage({
           </p>
         </Panel>
       </div>
+
+      <SellerTrustPanel sellerId={seller.id} />
 
       {verificationState !== "verified" ? (
         <Panel className="mb-4 p-4.5">
@@ -221,6 +244,41 @@ export default async function AdminSellerPage({
           </form>
         </Panel>
       ) : null}
+
+      {(debts ?? []).map((debt) => (
+        <Panel key={debt.currency} className="mb-4 border-danger-line p-4.5">
+          <h2 className="mb-1 text-[14px] font-bold text-ink">
+            Owes {formatMoney(-debt.balance_minor, debt.currency as CurrencyCode)}
+          </h2>
+          <p className="mb-3 text-[12.5px] leading-[1.55] text-ink-soft">
+            Withdrawals are blocked until this is repaid from future sales or written off. A
+            write-off moves the loss to SnapDuka&apos;s bad-debt expense and cannot be undone.
+          </p>
+          <form action={writeOffDebtAction} className="grid gap-2.5 sm:grid-cols-[1fr_2fr_auto]">
+            <input name="sellerId" type="hidden" value={seller.id} />
+            <input name="currency" type="hidden" value={debt.currency} />
+            <input name="idempotencyKey" type="hidden" value={randomUUID()} />
+            <input
+              name="amount"
+              inputMode="decimal"
+              required
+              aria-label={`Amount (${debt.currency})`}
+              placeholder={debt.currency === "XOF" ? String(-debt.balance_minor) : (-debt.balance_minor / 100).toFixed(2)}
+              className="h-10 rounded-[9px] border border-line-input bg-white px-3 text-[13px]"
+            />
+            <input
+              name="reason"
+              required
+              aria-label="Reason"
+              placeholder="Why this is uncollectable"
+              className="h-10 rounded-[9px] border border-line-input bg-white px-3 text-[13px]"
+            />
+            <button className="min-h-10 cursor-pointer rounded-[9px] border-none bg-danger px-4 text-[13px] font-bold text-white">
+              Write off
+            </button>
+          </form>
+        </Panel>
+      ))}
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* Risk actions */}

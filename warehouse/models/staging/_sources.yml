@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: snapduka
+    description: >
+      The PII-redacted, pseudonymised views in the primary database's
+      `warehouse` schema (migration 202609250242). Every identifier is an
+      HMAC-SHA256 `*_key`; no contact details, free text or raw uuids.
+    schema: warehouse
+    tables:
+      - name: sellers
+      - name: orders
+        columns:
+          - name: order_key
+            tests: [unique, not_null]
+      - name: order_settlements
+      - name: ledger_transactions
+      - name: ledger_entries
+      - name: payouts
+      - name: chargebacks
+      - name: support_cases
+      - name: order_protections
+      - name: analytics_events
+      - name: wa_conversations
+      - name: ai_runs

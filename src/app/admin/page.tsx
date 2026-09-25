@@ -1,11 +1,14 @@
+import { settleCourierPayableAction } from "@/app/admin/protect-actions";
 import { requireOperator } from "@/lib/auth/require-operator";
 import Link from "next/link";
 
 import { MetricTile } from "@/components/ui/metric-tile";
 import { PageHeader, Panel } from "@/components/ui/surface";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
+
+import { summariseOverview } from "./overview-metrics";
 
 export const dynamic = "force-dynamic";
 
@@ -21,24 +24,20 @@ export default async function AdminOverviewPage() {
   const since30d = isoDaysAgo(30);
 
   const [
-    { data: paidOrders },
-    { count: orders30d },
+    { data: orderTotals },
     { count: activeSellers },
     { count: newSellers },
     { data: pendingPayouts },
+    { data: pendingTotals },
     { count: openCases },
     { count: reviewCases },
     { data: recentAudit },
   ] = await Promise.all([
-    admin
-      .from("orders")
-      .select("total_minor,currency")
-      .eq("payment_status", "paid")
-      .gte("created_at", since30d),
-    admin
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", since30d),
+    // Aggregated in SQL, one row per currency. This fetched every paid order
+    // of the last 30 days and summed them here, which db.max_rows = 1000 caps
+    // silently: past a thousand paid orders a month, platform GMV and the paid
+    // share simply stopped growing.
+    admin.rpc("admin_order_totals_since", { p_since: since30d }),
     admin
       .from("seller_accounts")
       .select("id", { count: "exact", head: true })
@@ -53,6 +52,9 @@ export default async function AdminOverviewPage() {
       .eq("status", "requested")
       .order("created_at", { ascending: true })
       .limit(5),
+    // The tile's count and total come from SQL. They were computed from the
+    // five rows above, so the queue could never look longer than five.
+    admin.rpc("admin_pending_payout_totals"),
     admin
       .from("support_cases")
       .select("id", { count: "exact", head: true })
@@ -68,21 +70,18 @@ export default async function AdminOverviewPage() {
       .limit(6),
   ]);
 
-  const gmvByCurrency = (paidOrders ?? []).reduce<Record<string, number>>((acc, order) => {
-    acc[order.currency] = (acc[order.currency] ?? 0) + order.total_minor;
-    return acc;
-  }, {});
-  const markets = Object.keys(gmvByCurrency);
-  const primaryCurrency = (markets.sort(
-    (a, b) => gmvByCurrency[b] - gmvByCurrency[a],
-  )[0] ?? "GHS") as CurrencyCode;
-  const paidCount = paidOrders?.length ?? 0;
-  const paidShare = orders30d ? Math.round((paidCount / orders30d) * 100) : 0;
-  const pendingPayoutTotal = (pendingPayouts ?? []).reduce(
-    (sum, payout) => sum + payout.amount_minor,
-    0,
-  );
-  const pendingPayoutCurrency = (pendingPayouts?.[0]?.currency ?? primaryCurrency) as CurrencyCode;
+  // North-star metrics for the trust-and-money strategy, aggregated in SQL.
+  const { data: northStar } = await admin.rpc("admin_north_star", { p_weeks: 8 });
+  // Couriers booked on SnapDuka's own account, not yet paid (courier_payable).
+  const { data: courierOwed } = await admin
+    .from("ledger_accounts")
+    .select("currency,balance_minor")
+    .eq("kind", "courier_payable")
+    .gt("balance_minor", 0);
+
+  const overview = summariseOverview(orderTotals ?? [], pendingTotals ?? []);
+  const { gmvByCurrency, markets, primaryCurrency, orders30d, paidShare } = overview;
+  const { pendingPayoutCount, pendingPayoutTotal, pendingPayoutCurrency } = overview;
 
   const dotClass = (action: string) =>
     action.startsWith("payout_approved") || action.startsWith("payout_paid")
@@ -94,6 +93,61 @@ export default async function AdminOverviewPage() {
   return (
     <main className="sd-main mx-auto max-w-[1080px] px-4 pt-6 sm:px-6">
       <PageHeader title="Overview" sub="Platform health across all markets · last 30 days" />
+
+      {northStar && northStar.length > 0 ? (
+        <Panel className="mb-6 overflow-x-auto p-4.5">
+          <h2 className="mb-1 text-[14px] font-bold">North star · weekly</h2>
+          <p className="mb-3 text-[12.5px] text-ink-soft">
+            Transacting sellers (≥1 paid order that week) and GMV through SnapDuka Protect.
+          </p>
+          <table className="w-full min-w-[560px] text-left text-[12.5px]">
+            <thead className="text-ink-muted">
+              <tr>
+                <th className="py-1.5 pr-3 font-semibold">Week</th>
+                <th className="py-1.5 pr-3 font-semibold">Transacting sellers</th>
+                <th className="py-1.5 pr-3 font-semibold">GMV</th>
+                <th className="py-1.5 pr-3 font-semibold">Protect GMV</th>
+                <th className="py-1.5 pr-3 font-semibold">Protect share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {northStar.map((row) => (
+                <tr key={`${row.week_start}-${row.currency}`} className="border-t border-line-soft">
+                  <td className="py-1.5 pr-3">{row.week_start}</td>
+                  <td className="py-1.5 pr-3 font-semibold text-ink">{row.transacting_sellers}</td>
+                  <td className="py-1.5 pr-3">{formatMoney(row.gmv_minor, row.currency as CurrencyCode)}</td>
+                  <td className="py-1.5 pr-3">{formatMoney(row.protect_gmv_minor, row.currency as CurrencyCode)}</td>
+                  <td className="py-1.5 pr-3">
+                    {row.gmv_minor > 0 ? `${Math.round((row.protect_gmv_minor / row.gmv_minor) * 100)}%` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      ) : null}
+
+      {(courierOwed ?? []).map((row) => (
+        <Panel key={row.currency} className="mb-6 p-4.5">
+          <h2 className="mb-1 text-[14px] font-bold">
+            Owed to couriers · {formatMoney(row.balance_minor, row.currency as CurrencyCode)}
+          </h2>
+          <p className="mb-3 text-[12.5px] text-ink-soft">
+            Deliveries booked on SnapDuka&apos;s courier accounts, already charged to sellers. Record each
+            invoice when it is paid.
+          </p>
+          <form action={settleCourierPayableAction} className="flex flex-wrap items-end gap-2.5">
+            <input type="hidden" name="currency" value={row.currency} />
+            <input name="amount" required inputMode="decimal" aria-label="Amount paid" placeholder="Amount paid"
+              className="h-10 rounded-[9px] border border-line-input bg-white px-3 text-[13px]" />
+            <input name="reference" required aria-label="Invoice reference" placeholder="Invoice reference"
+              className="h-10 rounded-[9px] border border-line-input bg-white px-3 text-[13px]" />
+            <button className="min-h-10 cursor-pointer rounded-[9px] border-none bg-ink px-4 text-[13px] font-bold text-white">
+              Record payment
+            </button>
+          </form>
+        </Panel>
+      ))}
 
       {/* Metric tiles */}
       <div className="mb-6 grid grid-cols-2 gap-3.5 lg:grid-cols-5">
@@ -110,18 +164,18 @@ export default async function AdminOverviewPage() {
         />
         <MetricTile
           label="Orders · 30 days"
-          value={String(orders30d ?? 0)}
+          value={String(orders30d)}
           sub={`${paidShare}% paid via Paystack`}
         />
         <MetricTile
           label="Pending payouts"
-          value={String(pendingPayouts?.length ?? 0)}
+          value={String(pendingPayoutCount)}
           sub={
             pendingPayoutTotal > 0
               ? formatMoney(pendingPayoutTotal, pendingPayoutCurrency)
               : "Queue clear"
           }
-          subTone={pendingPayouts?.length ? "warn" : "muted"}
+          subTone={pendingPayoutCount ? "warn" : "muted"}
         />
         <MetricTile
           label="Open cases"

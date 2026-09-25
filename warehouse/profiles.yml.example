@@ -1,0 +1,26 @@
+# Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR to this directory after
+# copying it to profiles.yml, which is gitignored). Never commit real
+# credentials: a hosted target reads them from the environment.
+snapduka_warehouse:
+  target: postgres
+  outputs:
+    # Local Supabase. Reads the `warehouse` views; writes models to
+    # dbt_dev_staging / dbt_dev_marts. The postgres role can read the views as
+    # their owner; a hosted target should log in as a role granted
+    # warehouse_reader, which can read the views and nothing else.
+    postgres:
+      type: postgres
+      host: 127.0.0.1
+      port: 54322
+      user: postgres
+      password: "{{ env_var('SNAPDUKA_WAREHOUSE_PG_PASSWORD', 'postgres') }}"
+      dbname: postgres
+      schema: dbt_dev
+      threads: 4
+    # Filled in when ADR-0011's vendor decision is made, e.g.:
+    # bigquery:
+    #   type: bigquery
+    #   method: service-account
+    #   keyfile: "{{ env_var('SNAPDUKA_WAREHOUSE_BQ_KEYFILE') }}"
+    #   project: snapduka-analytics
+    #   dataset: analytics

@@ -6,9 +6,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FilterPills } from "@/components/ui/filter-pills";
 import { FormActionButton } from "@/components/ui/submit-button";
 import { PageHeader, Panel } from "@/components/ui/surface";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export default async function AdminCreatorsPage({
   const params = await searchParams;
   const admin = createAdminClient();
 
-  const [{ data: creators }, { data: creatorTotals }, { data: payments }] =
+  const [{ data: creators }, { data: creatorTotals }, { data: payments }, { data: disputeCounts }] =
     await Promise.all([
       admin
         .from("creators")
@@ -56,7 +56,12 @@ export default async function AdminCreatorsPage({
         .from("creator_commission_payments")
         .select("id,creator_id,amount_minor,currency,marked_at,disputed_at,dispute_note")
         .not("disputed_at", "is", null)
-        .order("disputed_at", { ascending: false }),
+        .order("disputed_at", { ascending: false })
+        // Display only: the panel shows ten. Counts come from SQL below.
+        .limit(10),
+      // Per-creator dispute counts, aggregated in SQL. They were tallied from
+      // the unbounded list above, which db.max_rows = 1000 caps silently.
+      admin.rpc("admin_creator_dispute_counts"),
     ]);
 
   const byCreator = new Map<
@@ -76,9 +81,13 @@ export default async function AdminCreatorsPage({
     entry.earnedMinor += Number(row.earned_minor);
     entry.paidMinor += Number(row.paid_minor);
   }
-  for (const row of payments ?? []) bump(row.creator_id).disputes += 1;
+  let disputedPayments = 0;
+  for (const row of disputeCounts ?? []) {
+    bump(row.creator_id).disputes = Number(row.disputes);
+    disputedPayments += Number(row.disputes);
+  }
 
-  const disputedIds = new Set((payments ?? []).map((row) => row.creator_id));
+  const disputedIds = new Set((disputeCounts ?? []).map((row) => row.creator_id));
   const filtered = (creators ?? []).filter((creator) => {
     if (params.status === "disputed") return disputedIds.has(creator.id);
     if (params.status === "suspended") return creator.status === "suspended";
@@ -107,13 +116,13 @@ export default async function AdminCreatorsPage({
       {/* Disputes are the signal worth surfacing: SnapDuka records a seller's
           claim that they paid, and this is where a pattern of that claim being
           wrong becomes visible. */}
-      {(payments ?? []).length > 0 ? (
+      {disputedPayments > 0 ? (
         <Panel className="mb-5 px-3.5 py-3">
           <h2 className="mb-2 text-[13.5px] font-bold text-danger">
-            {(payments ?? []).length} disputed {(payments ?? []).length === 1 ? "payment" : "payments"}
+            {disputedPayments} disputed {disputedPayments === 1 ? "payment" : "payments"}
           </h2>
           <ul className="grid gap-2">
-            {(payments ?? []).slice(0, 10).map((payment) => (
+            {(payments ?? []).map((payment) => (
               <li key={payment.id} className="border-b border-line pb-2 text-[12.5px] last:border-0">
                 <span className="font-semibold text-ink">
                   {formatMoney(payment.amount_minor, payment.currency as CurrencyCode)}

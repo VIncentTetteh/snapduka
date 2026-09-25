@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: weekly_transacting_sellers
+    description: North star — sellers with >=1 paid order in the week, per currency.
+    columns:
+      - name: week_start
+        tests: [not_null]
+      - name: transacting_sellers
+        tests: [not_null]
+  - name: protect_gmv_weekly
+    description: North star — GMV through SnapDuka Protect and its share of GMV.
+  - name: take_rate_weekly
+    description: (platform_revenue + protect_fee_revenue + payout_fee_revenue) / GMV, from the ledger.
+  - name: dispute_rates_weekly
+    description: Protect dispute, buyer case and chargeback rates by order-week cohort.
+  - name: delivery_code_confirmation_weekly
+    description: Share of Protect deliveries confirmed with the delivery code.
+  - name: ai_listing_acceptance_weekly
+    description: Snap-to-list drafts generated vs accepted (accepted not yet recorded — see model).
+  - name: wa_conversation_to_checkout_weekly
+    description: WhatsApp conversations that led to an order from the same buyer at the same shop within 7 days.

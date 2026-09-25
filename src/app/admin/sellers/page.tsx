@@ -5,9 +5,9 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InitialsAvatar } from "@/components/ui/gradient-placeholder";
 import { PageHeader, Panel } from "@/components/ui/surface";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 
