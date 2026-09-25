@@ -67,8 +67,32 @@ function majorToMinor(value: string, currency: string) {
   return String(Math.round(amount * (currency === "XOF" ? 1 : 100)));
 }
 
-export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
-  const [state, action, pending] = useActionState(createProductAction, initialState);
+/** Same shape as @/lib/catalog/categories, which is server-only. */
+export type CategoryOption = { id: string; name: string };
+
+export function ProductForm({
+  currency,
+  initialValues,
+  initialImage,
+  draftNote,
+  categories,
+}: {
+  currency: "GHS" | "NGN" | "XOF";
+  /**
+   * Active taxonomy, when the `product_categories` flag is on (resolved on the
+   * server). Omitted or empty hides the field.
+   */
+  categories?: CategoryOption[];
+  /** Prefill from a Snap-to-list draft. The seller still reviews and saves. */
+  initialValues?: Record<string, string>;
+  initialImage?: PreparedImage | null;
+  /** Shown above the form when it was prefilled, e.g. the price guidance. */
+  draftNote?: string;
+}) {
+  const [state, action, pending] = useActionState(
+    createProductAction,
+    initialValues ? { ...initialState, values: initialValues } : initialState,
+  );
   const [price, setPrice] = useState(() => minorToMajor(state.values.price, currency));
   const [compareAt, setCompareAt] = useState(() =>
     minorToMajor(state.values.compareAtPrice, currency),
@@ -77,7 +101,7 @@ export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
   const [variantPrice, setVariantPrice] = useState(() =>
     minorToMajor(state.values.variantPrice, currency),
   );
-  const [preparedImage, setPreparedImage] = useState<PreparedImage | null>(null);
+  const [preparedImage, setPreparedImage] = useState<PreparedImage | null>(initialImage ?? null);
   const [imageError, setImageError] = useState<string | null>(null);
   const symbol = currencySymbol[currency] ?? currency;
   const priceStep = currency === "XOF" ? "1" : "0.01";
@@ -112,6 +136,12 @@ export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
   return (
     <div className="grid gap-4">
       <form action={action} className="grid gap-6">
+        {draftNote && state.status === "idle" ? (
+          <div className="rounded-xl border border-line bg-raised px-4 py-3 text-[12.5px] text-ink-soft" role="status">
+            <p className="font-semibold text-ink">Drafted from your photo. Check every detail before you save.</p>
+            <p className="mt-1">{draftNote}</p>
+          </div>
+        ) : null}
         {state.message ? (
           <div
             className={`rounded-xl border px-4 py-3 text-[13px] font-semibold ${
@@ -145,6 +175,31 @@ export function ProductForm({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
               required
             />
           </ProductField>
+          {categories?.length ? (
+            <ProductField
+              state={state}
+              name="categoryId"
+              label="Category"
+              optional
+              help="Helps buyers find it and prices it against similar listings."
+            >
+              <select
+                className={inputClasses(Boolean(fieldError(state, "categoryId")))}
+                defaultValue={
+                  categories.some((category) => category.id === state.values.categoryId) ? state.values.categoryId : ""
+                }
+                id="product-categoryId"
+                name="categoryId"
+              >
+                <option value="">No category</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </ProductField>
+          ) : null}
           <ProductField state={state} name="description" label="Description" optional>
             <textarea
               className={inputClasses(false, "min-h-[96px] resize-y")}

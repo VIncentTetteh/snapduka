@@ -1,5 +1,6 @@
 "use server";
 
+import { isFeatureEnabled } from "@/lib/flags";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -46,7 +47,11 @@ export async function createBroadcast(formData: FormData) {
   const channel = String(formData.get("channel"));
   const body = String(formData.get("body") ?? "").trim();
   const segmentId = String(formData.get("segmentId") ?? "");
-  if (!["email", "whatsapp", "push"].includes(channel)) {
+  // SMS stays behind its flag until opt-out (STOP) handling exists: marketing
+  // SMS without a way to stop them is a compliance problem, not a feature.
+  const smsAllowed =
+    channel === "sms" && (await isFeatureEnabled("sms_broadcasts", { sellerAccountId: actor.sellerAccountId }));
+  if (!["email", "whatsapp", "push"].includes(channel) && !smsAllowed) {
     fail("Choose whether to send by email, WhatsApp or push.");
   }
   if (!body) fail("Write the message before saving it.");

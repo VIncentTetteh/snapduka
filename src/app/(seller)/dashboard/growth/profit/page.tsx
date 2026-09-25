@@ -1,7 +1,7 @@
 import { resolveServerActor } from "@/lib/auth/actor";
-import { formatMoney } from "@/lib/i18n";
+import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 /** This page reports all time. */
 const EPOCH = "1970-01-01T00:00:00Z";

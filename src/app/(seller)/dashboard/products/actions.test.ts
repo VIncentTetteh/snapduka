@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
   isSafeHttpUrl: vi.fn(),
   getSellerPlan: vi.fn(),
   withinPlanLimit: vi.fn(),
+  isFeatureEnabled: vi.fn(),
 }));
+
+vi.mock("@/lib/flags", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
 
 vi.mock("@/lib/auth/actor", () => ({
   resolveServerActor: mocks.resolveServerActor,
@@ -320,7 +323,9 @@ function buildCreateProductSupabaseMock(
     throw new Error(`unexpected table ${table}`);
   });
 
-  return { from, storage: { from: storageFrom }, productsInsert, mediaInsert, storageUpload };
+  const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+
+  return { from, rpc, storage: { from: storageFrom }, productsInsert, mediaInsert, storageUpload };
 }
 
 const CREATE_PRODUCT_REQUIRED_FIELDS = {
@@ -436,5 +441,156 @@ describe("createProductAction — cost, compare-at, video, and photo", () => {
     expect(state.status).toBe("success");
     expect(state.productId).toBe("product-1");
     expect(state.message).toContain("Photo upload failed");
+  });
+});
+
+const CATEGORY = "0a000000-0000-4000-8000-000000000001";
+
+describe("createProductAction — category", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    mocks.getSellerPlan.mockResolvedValue({});
+    mocks.withinPlanLimit.mockReturnValue(true);
+    mocks.isFeatureEnabled.mockResolvedValue(true);
+  });
+
+  it("sets the chosen category on the new product through the RLS-bound RPC", async () => {
+    const { from, rpc } = buildCreateProductSupabaseMock();
+    mocks.createClient.mockResolvedValue({ from, rpc, storage: { from: vi.fn() } });
+
+    const state = await createProductAction(
+      { status: "idle", values: {} },
+      formData({ ...CREATE_PRODUCT_REQUIRED_FIELDS, categoryId: CATEGORY }),
+    );
+
+    expect(state.status).toBe("success");
+    expect(mocks.isFeatureEnabled).toHaveBeenCalledWith("product_categories", { sellerAccountId: SELLER_ACTOR.sellerAccountId });
+    expect(rpc).toHaveBeenCalledWith("set_product_category", { p_product_id: "product-1", p_category_id: CATEGORY });
+    expect(state.message).not.toContain("category");
+  });
+
+  it("does nothing category-related when none was chosen", async () => {
+    const { from, rpc } = buildCreateProductSupabaseMock();
+    mocks.createClient.mockResolvedValue({ from, rpc, storage: { from: vi.fn() } });
+
+    await createProductAction({ status: "idle", values: {} }, formData(CREATE_PRODUCT_REQUIRED_FIELDS));
+
+    expect(rpc).not.toHaveBeenCalled();
+    expect(mocks.isFeatureEnabled).not.toHaveBeenCalled();
+  });
+
+  it("keeps the product and says so when the category is refused", async () => {
+    const { from, rpc } = buildCreateProductSupabaseMock();
+    rpc.mockResolvedValue({ data: null, error: { code: "42501", message: "denied" } });
+    mocks.createClient.mockResolvedValue({ from, rpc, storage: { from: vi.fn() } });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const state = await createProductAction(
+      { status: "idle", values: {} },
+      formData({ ...CREATE_PRODUCT_REQUIRED_FIELDS, categoryId: CATEGORY }),
+    );
+
+    expect(state.status).toBe("success");
+    expect(state.productId).toBe("product-1");
+    expect(state.message).toContain("category was not saved");
+  });
+
+  it("does not write while product_categories is off", async () => {
+    mocks.isFeatureEnabled.mockResolvedValue(false);
+    const { from, rpc } = buildCreateProductSupabaseMock();
+    mocks.createClient.mockResolvedValue({ from, rpc, storage: { from: vi.fn() } });
+
+    await createProductAction(
+      { status: "idle", values: {} },
+      formData({ ...CREATE_PRODUCT_REQUIRED_FIELDS, categoryId: CATEGORY }),
+    );
+
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("never sends a malformed id to the database", async () => {
+    const { from, rpc } = buildCreateProductSupabaseMock();
+    mocks.createClient.mockResolvedValue({ from, rpc, storage: { from: vi.fn() } });
+
+    await createProductAction(
+      { status: "idle", values: {} },
+      formData({ ...CREATE_PRODUCT_REQUIRED_FIELDS, categoryId: "'); drop table products; --" }),
+    );
+
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateProductAction — category", () => {
+  function updateMock() {
+    const single = vi.fn().mockResolvedValue({ data: { id: "shop1", currency: "GHS" } });
+    const shopsSelect = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ single }) });
+    const updateEq2 = vi.fn().mockResolvedValue({ error: null });
+    const update = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: updateEq2 }) });
+    const from = vi.fn((table: string) => (table === "shops" ? { select: shopsSelect } : { update }));
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    return { from, rpc };
+  }
+
+  const FIELDS = {
+    productId: "p1",
+    name: "Test Product",
+    description: "",
+    price: "1000",
+    currency: "GHS",
+    inventoryPolicy: "continue_selling",
+    stockQuantity: "",
+    sku: "",
+    status: "draft",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveServerActor.mockResolvedValue(SELLER_ACTOR);
+    mocks.isFeatureEnabled.mockResolvedValue(true);
+  });
+
+  it("leaves categories alone when the seller did not change the field", async () => {
+    const { from, rpc } = updateMock();
+    mocks.createClient.mockResolvedValue({ from, rpc });
+
+    const message = await refusalFrom(() =>
+      updateProductAction(formData({ ...FIELDS, categoryId: CATEGORY, categoryIdOriginal: CATEGORY })),
+    );
+
+    expect(message).toBeNull();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("sets a changed category", async () => {
+    const { from, rpc } = updateMock();
+    mocks.createClient.mockResolvedValue({ from, rpc });
+
+    await refusalFrom(() => updateProductAction(formData({ ...FIELDS, categoryId: CATEGORY, categoryIdOriginal: "" })));
+
+    expect(rpc).toHaveBeenCalledWith("set_product_category", { p_product_id: "p1", p_category_id: CATEGORY });
+  });
+
+  it("clears it when the seller picks none", async () => {
+    const { from, rpc } = updateMock();
+    mocks.createClient.mockResolvedValue({ from, rpc });
+
+    await refusalFrom(() => updateProductAction(formData({ ...FIELDS, categoryId: "", categoryIdOriginal: CATEGORY })));
+
+    expect(rpc).toHaveBeenCalledWith("set_product_category", { p_product_id: "p1", p_category_id: null });
+  });
+
+  it("says so when the database refuses the category", async () => {
+    const { from, rpc } = updateMock();
+    rpc.mockResolvedValue({ data: null, error: { code: "42501", message: "denied" } });
+    mocks.createClient.mockResolvedValue({ from, rpc });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const message = await refusalFrom(() =>
+      updateProductAction(formData({ ...FIELDS, categoryId: CATEGORY, categoryIdOriginal: "" })),
+    );
+
+    expect(message).toMatch(/category could not be saved/i);
   });
 });

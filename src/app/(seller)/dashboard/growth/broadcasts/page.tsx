@@ -1,7 +1,10 @@
+import { isFeatureEnabled } from "@/lib/flags";
 import { ActionBanner } from "@/components/ui/action-banner";
 import { UpgradePrompt } from "@/components/seller/upgrade-prompt";
 import { resolveServerActor } from "@/lib/auth/actor";
 import { getSellerPlan, planLimit } from "@/lib/billing/resolve";
+import { sellerSmsSuppressedCount } from "@/lib/marketing/sms-opt-out";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { SubmitButton } from "@/components/ui/submit-button";
 
@@ -16,6 +19,13 @@ export default async function BroadcastsPage({
   const actor = await resolveServerActor();
   if (actor.kind !== "seller") return null;
   const supabase = await createClient();
+  const smsBroadcasts = await isFeatureEnabled("sms_broadcasts", { sellerAccountId: actor.sellerAccountId });
+  // Service-role, scoped by the resolved account: opt-outs are platform data a
+  // seller may only ever see as a count of their own customers — which buyers
+  // texted STOP to the shared number is not theirs to know.
+  const smsSuppressed = smsBroadcasts
+    ? await sellerSmsSuppressedCount(createAdminClient(), actor.sellerAccountId)
+    : null;
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
@@ -56,7 +66,14 @@ export default async function BroadcastsPage({
             <option>email</option>
             <option>whatsapp</option>
             <option>push</option>
+            {smsBroadcasts ? <option value="sms">sms</option> : null}
           </select>
+          {smsBroadcasts ? (
+            <p className="m-0 text-xs" style={{ color: "var(--ink-3)" }}>
+              SMS end with &ldquo;Reply STOP to opt out&rdquo; and are kept to two texts.
+              {smsSuppressed ? ` ${smsSuppressed} of your customers opted out of SMS and will be skipped.` : ""}
+            </p>
+          ) : null}
         </div>
         <div className="grid gap-1">
           <label className="field-label" htmlFor="bc-segment">Audience</label>

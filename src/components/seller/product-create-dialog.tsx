@@ -1,12 +1,57 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { ProductForm } from "@/components/seller/product-form";
+import { DraftFromPhoto } from "@/components/seller/draft-from-photo";
+import { type CategoryOption, ProductForm } from "@/components/seller/product-form";
 import { Button } from "@/components/ui/button";
+import type { ListingDraft } from "@/lib/ai/listing-draft";
+import type { PreparedImage } from "@/lib/catalog/images";
 
-export function ProductCreateDialog({ currency }: { currency: "GHS" | "NGN" | "XOF" }) {
+type Prefill = { key: number; values: Record<string, string>; image: PreparedImage; note: string };
+
+/**
+ * Map a Snap-to-list draft onto the form's field names. Always a draft.
+ *
+ * The suggested category prefills the Category field when that field is shown
+ * and the category is still in the taxonomy; otherwise it is only mentioned in
+ * the note, as before, so the suggestion is never silently lost.
+ */
+function prefillFromDraft(
+  draft: ListingDraft,
+  image: PreparedImage,
+  key: number,
+  categories: CategoryOption[],
+): Prefill {
+  const local = draft.descriptionLocal ? `\n\n${draft.descriptionLocal.text}` : "";
+  const suggested = draft.category;
+  const prefillCategory = suggested && categories.some((category) => category.id === suggested.id) ? suggested.id : "";
+  return {
+    key,
+    values: {
+      name: draft.title,
+      description: `${draft.description}${local}`,
+      status: "draft",
+      ...(prefillCategory ? { categoryId: prefillCategory } : {}),
+    },
+    image,
+    note: `${suggested && !prefillCategory ? `Suggested category: ${suggested.name}. ` : ""}${draft.price.explanation}`,
+  };
+}
+
+export function ProductCreateDialog({
+  currency,
+  snapToList = false,
+  categories = [],
+}: {
+  currency: "GHS" | "NGN" | "XOF";
+  /** Show "Draft from photo" (the snap_to_list flag, resolved on the server). */
+  snapToList?: boolean;
+  /** The taxonomy, when `product_categories` is on; empty hides the field. */
+  categories?: CategoryOption[];
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [prefill, setPrefill] = useState<Prefill | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -48,7 +93,21 @@ export function ProductCreateDialog({ currency }: { currency: "GHS" | "NGN" | "X
             </button>
           </div>
           <div className="min-h-0 overflow-y-auto px-5 py-5 sm:px-6">
-            <ProductForm currency={currency} />
+            {snapToList ? (
+              <DraftFromPhoto
+                onDraft={(draft, image) => setPrefill(prefillFromDraft(draft, image, (prefill?.key ?? 0) + 1, categories))}
+              />
+            ) : null}
+            {/* Remounted per draft: the form's fields are uncontrolled, so a new
+                key is how a fresh draft replaces what the last one filled in. */}
+            <ProductForm
+              categories={categories}
+              currency={currency}
+              draftNote={prefill?.note}
+              initialImage={prefill?.image}
+              initialValues={prefill?.values}
+              key={prefill?.key ?? 0}
+            />
           </div>
         </div>
       </dialog>

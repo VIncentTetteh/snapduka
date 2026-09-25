@@ -12,9 +12,11 @@ import { ActionBanner } from "@/components/ui/action-banner";
 import { Pager, parsePage } from "@/components/ui/pager";
 import { PageHeader, Panel } from "@/components/ui/surface";
 import { resolveServerActor } from "@/lib/auth/actor";
-import { formatMoney } from "@/lib/i18n";
+import { loadCategoryOptions } from "@/lib/catalog/categories";
+import { isFeatureEnabled } from "@/lib/flags";
+import { formatMoney } from "@snapduka/core";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrencyCode } from "@/lib/countries/types";
+import type { CurrencyCode } from "@snapduka/core";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +43,7 @@ export default async function ProductsPage({
   const supabase = await createClient();
   // One row more than is displayed, purely to know whether a next page exists —
   // cheaper than a second exact count on every render.
-  const [{ data: shop }, { data: rows, error }] = await Promise.all([
+  const [{ data: shop }, { data: rows, error }, snapToList, categories] = await Promise.all([
     supabase.from("shops").select("currency").eq("seller_account_id", actor.sellerAccountId).single(),
     supabase
       .from("products")
@@ -50,6 +52,8 @@ export default async function ProductsPage({
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
       .range(from, from + PAGE_SIZE),
+    isFeatureEnabled("snap_to_list", { sellerAccountId: actor.sellerAccountId }),
+    loadCategoryOptions(supabase, actor.sellerAccountId),
   ]);
 
   const hasNext = (rows?.length ?? 0) > PAGE_SIZE;
@@ -64,7 +68,7 @@ export default async function ProductsPage({
       <PageHeader
         title="Products"
         sub="Keep your catalogue organised, in stock and ready to share."
-        actions={<ProductCreateDialog currency={shop.currency as "GHS" | "NGN" | "XOF"} />}
+        actions={<ProductCreateDialog currency={shop.currency as "GHS" | "NGN" | "XOF"} snapToList={snapToList} categories={categories} />}
       />
 
       {error ? (
@@ -80,7 +84,7 @@ export default async function ProductsPage({
         <EmptyState
           title="Your catalogue is empty"
           body="Create your first product with a name, price and stock. You can add richer details whenever you are ready."
-          action={<ProductCreateDialog currency={shop.currency as "GHS" | "NGN" | "XOF"} />}
+          action={<ProductCreateDialog currency={shop.currency as "GHS" | "NGN" | "XOF"} snapToList={snapToList} categories={categories} />}
         />
       ) : null}
 

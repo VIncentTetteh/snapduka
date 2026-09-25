@@ -8,8 +8,9 @@ import { Req } from "@/components/ui/required-mark";
 import { FormActionButton, SubmitButton } from "@/components/ui/submit-button";
 import { MetricTile } from "@/components/ui/metric-tile";
 import { resolveServerActor } from "@/lib/auth/actor";
-import type { CurrencyCode } from "@/lib/countries/types";
-import { formatMoney } from "@/lib/i18n";
+import type { CurrencyCode } from "@snapduka/core";
+import { formatMoney } from "@snapduka/core";
+import { loadCategoryOptions } from "@/lib/catalog/categories";
 import { createClient } from "@/lib/supabase/server";
 
 /** This page reports all time. */
@@ -29,6 +30,16 @@ export default async function EditProductPage({
   const supabase = await createClient();
   const { data: product } = await supabase.from("products").select("id,name,description,currency,price_minor,cost_minor,compare_at_price_minor,sku,status,inventory_policy,stock_quantity,reserved_quantity,video_url,product_media(id,object_path,position),product_variants(id,name,sku,price_minor,inventory_policy,stock_quantity,reserved_quantity,active)").eq("id", productId).eq("seller_account_id", actor.sellerAccountId).maybeSingle();
   if (!product) notFound();
+
+  // One category in the form; the first by name if an operator assigned more.
+  // The form sends back what it showed, and the action only writes on a change.
+  const [categories, { data: assigned }] = await Promise.all([
+    loadCategoryOptions(supabase, actor.sellerAccountId),
+    supabase.from("product_categories").select("category_id,categories(name)").eq("product_id", productId).limit(20),
+  ]);
+  const currentCategoryId =
+    [...(assigned ?? [])].sort((a, b) => (a.categories?.name ?? "").localeCompare(b.categories?.name ?? ""))[0]
+      ?.category_id ?? "";
 
   // Aggregated in SQL. This pulled every paid line for the product to produce a
   // single row, so a best-seller past db.max_rows had its units, revenue and
@@ -71,6 +82,21 @@ export default async function EditProductPage({
         <input name="productId" type="hidden" value={product.id} />
         <input name="currency" type="hidden" value={product.currency} />
         <label className="grid gap-1"><span className="field-label">Name<Req /></span><input className="field-input" defaultValue={product.name} minLength={2} name="name" required aria-required="true" /></label>
+        {categories.length ? (
+          <label className="grid gap-1">
+            <span className="field-label">Category <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional)</span></span>
+            <input name="categoryIdOriginal" type="hidden" value={currentCategoryId} />
+            <select className="field-input" defaultValue={currentCategoryId} name="categoryId">
+              <option value="">No category</option>
+              {/* A retired category still assigned stays selectable so saving
+                  unrelated changes does not silently drop it. */}
+              {currentCategoryId && !categories.some((category) => category.id === currentCategoryId) ? (
+                <option value={currentCategoryId}>Current category (retired)</option>
+              ) : null}
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+        ) : null}
         <label className="grid gap-1"><span className="field-label">Description <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional)</span></span><textarea className="field-input" defaultValue={product.description} name="description" rows={4} /></label>
         <label className="grid gap-1"><span className="field-label">Price ({product.currency} minor units)<Req /></span><input className="field-input" defaultValue={product.price_minor} inputMode="numeric" name="price" pattern="[1-9][0-9]*" title="Whole number in minor units, greater than zero" required aria-required="true" /></label>
         <label className="grid gap-1"><span className="field-label">Compare-at price ({product.currency} minor units) <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>(optional)</span></span><input className="field-input" defaultValue={product.compare_at_price_minor ?? ""} inputMode="numeric" name="compareAtPrice" pattern="[0-9]*" title="Whole number in minor units, greater than your price" /></label>

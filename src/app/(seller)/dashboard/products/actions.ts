@@ -11,6 +11,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { getSellerPlan, planLimit, withinPlanLimit } from "@/lib/billing/resolve";
 import { parseProductInput } from "@/lib/catalog/schema";
 import { fetchOembedThumbnail, isSafeHttpUrl, parseVideoUrl } from "@/lib/catalog/video";
+import { isFeatureEnabled } from "@/lib/flags";
 import { createClient } from "@/lib/supabase/server";
 
 export type ProductActionState = {
@@ -41,6 +42,38 @@ const NOT_ALLOWED = "Your role does not allow changing products.";
 const NOT_ACTIVE = "Your account is not active, so products cannot be changed.";
 const INVALID_VARIANT =
   "Give the option a name, a whole-number price, and a stock count if you track stock.";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CATEGORY_NOT_SAVED = "That category could not be saved. Choose another, or try again.";
+
+type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Sets (or, for "", clears) a product's category through set_product_category,
+ * which runs under the caller's RLS: the database, not this action, decides
+ * whether the product is theirs and the category is active. Returns false
+ * without writing for a malformed id or while `product_categories` is off.
+ */
+async function saveProductCategory(
+  supabase: ServerSupabase,
+  sellerAccountId: string,
+  productId: string,
+  categoryId: string,
+): Promise<boolean> {
+  if (categoryId && !UUID.test(categoryId)) return false;
+  if (!(await isFeatureEnabled("product_categories", { sellerAccountId }))) return false;
+  const { error } = await supabase.rpc("set_product_category", {
+    p_product_id: productId,
+    // NULL clears. The generated Args type marks every uuid argument as a
+    // required string because it cannot express nullable-but-required.
+    p_category_id: (categoryId || null) as string,
+  });
+  if (error) {
+    console.error("[products] category not saved", { productId, code: error.code });
+    return false;
+  }
+  return true;
+}
 
 function slugify(name: string): string {
   const base = name
@@ -75,6 +108,7 @@ export async function createProductAction(
       "imageDataUrl",
       "imageWidth",
       "imageHeight",
+      "categoryId",
     ].map((name) => [name, value(formData, name)]),
   );
   const actor = await resolveServerActor();
@@ -220,6 +254,14 @@ export async function createProductAction(
     }
   }
 
+  // After the product exists, and never a reason to undo it: an uncategorised
+  // product still sells, so a failure here is reported, not rolled back.
+  let categoryMessage = "";
+  if (values.categoryId.trim()) {
+    const saved = await saveProductCategory(supabase, actor.sellerAccountId, product.id, values.categoryId.trim());
+    if (!saved) categoryMessage = " The category was not saved — set it on the product page.";
+  }
+
   let photoMessage = "";
   const imageDataUrl = values.imageDataUrl;
   if (imageDataUrl) {
@@ -235,7 +277,8 @@ export async function createProductAction(
     status: "success",
     message:
       (parsed.data.status === "active" ? "Product published." : "Product saved as a draft.") +
-      (photoMessage || (imageDataUrl ? "" : " Add an image below.")),
+      (photoMessage || (imageDataUrl ? "" : " Add an image below.")) +
+      categoryMessage,
     values: {},
     productId: product.id,
   };
@@ -497,6 +540,17 @@ export async function updateProductAction(formData: FormData): Promise<void> {
     stock_quantity: parsed.data.stockQuantity,
   }).eq("id", productId).eq("seller_account_id", actor.sellerAccountId);
   if (error) failProduct(productId, "Those changes could not be saved.");
+
+  // Only when the seller actually changed it: the form shows one category, and
+  // rewriting on every save would replace an operator's multi-category
+  // assignment the seller never touched.
+  if (formData.has("categoryId")) {
+    const categoryId = value(formData, "categoryId").trim();
+    if (categoryId !== value(formData, "categoryIdOriginal").trim()) {
+      const saved = await saveProductCategory(supabase, actor.sellerAccountId, productId, categoryId);
+      if (!saved) failProduct(productId, CATEGORY_NOT_SAVED);
+    }
+  }
 
   revalidatePath(`/dashboard/products/${productId}`);
   revalidatePath("/dashboard/products");
