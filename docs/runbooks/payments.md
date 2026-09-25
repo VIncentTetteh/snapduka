@@ -121,6 +121,30 @@ Add real pilot-seller quotes, with their permission, to
 Kill switch: `update feature_flags set enabled = false where key = 'protect';`
 (orders already protected continue through their lifecycle).
 
+### Ghana market-wide launch (done 2026-09-25)
+The owner chose to switch Ghana on for everyone instead of a pilot cohort, ahead
+of checklist items 1–6 above; they remain open and are now the priority.
+Applied in production (audit event `ghana_launch_switched_on`):
+- `country_configs` GH: `settlement_mode = 'ledger'`, `protect_enabled = true`,
+  `payouts_enabled = true`.
+- Country flags for GH: `new_homepage`, `protect`, `instant_payout`, `trust_score`,
+  `buyer_accounts`, `product_categories`, `promoted_listings`,
+  `creator_ledger_payouts`.
+- Left off because they need keys or contracts: `snap_to_list`, `ai_captions`,
+  `wa_outbound`, `wa_agent`, `wa_agent_voice`, `kyc_auto`, `stock_financing`,
+  `bnpl`, `courier_booking:*`, `sms_broadcasts`, `seller_digest`.
+
+Before the first withdrawal: Paystack Transfers must have OTP confirmation
+disabled, and each seller must add a payout destination (sales accrue to their
+balance until then).
+
+Full rollback (new orders split to subaccounts again; money already held stays
+on the ledger and is paid out through withdrawals):
+```sql
+update public.country_configs set settlement_mode = 'subaccount', protect_enabled = false where country = 'GH';
+update public.feature_flags set enabled = false where country_code = 'GH';
+```
+
 ### Daily operations
 - **Disputes**: `/admin/cases` → a Protect order shows "SnapDuka Protect dispute".
   Release pays the seller; Refund returns the full total via Paystack. Both
