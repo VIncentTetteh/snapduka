@@ -109,6 +109,15 @@ update public.country_configs set protect_enabled = true, payouts_enabled = true
 -- 3. Rollout flag for that seller only.
 insert into public.feature_flags (key, seller_account_id, enabled) values ('protect', '<seller>', true);
 ```
+Once Protect is live for the market, switch the trust-led landing page on for
+it (visitors there then see "Get paid before you ship"; everyone else keeps the
+classic page, and the page falls back to classic by itself if Protect is off):
+```sql
+insert into public.feature_flags (key, country_code, enabled) values ('new_homepage', 'GH', true);
+```
+Add real pilot-seller quotes, with their permission, to
+`src/components/landing/testimonials.ts`; the section stays hidden until then.
+
 Kill switch: `update feature_flags set enabled = false where key = 'protect';`
 (orders already protected continue through their lifecycle).
 
